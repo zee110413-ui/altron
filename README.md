@@ -15,14 +15,23 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
 
 ## What he can do
 
-- **Talk**: in any language Whisper and your Piper voices know. He answers in the language you speak, jokes, remembers
-  what you tell him about yourself, and starts small talk when it has been quiet for a while (`chatter_minutes`).
+- **Talk**: in any language Whisper and your Piper voices know. He answers in the language you speak (and thinks in
+  it: Russian or English instructions), jokes, remembers what you tell him about yourself, starts small talk when it
+  has been quiet for a while (`chatter_minutes`). He starts speaking while the AI is still writing the answer, stops
+  when you talk over him, and his voice changes with the moment (fast in a fight, quiet when sympathising).
+- **Notice what happens**: warns you of a creeper about to blow up or a crowd of monsters, reacts when you are badly
+  hurt, die, get an advancement or go to the Nether, greets players who join, mentions nightfall and storms.
+- **Several players**: obeys the commander and his friends ("Vasya is my friend, obey him"), talks to strangers but
+  does not take their orders, remembers what each player tells about themselves.
+- **Act on his own**: `assist` — defends and feeds you and falls back when losing a fight; `autonomy` — finds useful
+  work while you are away and tells you what he did when you come back.
 - **Work with any mod** (Forge 1.20.1 packs): reads every mod's items, recipes and manuals from the pack's files,
   opens and clicks any mod window, uses machines he has seen to make things (`obtain`), loads materials into a machine
   in one trip (`load_machine`), looks things up on the web when the pack's data is not enough.
 - **Play**: follow, guard, fight (bows, swords and mod guns), mine like a player (no x-ray), smelt, craft, build
   multiblocks, drive vehicles, climb ladders, fetch and stash items, study your base, sleep in a bed at night, gesture
-  (nod, wave, bow, dance), set reminders, pick his things up after he dies.
+  (nod, wave, bow, dance), set reminders, pick his things up after he dies, build a house, shelter, wall, tower,
+  platform or bridge from a description.
 - **Remember**: places, chests and their contents, what you said — across restarts.
 
 ## Requirements
@@ -82,6 +91,12 @@ on your gaming PC just play and type `/altron`.
 | `tts_voices` | a Piper voice per language: `{"en": "../models/piper/en_US-ryan-high.onnx"}`; `tts_voice` is the fallback |
 | `tts_style` | `"ultron"` (low, doubled, metallic), `"robot"` (light helmet effect) or `"plain"`; `tts_pitch` overrides the pitch |
 | `chatter_minutes` | after this many quiet minutes he may start a conversation; `0` turns it off |
+| `tts_moods` | the voice follows the moment (faster in a fight, quieter when sympathising) |
+| `barge_in` | you can talk over him and he stops (default on) |
+| `react_events` | reactions to what happens around (danger, deaths, players joining...) |
+| `assist`, `autonomy` | help without orders / find work by himself (also switched by voice) |
+| `friends` | players whose orders he also carries out (also added by voice) |
+| `llm_url`, `llm_model_name`, `llm_api_key` | use an OpenAI-compatible online AI instead of a local model — for PCs without a strong video card |
 | `wake_words` | what he answers to |
 | `minecraft_dir`, `pack_version`, `java` | empty = found automatically |
 
@@ -102,15 +117,22 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## Что умеет
 
-- **Общаться** на любом языке, который знают Whisper и твои голоса Piper: отвечает на языке, на котором ты говоришь,
-  шутит, помнит, что ты о себе рассказывал, сам заговаривает, если долго тихо (`chatter_minutes`).
+- **Общаться** на любом языке, который знают Whisper и твои голоса Piper: отвечает на языке, на котором ты говоришь
+  (и думает на нём), шутит, помнит, что ты о себе рассказывал, сам заговаривает, если долго тихо (`chatter_minutes`).
+  Начинает говорить, пока ИИ ещё дописывает ответ, замолкает, если ты его перебил, а голос меняется по ситуации.
+- **Замечать, что происходит**: предупредит о крипере и толпе монстров, отреагирует, если ты ранен, погиб, получил
+  достижение или ушёл в Незер, поздоровается с зашедшим игроком, скажет о ночи и грозе.
+- **Играть с несколькими игроками**: слушается командира и его друзей, с чужими говорит, но их приказы не выполняет,
+  помнит, что каждый о себе рассказывал.
+- **Действовать сам**: `assist` — защищает и кормит тебя, отступает, если проигрывает бой; `autonomy` — сам находит
+  дела, пока тебя нет, и рассказывает, что сделал.
 - **Работать с любыми модами** (сборки Forge 1.20.1): читает предметы, рецепты и руководства всех модов из файлов
   сборки, открывает и нажимает окна любых модов, делает предметы в увиденных машинах (`obtain`), загружает материал
   в машину за один поход (`load_machine`), ищет в интернете, если в сборке нет ответа.
 - **Играть**: следовать, охранять, воевать (лук, меч, оружие модов), копать как игрок (без рентгена), плавить,
   крафтить, строить многоблочные машины, водить технику, лазить по лестницам, приносить и складывать вещи, изучать
   базу, спать ночью в кровати, делать жесты (кивнуть, помахать, поклониться, станцевать), напоминать, подбирать свои
-  вещи после смерти.
+  вещи после смерти, строить по описанию дом, укрытие, стену, башню, площадку или мост.
 - **Помнить** места, сундуки и их содержимое, твои слова — и после перезапуска.
 
 ## Установка в один клик (Windows)
@@ -131,6 +153,9 @@ Apache License 2.0 — see [LICENSE](LICENSE).
    Forge 1.20.1 из `.minecraft/versions`. Дождись строки «ИИ готов».
 5. Запусти эту же сборку, зайди в мир и напиши в чате `/altron`. Через 1-2 минуты Альтрон зайдёт.
 6. Говори в голосовом чате: «Альтрон, иди за мной».
+
+**Слабый ПК без видеокарты?** Укажи в `config.json` адрес любой OpenAI-совместимой нейросети в интернете (`llm_url`,
+`llm_model_name`, `llm_api_key`) — локальная модель тогда не нужна.
 
 **Второй ПК.** Если твой компьютер не тянет две игры и нейросеть сразу: запусти
 `brain\.venv\Scripts\python.exe brain\build_pc2_kit.py` — он соберёт папку `ai_server` (портативный Python, мозг,
