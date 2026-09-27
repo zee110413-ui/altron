@@ -32,7 +32,7 @@ SPEECH_CHARS_VOICE_ONLY = 420    # without chat replies the voice is the only ch
 STATIONS = ["minecraft:crafting_table", "minecraft:furnace"]
 REPEAT_SEC = 25                  # the same words are not said again within this time
 ROUTINES = {"fetch": "принести предмет из сундука", "stash": "сложить вещи в сундук",
-            "study": "изучение производства"}
+            "study": "изучение производства", "load_machine": "перенос материала в машину"}
 # "куда это положить?", "что делать с рудой?" — answered from the production map he learned
 WHERE_PUT_RE = re.compile(r"куда\s+(?:мне\s+|нам\s+|его\s+|её\s+|их\s+)?(?:положить|класть|ложить|девать|деть|отнести|сунуть|кинуть|"
                           r"засунуть|отправить)|что\s+(?:мне\s+)?делать\s+с|где\s+(?:переработать|переплавить|сделать)", re.I)
@@ -592,8 +592,9 @@ class Hub:
     # ------------------------------------------------------------------ ready-made routines (done by code, not by the AI)
     async def routine(self, name, args):
         """A common job done step by step by the code: the small model only has to choose it, not to carry it out."""
+        handlers = {"fetch": self.fetch, "study": self.study, "stash": self.stash, "load_machine": self.load_machine}
         try:
-            result = await (self.fetch(args) if name == "fetch" else self.study(args) if name == "study" else self.stash(args))
+            result = await handlers[name](args)
         except asyncio.CancelledError:
             result = "остановлено"
         except Exception as e:
@@ -762,6 +763,41 @@ class Hub:
             if put.get("ok"):
                 return "%s в сундук %s %s %s" % (put.get("msg", "положил"), x, y, z)
         return "не получилось открыть сундук рядом"
+
+    async def load_machine(self, args):
+        """«Перенеси/загрузи/насыпь X в машину»: заберёт ВЕСЬ материал из сундуков/бочек, где его видел, за один
+        обход, дойдёт до названной машины и положит всё разом — один поход, а не по стаку за раз."""
+        item = str(args.get("item") or "all")
+        item_id = None if item in ("all", "всё", "все", "*") else self.item_id(item)
+        machine_query = str(args.get("machine", "")).strip()
+        machine_id = self.item_id(machine_query) if machine_query else None
+        await self.bot_call("look_around", {})
+        found = (await self.bot_call("find_block", {"block": "chest,barrel,trapped_chest", "radius": 48})).get("msg", "")
+        spots = re.findall(r"(-?\d+) (-?\d+) (-?\d+) \(", found)
+        for x, y, z in spots[:6]:
+            opened = await self.start_task("use_block", {"x": int(x), "y": int(y), "z": int(z)}, 90)
+            if not opened.startswith("ГОТОВО"):
+                continue
+            await self.bot_call("container_take", {"item": item_id or "all"})   # без count — весь предмет, не один стек
+            await self.bot_call("close_container", {})
+        inv = (await self.bot_call("inventory_ids", {})).get("items") or {}
+        have_total = sum(n for i, n in inv.items() if item_id is None or i == item_id)
+        if have_total <= 0:
+            return ("не нашёл %s ни у себя, ни в сундуках рядом"
+                    % (self.knowledge.name(item_id) if self.knowledge and item_id else item))
+        where = (await self.bot_call("find_block", {"block": machine_id or machine_query, "radius": 96})).get("msg", "") \
+            if (machine_id or machine_query) else ""
+        spot = re.search(r"(-?\d+) (-?\d+) (-?\d+) \(", where)
+        if not spot:
+            return ("взял %d шт., но не вижу рядом %s — подойди к машине сам или скажи точные координаты"
+                    % (have_total, ("«%s»" % machine_query) if machine_query else "нужную машину"))
+        mx, my, mz = (int(v) for v in spot.groups())
+        opened = await self.start_task("use_block", {"x": mx, "y": my, "z": mz}, 90)
+        if not opened.startswith("ГОТОВО"):
+            return "взял %d шт., но не смог открыть машину в %d %d %d: %s" % (have_total, mx, my, mz, opened)
+        put = await self.bot_call("container_put", {"item": item_id or "all"})   # без count — весь предмет разом
+        await self.bot_call("close_container", {})
+        return "%s в машину %d %d %d" % (put.get("msg", "положил"), mx, my, mz)
 
     async def run_queue(self):
         """Start queued tasks one after another; returns when one is running in the background or the queue is empty."""
