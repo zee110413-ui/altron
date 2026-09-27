@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Альтрон — голосовой ИИ-напарник для Minecraft</title>
-<meta name="description" content="Второй игрок в твоём мире, с которым говоришь голосом. Работает офлайн, понимает моды твоей сборки, отвечает на твоём языке.">
-<meta property="og:title" content="Альтрон — голосовой ИИ-напарник для Minecraft">
-<meta property="og:description" content="Второй игрок, с которым говоришь голосом. Офлайн, любые моды Forge 1.20.1, отвечает на твоём языке.">
+<meta name="description" content="Второй игрок в твоём мире, с которым говоришь голосом. Работает офлайн, понимает моды твоей сборки, отвечает на твоём языке. A voice AI companion for modded Minecraft.">
+<meta property="og:title" content="Альтрон / Altron — голосовой ИИ-напарник для Minecraft">
+<meta property="og:description" content="Второй игрок, с которым говоришь голосом. Офлайн, любые моды Forge 1.20.1, отвечает на твоём языке. A second player you talk to: offline, any Forge 1.20.1 mods, speaks your language.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://zee110413-ui.github.io/altron/">
 <meta property="og:image" content="https://zee110413-ui.github.io/altron/og.png">
@@ -106,6 +106,12 @@
   .top nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.92rem; }
   .top nav a { color: var(--ink-soft); text-decoration: none; }
   .top nav a:hover { color: var(--ink); }
+  .top-right { display: flex; align-items: center; gap: 18px; }
+  .site-lang {
+    font: 600 0.78rem var(--mono); padding: 6px 10px; border: 1px solid var(--ink); background: transparent;
+    color: var(--ink); cursor: pointer;
+  }
+  .site-lang:hover { background: var(--ink); color: var(--bg); }
 
   /* ---------------- hero */
   .hero {
@@ -236,35 +242,38 @@
 <div class="wrap">
   <header class="top">
     <div class="brand"><span class="eye" aria-hidden="true"></span>ALTRON</div>
+    <div class="top-right">
     <nav aria-label="Разделы">
-      <a href="#abilities">Умения</a>
-      <a href="#how">Как устроен</a>
-      <a href="#install">Установка</a>
-      <a href="#settings">Настройки</a>
+      <a href="#abilities" data-i18n="nav.abilities">Умения</a>
+      <a href="#how" data-i18n="nav.how">Как устроен</a>
+      <a href="#install" data-i18n="nav.install">Установка</a>
+      <a href="#settings" data-i18n="nav.settings">Настройки</a>
     </nav>
+    <button type="button" class="site-lang" id="site-lang" lang="en" aria-label="Switch to English">EN</button>
+    </div>
   </header>
 
   <main>
     <div class="hero">
       <div>
-        <p class="eyebrow">Голосовой ИИ-напарник · Forge 1.20.1</p>
-        <h1 style="margin-top:16px">Альт<span>рон</span></h1>
-        <p class="lede">Второй игрок в твоём мире. Ты говоришь в голосовой чат — он идёт, копает, крафтит, воюет, возится с машинами любых модов и болтает с тобой.</p>
-        <div class="facts">
+        <p class="eyebrow" data-i18n="hero.eyebrow">Голосовой ИИ-напарник · Forge 1.20.1</p>
+        <h1 style="margin-top:16px" data-i18n="hero.h1">Альт<span>рон</span></h1>
+        <p class="lede" data-i18n="hero.lede">Второй игрок в твоём мире. Ты говоришь в голосовой чат — он идёт, копает, крафтит, воюет, возится с машинами любых модов и болтает с тобой.</p>
+        <div class="facts" data-i18n="hero.facts">
           <span class="fact">офлайн на твоём ПК</span>
           <span class="fact">любые моды</span>
           <span class="fact">отвечает на твоём языке</span>
           <span class="fact">без рентгена</span>
         </div>
         <div class="cta">
-          <a class="btn primary" href="https://github.com/zee110413-ui/altron/raw/main/install_altron.bat">Скачать установщик</a>
-          <a class="btn" href="https://github.com/zee110413-ui/altron">Исходники на GitHub</a>
+          <a class="btn primary" href="https://github.com/zee110413-ui/altron/raw/main/install_altron.bat" data-i18n="hero.dl">Скачать установщик</a>
+          <a class="btn" href="https://github.com/zee110413-ui/altron" data-i18n="hero.src">Исходники на GitHub</a>
         </div>
       </div>
 
       <figure class="log" style="margin:0" aria-label="Пример разговора с Альтроном">
         <div class="log-head">
-          <span class="title">мозг Альтрона · голосовой чат</span>
+          <span class="title" data-i18n="log.title">мозг Альтрона · голосовой чат</span>
           <div class="langs" role="group" aria-label="Язык примера">
             <button type="button" id="lang-ru" aria-pressed="true" data-lang="ru">RU</button>
             <button type="button" id="lang-en" aria-pressed="false" data-lang="en">EN</button>
@@ -292,87 +301,87 @@
 
     <section id="abilities">
       <div class="sec-head">
-        <p class="eyebrow">Умения</p>
-        <h2>Что он делает, когда ты говоришь</h2>
-        <p>Около 70 инструментов: от «иди за мной» до цепочки крафта через машины модов. Всё — как обычный игрок: видит только то, что в прямой видимости, руду ищет шахтой.</p>
+        <p class="eyebrow" data-i18n="abilities.eyebrow">Умения</p>
+        <h2 data-i18n="abilities.h2">Что он делает, когда ты говоришь</h2>
+        <p data-i18n="abilities.intro">Около 70 инструментов: от «иди за мной» до цепочки крафта через машины модов. Всё — как обычный игрок: видит только то, что в прямой видимости, руду ищет шахтой.</p>
       </div>
       <div class="abilities">
         <div class="ability">
-          <h3>Разговаривает</h3>
-          <p>Отвечает на языке, на котором ты говоришь. Шутит, помнит, что ты о себе рассказывал, сам заговаривает после долгой тишины, кивает и машет.</p>
-          <div class="say"><span>как дела?</span><span>кивни</span><span>напомни через 10 минут проверить печь</span></div>
+          <h3 data-i18n="ab.h1">Разговаривает</h3>
+          <p data-i18n="ab.p1">Отвечает на языке, на котором ты говоришь. Шутит, помнит, что ты о себе рассказывал, сам заговаривает после долгой тишины, кивает и машет.</p>
+          <div class="say" data-i18n="ab.say1"><span>как дела?</span><span>кивни</span><span>напомни через 10 минут проверить печь</span></div>
         </div>
         <div class="ability">
-          <h3>Понимает любые моды</h3>
-          <p>Читает предметы, рецепты и руководства всех модов твоей сборки, жмёт кнопки в окнах любого мода, пользуется машинами, которые уже видел. Чего не знает — ищет в интернете.</p>
-          <div class="say"><span>сделай 16 патронов</span><span>загрузи сталь в пресс</span><span>что в той машине?</span></div>
+          <h3 data-i18n="ab.h2">Понимает любые моды</h3>
+          <p data-i18n="ab.p2">Читает предметы, рецепты и руководства всех модов твоей сборки, жмёт кнопки в окнах любого мода, пользуется машинами, которые уже видел. Чего не знает — ищет в интернете.</p>
+          <div class="say" data-i18n="ab.say2"><span>сделай 16 патронов</span><span>загрузи сталь в пресс</span><span>что в той машине?</span></div>
         </div>
         <div class="ability">
-          <h3>Играет вместе с тобой</h3>
-          <p>Следует и охраняет, стреляет из оружия модов, копает, плавит, строит многоблочные машины, водит технику, ложится спать ночью, подбирает свои вещи после смерти.</p>
-          <div class="say"><span>охраняй меня</span><span>накопай 10 железа</span><span>иди спать</span></div>
+          <h3 data-i18n="ab.h3">Играет вместе с тобой</h3>
+          <p data-i18n="ab.p3">Следует и охраняет, стреляет из оружия модов, копает, плавит, строит многоблочные машины, водит технику, ложится спать ночью, подбирает свои вещи после смерти.</p>
+          <div class="say" data-i18n="ab.say3"><span>охраняй меня</span><span>накопай 10 железа</span><span>иди спать</span></div>
         </div>
         <div class="ability">
-          <h3>Помнит базу</h3>
-          <p>Места, сундуки и что в них лежит, машины и что они делают, твои слова и правила. Память не стирается при перезапуске.</p>
-          <div class="say"><span>запомни, это склад</span><span>где лежат алмазы?</span><span>изучи производство</span></div>
+          <h3 data-i18n="ab.h4">Помнит базу</h3>
+          <p data-i18n="ab.p4">Места, сундуки и что в них лежит, машины и что они делают, твои слова и правила. Память не стирается при перезапуске.</p>
+          <div class="say" data-i18n="ab.say4"><span>запомни, это склад</span><span>где лежат алмазы?</span><span>изучи производство</span></div>
         </div>
       </div>
     </section>
 
     <section id="how">
       <div class="sec-head">
-        <p class="eyebrow">Как устроен</p>
-        <h2>От твоего голоса до его рук</h2>
-        <p>Всё работает на твоём компьютере, без облака и подписок. Мозг на Python управляет вторым клиентом Minecraft с модом Альтрона.</p>
+        <p class="eyebrow" data-i18n="how.eyebrow">Как устроен</p>
+        <h2 data-i18n="how.h2">От твоего голоса до его рук</h2>
+        <p data-i18n="how.intro">Всё работает на твоём компьютере, без облака и подписок. Мозг на Python управляет вторым клиентом Minecraft с модом Альтрона.</p>
       </div>
       <div class="pipe">
-        <div class="stage voice"><span class="k">слух</span><b>Simple Voice Chat</b><span>твой голос из игры, 48 кГц</span></div>
-        <div class="stage"><span class="k">речь → текст</span><b>Whisper</b><span>сам определяет язык фразы</span></div>
-        <div class="stage"><span class="k">мысль</span><b>llama.cpp</b><span>локальная модель ИИ с инструментами</span></div>
-        <div class="stage"><span class="k">тело</span><b>Мод + Baritone</b><span>второй игрок: ходит, копает, жмёт GUI</span></div>
-        <div class="stage voice"><span class="k">голос</span><b>Piper · ultron</b><span>низкий двойной металл, своя модель на каждый язык</span></div>
+        <div class="stage voice" data-i18n="how.stage1"><span class="k">слух</span><b>Simple Voice Chat</b><span>твой голос из игры, 48 кГц</span></div>
+        <div class="stage" data-i18n="how.stage2"><span class="k">речь → текст</span><b>Whisper</b><span>сам определяет язык фразы</span></div>
+        <div class="stage" data-i18n="how.stage3"><span class="k">мысль</span><b>llama.cpp</b><span>локальная модель ИИ с инструментами</span></div>
+        <div class="stage" data-i18n="how.stage4"><span class="k">тело</span><b>Мод + Baritone</b><span>второй игрок: ходит, копает, жмёт GUI</span></div>
+        <div class="stage voice" data-i18n="how.stage5"><span class="k">голос</span><b>Piper · ultron</b><span>низкий двойной металл, своя модель на каждый язык</span></div>
       </div>
-      <p class="pipe-note">Стиль голоса «ultron» — звуковой эффект поверх любого голоса Piper: понижение тона, второй «плывущий» голос, металлический резонанс и короткий зал. Это не копия голоса какого-либо актёра.</p>
+      <p class="pipe-note" data-i18n="how.1">Стиль голоса «ultron» — звуковой эффект поверх любого голоса Piper: понижение тона, второй «плывущий» голос, металлический резонанс и короткий зал. Это не копия голоса какого-либо актёра.</p>
     </section>
 
     <section id="install">
       <div class="sec-head">
-        <p class="eyebrow">Установка</p>
-        <h2>Один файл — и он в игре</h2>
+        <p class="eyebrow" data-i18n="install.eyebrow">Установка</p>
+        <h2 data-i18n="install.h2">Один файл — и он в игре</h2>
       </div>
       <ol class="steps">
         <li>
-          <h3>Скачай и запусти установщик</h3>
-          <p>Двойной клик по <code>install_altron.bat</code>. Он спросит, в какой сборке играть, и сам всё скачает.</p>
+          <h3 data-i18n="inst.h1">Скачай и запусти установщик</h3>
+          <p data-i18n="inst.p1">Двойной клик по <code>install_altron.bat</code>. Он спросит, в какой сборке играть, и сам всё скачает.</p>
           <div class="copy">
             <code id="dl-url">github.com/zee110413-ui/altron/raw/main/install_altron.bat</code>
             <button type="button" id="copy-btn">Копировать</button>
           </div>
         </li>
         <li>
-          <h3>Запусти мозг и сборку</h3>
-          <p>Ярлык «Altron» на рабочем столе. Дождись строки «ИИ готов», зайди в свой мир и напиши в чате <code>/altron</code>.</p>
+          <h3 data-i18n="inst.h2">Запусти мозг и сборку</h3>
+          <p data-i18n="inst.p2">Ярлык «Altron» на рабочем столе. Дождись строки «ИИ готов», зайди в свой мир и напиши в чате <code>/altron</code>.</p>
         </li>
         <li>
-          <h3>Говори</h3>
-          <p>Через минуту-две зайдёт игрок altron. Скажи в голосовой чат: «Альтрон, иди за мной». Сработает и «Altron, follow me».</p>
+          <h3 data-i18n="inst.h3">Говори</h3>
+          <p data-i18n="inst.p3">Через минуту-две зайдёт игрок altron. Скажи в голосовой чат: «Альтрон, иди за мной». Сработает и «Altron, follow me».</p>
         </li>
       </ol>
-      <p class="gets">Установщик ставит Python и пакеты, сервер llama.cpp под твою видеокарту (CUDA, Vulkan или процессор), модель ИИ, Whisper, голоса Piper, Baritone, Java 17 и Simple Voice Chat в сборку. Потом собирает мод и делает ярлык. Запускать можно повторно: готовое пропускается, оборванные загрузки докачиваются.</p>
+      <p class="gets" data-i18n="inst.1">Установщик ставит Python и пакеты, сервер llama.cpp под твою видеокарту (CUDA, Vulkan или процессор), модель ИИ, Whisper, голоса Piper, Baritone, Java 17 и Simple Voice Chat в сборку. Потом собирает мод и делает ярлык. Запускать можно повторно: готовое пропускается, оборванные загрузки докачиваются.</p>
     </section>
 
     <section id="settings">
       <div class="sec-head">
-        <p class="eyebrow">Настройки</p>
-        <h2>Под твой компьютер и твой язык</h2>
-        <p>Режим выбирается при запуске. Меняется только клиент Альтрона и ИИ, твоя игра не трогается.</p>
+        <p class="eyebrow" data-i18n="settings.eyebrow">Настройки</p>
+        <h2 data-i18n="settings.h2">Под твой компьютер и твой язык</h2>
+        <p data-i18n="settings.intro">Режим выбирается при запуске. Меняется только клиент Альтрона и ИИ, твоя игра не трогается.</p>
       </div>
       <div class="two">
         <div>
-          <h3>Режимы запуска</h3>
+          <h3 data-i18n="set.h1">Режимы запуска</h3>
           <div class="table-wrap">
-            <table>
+            <table data-i18n="set.t1">
               <thead><tr><th>Режим</th><th>Дальность</th><th>Java</th><th>Окно</th></tr></thead>
               <tbody>
                 <tr><td>Экономный</td><td class="num">3 чанка</td><td class="num">2 ГБ</td><td>по надобности</td></tr>
@@ -383,9 +392,9 @@
           </div>
         </div>
         <div>
-          <h3>brain/config.json</h3>
+          <h3 data-i18n="set.h2">brain/config.json</h3>
           <div class="table-wrap">
-            <table>
+            <table data-i18n="set.t2">
               <thead><tr><th>Ключ</th><th>Что делает</th></tr></thead>
               <tbody>
                 <tr><td><code>language</code></td><td><code>auto</code> — на языке командира, или код: <code>en</code>, <code>de</code>…</td></tr>
@@ -403,48 +412,146 @@
 
     <section id="req">
       <div class="sec-head">
-        <p class="eyebrow">Что нужно</p>
-        <h2>Требования</h2>
+        <p class="eyebrow" data-i18n="req.eyebrow">Что нужно</p>
+        <h2 data-i18n="req.h2">Требования</h2>
       </div>
       <div class="req">
-        <div><b>Сборка</b><span>Любая на Forge 1.20.1. Simple Voice Chat установщик добавит сам.</span></div>
-        <div><b>Компьютер</b><span>Windows 10/11, видеокарта NVIDIA от 8 ГБ. Без неё работает, но медленнее.</span></div>
-        <div><b>Слабый ПК?</b><span>Нейросеть и тело Альтрона можно вынести на второй компьютер: <code>build_pc2_kit.py</code>.</span></div>
+        <div data-i18n="req.1"><b>Сборка</b><span>Любая на Forge 1.20.1. Simple Voice Chat установщик добавит сам.</span></div>
+        <div data-i18n="req.2"><b>Компьютер</b><span>Windows 10/11, видеокарта NVIDIA от 8 ГБ. Без неё работает, но медленнее.</span></div>
+        <div data-i18n="req.3"><b>Слабый ПК?</b><span>Нейросеть и тело Альтрона можно вынести на второй компьютер: <code>build_pc2_kit.py</code>.</span></div>
       </div>
     </section>
   </main>
 
   <footer>
-    <p>Альтрон — фанатский проект, не связан с Marvel и Disney. Лицензия Apache 2.0.</p>
+    <p data-i18n="footer">Альтрон — фанатский проект, не связан с Marvel и Disney. Лицензия Apache 2.0.</p>
     <a href="https://github.com/zee110413-ui/altron">github.com/zee110413-ui/altron</a>
   </footer>
 </div>
 
 <script>
-  // language switch for the example conversation
+  // ---------------------------------------------------------------- languages: Russian is in the page, English here
+  const EN = {
+    'nav.abilities': 'Abilities', 'nav.how': 'How it works', 'nav.install': 'Install', 'nav.settings': 'Settings',
+    'hero.eyebrow': 'Voice AI companion · Forge 1.20.1',
+    'hero.h1': 'Alt<span>ron</span>',
+    'hero.lede': 'A second player in your world. You talk in voice chat, and he walks, mines, crafts, fights, works the machines of any mod and chats with you.',
+    'hero.facts': '<span class="fact">offline on your PC</span> <span class="fact">any mods</span> <span class="fact">speaks your language</span> <span class="fact">no x-ray</span>',
+    'hero.dl': 'Download the installer', 'hero.src': 'Source on GitHub',
+    'log.title': "Altron's brain · voice chat",
+    'abilities.eyebrow': 'Abilities',
+    'abilities.h2': 'What he does when you talk',
+    'abilities.intro': 'About 70 tools, from “follow me” to a crafting chain through mod machines. He plays fair: he sees only what is in his line of sight and finds ore by digging a mine.',
+    'ab.h1': 'Talks',
+    'ab.p1': 'Answers in the language you speak. Jokes, remembers what you told him about yourself, starts small talk after a long silence, nods and waves.',
+    'ab.say1': '<span>how are you?</span><span>nod</span><span>remind me in 10 minutes to check the furnace</span>',
+    'ab.h2': 'Understands any mod',
+    'ab.p2': 'Reads the items, recipes and manuals of every mod in your pack, clicks the buttons in any mod’s windows, uses the machines he has seen. What he does not know, he looks up on the web.',
+    'ab.say2': '<span>make 16 bullets</span><span>load the steel into the press</span><span>what is in that machine?</span>',
+    'ab.h3': 'Plays alongside you',
+    'ab.p3': 'Follows and guards you, shoots mod guns, mines, smelts, builds multiblock machines, drives vehicles, sleeps in a bed at night, picks his things up after he dies.',
+    'ab.say3': '<span>guard me</span><span>mine 10 iron</span><span>go to sleep</span>',
+    'ab.h4': 'Remembers your base',
+    'ab.p4': 'Places, chests and what is in them, machines and what they make, your words and your rules. His memory survives restarts.',
+    'ab.say4': '<span>remember, this is the storage</span><span>where are the diamonds?</span><span>study the production</span>',
+    'how.eyebrow': 'How it works',
+    'how.h2': 'From your voice to his hands',
+    'how.intro': 'Everything runs on your computer, with no cloud and no subscription. A Python brain drives a second Minecraft client that carries the Altron mod.',
+    'how.stage1': '<span class="k">hearing</span><b>Simple Voice Chat</b><span>your voice from the game, 48 kHz</span>',
+    'how.stage2': '<span class="k">speech → text</span><b>Whisper</b><span>detects the language of each phrase</span>',
+    'how.stage3': '<span class="k">thinking</span><b>llama.cpp</b><span>a local AI model with tools</span>',
+    'how.stage4': '<span class="k">body</span><b>Mod + Baritone</b><span>a second player: walks, mines, clicks GUIs</span>',
+    'how.stage5': '<span class="k">voice</span><b>Piper · ultron</b><span>low, doubled, metallic; a voice model per language</span>',
+    'how.1': 'The “ultron” voice style is an audio effect on top of any Piper voice: a lower pitch, a second drifting voice, a metallic resonance and a short hall. It is not a copy of any actor’s voice.',
+    'install.eyebrow': 'Install',
+    'install.h2': 'One file, and he is in the game',
+    'inst.h1': 'Download and run the installer',
+    'inst.p1': 'Double-click <code>install_altron.bat</code>. It asks which modpack to use and downloads everything by itself.',
+    'inst.h2': 'Start the brain and the pack',
+    'inst.p2': 'Use the “Altron” desktop shortcut. Wait for the line “ИИ готов” (AI ready), open your world and type <code>/altron</code> in chat.',
+    'inst.h3': 'Talk',
+    'inst.p3': 'In a minute or two the player altron joins. Say in voice chat: “Altron, follow me”.',
+    'inst.1': 'The installer sets up Python and packages, the llama.cpp server for your graphics card (CUDA, Vulkan or CPU), the AI model, Whisper, Piper voices, Baritone, Java 17 and Simple Voice Chat in your pack. Then it builds the mod and makes a shortcut. It is safe to run again: what is there is skipped, broken downloads continue.',
+    'settings.eyebrow': 'Settings',
+    'settings.h2': 'For your PC and your language',
+    'settings.intro': 'You pick a mode at launch. It changes only Altron’s client and the AI; your own game is not touched.',
+    'set.h1': 'Launch modes',
+    'set.t1': '<thead><tr><th>Mode</th><th>View distance</th><th>Java</th><th>Window</th></tr></thead><tbody>' +
+      '<tr><td>Eco</td><td class="num">3 chunks</td><td class="num">2 GB</td><td>when needed</td></tr>' +
+      '<tr><td>Balanced</td><td class="num">4 chunks</td><td class="num">2.5 GB</td><td>when needed</td></tr>' +
+      '<tr><td>Max</td><td class="num">8 chunks</td><td class="num">3.5 GB</td><td>always, you can watch through his eyes</td></tr></tbody>',
+    'set.h2': 'brain/config.json',
+    'set.t2': '<thead><tr><th>Key</th><th>What it does</th></tr></thead><tbody>' +
+      '<tr><td><code>language</code></td><td><code>auto</code> answers in the commander’s language, or a code: <code>en</code>, <code>de</code>…</td></tr>' +
+      '<tr><td><code>languages</code></td><td>languages to listen for with <code>auto</code></td></tr>' +
+      '<tr><td><code>tts_voices</code></td><td>a Piper voice for each language</td></tr>' +
+      '<tr><td><code>tts_style</code></td><td><code>ultron</code>, <code>robot</code> or <code>plain</code></td></tr>' +
+      '<tr><td><code>chatter_minutes</code></td><td>minutes of silence before he starts talking; <code>0</code> means never</td></tr>' +
+      '<tr><td><code>wake_words</code></td><td>the names he answers to</td></tr></tbody>',
+    'req.eyebrow': 'What you need',
+    'req.h2': 'Requirements',
+    'req.1': '<b>Modpack</b><span>Any on Forge 1.20.1. The installer adds Simple Voice Chat by itself.</span>',
+    'req.2': '<b>Computer</b><span>Windows 10/11, an NVIDIA card with 8 GB or more. Works without one, just slower.</span>',
+    'req.3': '<b>Weak PC?</b><span>The AI and Altron’s body can run on a second computer: <code>build_pc2_kit.py</code>.</span>',
+    'footer': 'Altron is a fan project and is not affiliated with Marvel or Disney. Licensed under Apache 2.0.',
+  };
+  const UI = {
+    ru: { copy: 'Копировать', copied: 'Скопировано', select: 'Выделено — Ctrl+C', title: 'Альтрон', switchTo: 'EN', switchLabel: 'Switch to English', switchLang: 'en' },
+    en: { copy: 'Copy', copied: 'Copied', select: 'Selected — press Ctrl+C', title: 'Altron', switchTo: 'RU', switchLabel: 'Переключить на русский', switchLang: 'ru' },
+  };
+  const RU = {};
+  const baseTitle = document.title;
+  let siteLang = 'ru';
+
+  // the example conversation has its own RU/EN switch too
   const logs = document.querySelectorAll('.lines');
   const langBtns = document.querySelectorAll('.langs button');
-  function setLang(lang) {
+  function setDemo(lang) {
     logs.forEach(l => { l.hidden = l.dataset.lang !== lang; });
     langBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
-    try { localStorage.setItem('altron-demo-lang', lang); } catch (e) {}
   }
-  langBtns.forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
-  try { const saved = localStorage.getItem('altron-demo-lang'); if (saved) setLang(saved); } catch (e) {}
+  langBtns.forEach(b => b.addEventListener('click', () => setDemo(b.dataset.lang)));
+
+  const switchBtn = document.getElementById('site-lang');
+  const copyBtn = document.getElementById('copy-btn');
+  function setSite(lang) {
+    siteLang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const k = el.dataset.i18n;
+      if (!(k in RU)) RU[k] = el.innerHTML;
+      el.innerHTML = lang === 'en' ? (EN[k] ?? RU[k]) : RU[k];
+    });
+    document.documentElement.lang = lang;
+    document.title = lang === 'en' ? baseTitle.replace('Альтрон', 'Altron').replace('голосовой ИИ-напарник для Minecraft', 'a voice AI companion for Minecraft') : baseTitle;
+    const ui = UI[lang];
+    switchBtn.textContent = ui.switchTo;
+    switchBtn.lang = ui.switchLang;
+    switchBtn.setAttribute('aria-label', ui.switchLabel);
+    copyBtn.textContent = ui.copy;
+    setDemo(lang);
+    try { localStorage.setItem('altron-lang', lang); } catch (e) {}
+  }
+  switchBtn.addEventListener('click', () => setSite(siteLang === 'en' ? 'ru' : 'en'));
 
   // copy the installer link
-  const copyBtn = document.getElementById('copy-btn');
   copyBtn.addEventListener('click', () => {
     const text = 'https://' + document.getElementById('dl-url').textContent.trim();
-    const done = () => { copyBtn.textContent = 'Скопировано'; setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 1600); };
+    const ui = UI[siteLang];
+    const done = () => { copyBtn.textContent = ui.copied; setTimeout(() => { copyBtn.textContent = UI[siteLang].copy; }, 1600); };
     const fallback = () => {
       const r = document.createRange(); r.selectNodeContents(document.getElementById('dl-url'));
       const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-      copyBtn.textContent = 'Выделено — Ctrl+C';
+      copyBtn.textContent = ui.select;
     };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
     else fallback();
   });
+
+  let startLang = 'ru';
+  try { startLang = localStorage.getItem('altron-lang') || ''; } catch (e) { startLang = ''; }
+  if (location.hash === '#en' || location.hash === '#ru') startLang = location.hash.slice(1);
+  if (!startLang) startLang = /^(ru|uk|be|kk)/i.test(navigator.language || '') ? 'ru' : 'en';
+  if (startLang === 'en') setSite('en');
 
   // the voice meter: a blocky waveform, as if Altron were speaking
   const cv = document.getElementById('wave');
