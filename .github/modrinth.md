@@ -35,7 +35,7 @@ his voice. No cloud, no subscription, no API keys.
 3. Open your world and type `/altron` in chat. Altron joins in 1-2 minutes.
 4. Talk in voice chat: "Altron, follow me".
 
-Source code, settings and help: **[github.com/zee110413-ui/altron](https://github.com/zee110413-ui/altron)**
+Website: **[zee110413-ui.github.io/altron](https://zee110413-ui.github.io/altron/)** · Source code, settings and help: **[github.com/zee110413-ui/altron](https://github.com/zee110413-ui/altron)**
 
 ---
 
