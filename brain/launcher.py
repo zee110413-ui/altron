@@ -7,6 +7,8 @@ import subprocess
 import uuid
 from pathlib import Path
 
+from lang import ui
+
 BRAIN_DIR = Path(__file__).resolve().parent
 
 # Minimal settings for the bot's window: it only needs to tick (and be filmed), not to look pretty
@@ -69,6 +71,8 @@ JVM_LEAN = ["-XX:+UseG1GC", "-XX:+UseStringDeduplication", "-XX:MaxGCPauseMillis
 # (Altron plays from his own folder altron\bot with its own options.txt and configs).
 PROFILES = {
     "eco": {
+        "title_en": "Eco — the least resources",
+        "about_en": "light client, the window is drawn only when needed, view distance 3 chunks, 2 GB Java, fewer vision rays, low priority, a shorter AI conversation memory",
         "title": "Экономный — минимум ресурсов",
         "about": "облегчённый клиент, окно рисуется только по надобности, дальность 3 чанка, 2 ГБ Java, "
                  "меньше лучей зрения, низкий приоритет, короче память разговора ИИ",
@@ -77,6 +81,8 @@ PROFILES = {
         "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 9000,
     },
     "balanced": {
+        "title_en": "Balanced (normal)",
+        "about_en": "light client, the window is drawn only when needed, view distance 4 chunks, 2.5 GB Java, low priority",
         "title": "Сбалансированный (обычный)",
         "about": "облегчённый клиент, окно рисуется только по надобности, дальность 4 чанка, 2,5 ГБ Java, "
                  "низкий приоритет",
@@ -85,6 +91,8 @@ PROFILES = {
         "llm_context": 24576, "llm_cache_ram_mb": 1024, "history_chars": 20000,
     },
     "max": {
+        "title_en": "Max — everything at full",
+        "about_en": "all the pack's mods, the window is always drawn (30 FPS, you can look through his eyes), view distance 8 chunks, 3.5 GB Java, more vision rays, normal priority, a long AI conversation memory",
         "title": "Максимальный — всё на полную",
         "about": "все моды сборки, окно рисуется всегда (30 FPS, можно смотреть его глазами), дальность 8 чанков, "
                  "3,5 ГБ Java, больше лучей зрения, обычный приоритет, длинная память разговора ИИ",
@@ -100,7 +108,7 @@ PROFILE_KEYS = {"eco": "eco", "эконом": "eco", "1": "eco", "balanced": "ba
 def apply_profile(cfg, name):
     """Settings of a launch mode on top of config.json."""
     name = PROFILE_KEYS.get(str(name).lower(), "balanced")
-    cfg.update({k: v for k, v in PROFILES[name].items() if k not in ("title", "about")})
+    cfg.update({k: v for k, v in PROFILES[name].items() if k not in ("title", "about", "title_en", "about_en")})
     cfg["profile"] = name
     return name
 
@@ -210,21 +218,24 @@ def resolve_install(cfg, remembered_pack="", ask=False, world=""):
     pack = cfg.get("pack_version") or remembered_pack
     if pack not in packs:
         if not packs:
-            raise SystemExit("В %s нет ни одной сборки с модами (versions/<имя>/mods). Укажи minecraft_dir и "
-                             "pack_version в config.json." % mc)
+            raise SystemExit(ui("В %s нет ни одной сборки с модами (versions/<имя>/mods). Укажи minecraft_dir и "
+                                "pack_version в config.json.",
+                                "No modpack with mods in %s (versions/<name>/mods). Set minecraft_dir and pack_version "
+                                "in config.json.") % mc)
         pack = packs[0]
         if len(packs) > 1 and ask:
-            print("\nВ какой сборке играть с Альтроном?")
+            print(ui("\nВ какой сборке играть с Альтроном?", "\nWhich modpack should Altron play in?"))
             for i, name in enumerate(packs, 1):
                 print("  %d — %s" % (i, name))
-            answer = input("Сборка [1-%d]: " % len(packs)).strip()
+            answer = input(ui("Сборка [1-%d]: ", "Modpack [1-%d]: ") % len(packs)).strip()
             if answer.isdigit() and 1 <= int(answer) <= len(packs):
                 pack = packs[int(answer) - 1]
     cfg["pack_version"] = pack
     if not cfg.get("java") or not rel(cfg["java"]).exists():
         cfg["java"] = find_java(mc)
         if not cfg["java"]:
-            raise SystemExit("Не нашёл Java 17. Установи её или укажи путь в config.json (\"java\").")
+            raise SystemExit(ui("Не нашёл Java 17. Установи её или укажи путь в config.json (\"java\").",
+                                "Java 17 not found. Install it or set its path in config.json (\"java\")."))
     return pack
 
 

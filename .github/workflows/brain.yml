@@ -1,0 +1,28 @@
+name: Brain tests
+
+on:
+  push:
+    branches: [main]
+    paths: ['brain/**', '.github/workflows/brain.yml']
+  pull_request:
+    paths: ['brain/**', '.github/workflows/brain.yml']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install what the tests need
+        run: pip install numpy httpx pyflakes
+
+      - name: Lint (undefined names, unused imports)
+        run: python -m pyflakes brain
+
+      - name: Tests
+        run: python -m unittest discover -s brain/tests -v

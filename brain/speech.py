@@ -157,8 +157,16 @@ class TTS:
         "ultron": (0.84, 0.35, 0.55, 0.6, 0.22),
     }
 
+    # how a mood changes the delivery: pace, pitch, loudness (on top of the style)
+    MOODS = {
+        "alert": (1.15, 1.05, 1.0),     # danger, a fight: faster and higher
+        "excited": (1.07, 1.03, 1.0),   # an exclamation, good news
+        "sad": (0.9, 0.96, 0.85),       # sympathy, a loss: slower, lower, quieter
+    }
+
     def __init__(self, cfg):
         from piper import SynthesisConfig
+        self._config = SynthesisConfig
         self.cfg = cfg
         self.paths = {k.lower(): v for k, v in (cfg.get("tts_voices") or {}).items()}
         self.voices = {}
@@ -168,9 +176,8 @@ class TTS:
             comb = float(cfg["tts_robot"])
         self.pitch = float(cfg.get("tts_pitch", pitch))
         self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
-        speed = max(0.5, float(cfg.get("tts_speed", 1.0)))
-        # lowering the pitch slows the voice down: speak that much faster first, so the pace stays the same
-        self.syn = SynthesisConfig(length_scale=self.pitch / speed, volume=1.0)
+        self.speed = max(0.5, float(cfg.get("tts_speed", 1.0)))
+        self.moods = bool(cfg.get("tts_moods", True))
         self._voice(None)   # the fallback voice loads now: a broken path shows at start, not at the first word
 
     def _voice(self, lang):
@@ -205,18 +212,22 @@ class TTS:
             out = tail
         return out
 
-    def synth(self, text, lang=None):
+    def synth(self, text, lang=None, mood=None):
         """Yields 48 kHz mono s16le PCM chunks, one per sentence."""
         text = clean_for_speech(text)
         if not text:
             return
-        for chunk in self._voice(lang).synthesize(text, self.syn):
+        pace, rise, loud = self.MOODS.get(mood, (1.0, 1.0, 1.0)) if self.moods else (1.0, 1.0, 1.0)
+        pitch = self.pitch * rise
+        # lowering the pitch slows the voice down: speak that much faster first, so the pace stays the same
+        syn = self._config(length_scale=pitch / (self.speed * pace), volume=1.0)
+        for chunk in self._voice(lang).synthesize(text, syn):
             a = np.asarray(chunk.audio_int16_array, dtype=np.float32).reshape(-1) / 32768.0
             # read at a lower rate than it was made: the whole voice goes down by the pitch factor
-            y = resample(a, chunk.sample_rate * self.pitch, 48000)
+            y = resample(a, chunk.sample_rate * pitch, 48000)
             y = self._effects(y, 48000)
             peak = float(np.max(np.abs(y))) if len(y) else 0.0
             if peak > 0:
-                y = y * (0.85 / peak)
+                y = y * (0.85 * loud / peak)
             y = np.concatenate([np.zeros(2400, dtype=np.float32), y, np.zeros(2400, dtype=np.float32)])
             yield (y * 32767).astype("<i2").tobytes()

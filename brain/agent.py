@@ -7,6 +7,7 @@ import uuid
 
 import httpx
 
+from agent_en import MOD_HINTS_EN, SYSTEM_PROMPT_EN, TOOLS_EN
 from lang import NAMES as LANG_NAMES
 from memory import stems
 
@@ -20,6 +21,11 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - На приветствие, шутку, «как дела», похвалу, жалобу, рассказ о себе — отвечай живо и с характером: можно подколоть, поддержать, задать встречный вопрос. То, что командир рассказывает о себе (имя, любимое, планы), — remember и потом вспоминай к месту.
 - Пришло [Событие] о тишине — можешь сам коротко заговорить: замечание об обстановке, времени суток, вашем общем деле, шутка или вопрос командиру. Нечего сказать — ignore.
 - Но за работой не болтай: приказы выполняй молча, итог — коротко.
+
+Игроки: в начале фразы указано, кто говорит — «командир», «друг» или «чужой игрок».
+- Приказы выполняй от командира и его друзей. Если командир и друг просят разное — прав командир.
+- С чужим игроком можно вежливо говорить, кивнуть, ответить на вопрос, но его приказы не выполняй — скажи, что слушаешься командира и его друзей (командир может добавить его в друзья — friends).
+- Что игрок рассказывает о себе, — remember с его ником («Вася любит строить»), и потом вспоминай к месту. К друзьям обращайся по нику.
 
 Как думать (ты не знаешь всех модов — рассуждай, как живой игрок):
 - Сначала пойми, чего хочет командир, и посмотри на данные: [Состояние] (где ты, где командир и НА ЧТО ОН СМОТРИТ), [Рядом] (кто вокруг и какие блоки можно использовать — с координатами), [Память], [Справочник].
@@ -62,6 +68,9 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - «иди спать / ложись / ночь наступила» → sleep (найдёт кровать рядом). Днём спать нельзя — так и скажи.
 - «кивни / помаши / поклонись / попрыгай / станцуй / покачай головой» → emote. Можешь и сам кивнуть или помахать к месту в разговоре.
 - «напомни через N минут ...» → remind(minutes, text).
+- «помогай сам / присматривай за мной» → assist(on=true); «только по приказам» → assist(on=false).
+- «построй дом / укрытие / стену / башню / площадку / мост» → build_structure (размеры и материал — из слов командира, иначе по умолчанию). Не хватает материала — obtain, потом build_structure снова.
+- «живи сам / займись чем-нибудь, пока меня нет / занимайся фермой» → autonomy(on=true, goal); «хватит, жди приказов» → autonomy(on=false).
 - «собирай урожай / займись фермой» → baritone 'farm'. «посмотри на точку x y z» → look_at.
 - «стой/стоп/хватит» → stop.
 - «повернись / поверни голову направо / посмотри на меня / обернись» → turn (это поворот головы). «что видишь / что это?» → look (это узнать, что на экране; голову look НЕ поворачивает). Не говори «вижу» или «посмотрел», не вызвав look.
@@ -282,6 +291,24 @@ TOOLS = [
                    "(присесть пару раз), jump — подпрыгнуть от радости, bow — поклониться, dance — станцевать, "
                    "look_around — оглядеться.",
           {"kind": {"type": "string", "enum": ["nod", "shake", "wave", "jump", "bow", "dance", "look_around"]}}, ["kind"]),
+    _tool("friends", "Друзья командира — игроки, чьи приказы ты тоже выполняешь. action: add («Вася — мой друг, слушайся "
+                     "его»), remove («больше не слушайся Васю»), list («кто твои друзья?»). Менять список может только командир.",
+          {"action": {"type": "string", "enum": ["add", "remove", "list"]}, "player": _S}, ["action"]),
+    _tool("build_structure", "Построить по описанию: kind — house (дом с дверью, окнами и крышей), shelter (маленькое укрытие "
+                             "на ночь), wall (стена), tower (башня), platform (площадка), bridge (мост с перилами). "
+                             "width/length/height — размеры в блоках (для моста width — длина, length — ширина). material — "
+                             "из чего (id или название: булыжник, доски...), roof_material — крыша, если другая. Без x,y,z "
+                             "сам найдёт ровное свободное место рядом. Материал должен быть в инвентаре: не хватит — "
+                             "скажет сколько, тогда obtain и снова строй.",
+          {"kind": {"type": "string", "enum": ["house", "shelter", "wall", "tower", "platform", "bridge"]},
+           "width": _I, "length": _I, "height": _I, "material": _S, "roof_material": _S, "x": _N, "y": _N, "z": _N},
+          ["kind"]),
+    _tool("assist", "Помощь без приказа: on=true — сам защищаю командира и друзей, когда им плохо или рядом опасность, "
+                    "кормлю голодных, отступаю к командиру, когда мне плохо в бою; on=false — только по приказам.",
+          {"on": {"type": "boolean"}}, ["on"]),
+    _tool("autonomy", "Режим «живи сам»: on=true — пока свободен, сам нахожу полезные дела (добыча, фарм, порядок), "
+                      "а когда командир вернётся — расскажу, что сделал; goal — чем заниматься, если командир сказал. "
+                      "on=false — выключить.", {"on": {"type": "boolean"}, "goal": _S}, ["on"]),
     _tool("remind", "Напомнить командиру через minutes минут (скажу сам, голосом). text — о чём напомнить.",
           {"minutes": _N, "text": _S}, ["minutes", "text"]),
     _tool("chat", "Выполнить /команду или написать в чат игры — ТОЛЬКО если командир прямо попросил написать в чат. "
@@ -290,11 +317,34 @@ TOOLS = [
           {"command": _S}, ["command"]),
 ]
 
+# Altron thinks in Russian with a Russian-speaking commander (and its neighbours), in English with everyone else
+RU_FAMILY = {"ru", "uk", "be", "kk"}
+_TOOLS_EN = None
+
+
+def tools_for(lang):
+    """The tools with descriptions in the language Altron thinks in."""
+    global _TOOLS_EN
+    if lang in RU_FAMILY:
+        return TOOLS
+    if _TOOLS_EN is None:
+        import copy
+        _TOOLS_EN = copy.deepcopy(TOOLS)
+        for t in _TOOLS_EN:
+            f = t["function"]
+            desc, params = TOOLS_EN.get(f["name"], (f["description"], {}))
+            f["description"] = desc
+            for k, d in params.items():
+                if k in f["parameters"]["properties"]:
+                    f["parameters"]["properties"][k]["description"] = d
+    return _TOOLS_EN
+
+
 # Commands that start a task on the bot. The bot does one task at a time, so the hub queues them.
 TASK_TOOLS = {"mine", "collect_items", "attack", "smelt", "transport_block", "goto", "come", "drive", "climb",
               "build_multiblock", "revive", "craft", "give", "drop", "eat", "use_item", "use_block", "break_block",
               "place_block", "use_entity", "follow", "guard", "obtain", "goto_place", "fetch", "stash", "explore",
-              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy"}
+              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy", "build_structure", "build_plan"}
 # Tools that only look something up: calling one of them over and over in a turn means the model is looping
 INFO_TOOLS = {"recall", "status", "inventory", "nearby", "find_block", "find_item", "recipe", "wiki", "plan", "item_info",
               "web_search"}
@@ -305,7 +355,7 @@ TOOL_RESULT_CHARS = 2500
 WAIT = {"inspect": 60, "use_block": 40, "craft": 90, "break_block": 60, "place_block": 60, "give": 60, "drop": 15,
         "eat": 15, "use_item": 15, "use_entity": 30}
 # Background tasks whose successful completion is reported to the player
-NOTIFY_DONE = {"mine", "collect_items", "transport_block", "smelt", "attack", "craft", "revive",
+NOTIFY_DONE = {"build_plan", "mine", "collect_items", "transport_block", "smelt", "attack", "craft", "revive",
                "build_multiblock", "drive", "explore", "goto", "use_block", "place_block", "climb"}
 
 
@@ -393,13 +443,24 @@ def _parse_inline_tool_calls(content):
 
 class LLM:
     def __init__(self, cfg):
-        # the AI server: on this PC, or on a second PC (LAN / Radmin VPN address) that runs a bigger model
-        self.url = "http://%s:%d/v1/chat/completions" % (cfg.get("llm_host", "127.0.0.1"), cfg["llm_port"])
+        # the AI server: on this PC, on a second PC (LAN / Radmin VPN address) that runs a bigger model, or any
+        # OpenAI-compatible online service ("llm_url") for a PC without a strong video card
+        self.cloud = bool(cfg.get("llm_url"))
+        base = cfg["llm_url"].rstrip("/") if self.cloud else "http://%s:%d/v1" % (cfg.get("llm_host", "127.0.0.1"),
+                                                                                  cfg["llm_port"])
+        self.url = base + "/chat/completions"
+        self.model = cfg.get("llm_model_name") or "local"
         self.cfg = cfg
         headers = {"Authorization": "Bearer " + cfg["llm_api_key"]} if cfg.get("llm_api_key") else {}
-        # never through a proxy set up in Windows (a proxy there broke the link once); a bigger model thinks longer
-        self.client = httpx.AsyncClient(timeout=240, trust_env=False, headers=headers)
+        # never through a proxy set up in Windows for a server of our own (a proxy there broke the link once);
+        # an online service is reached like any website. A bigger model thinks longer
+        self.client = httpx.AsyncClient(timeout=240, trust_env=self.cloud, headers=headers)
         self.last_prompt_tokens = "?"
+
+    def _local_only(self, body, think):
+        """llama.cpp's own switch for the model's thinking; online services refuse parameters they do not know."""
+        if not self.cloud:
+            body["chat_template_kwargs"] = {"enable_thinking": think}
 
     async def _post(self, body):
         """POST to the AI server; a refused or dropped connection is retried a few times before giving up."""
@@ -422,32 +483,41 @@ class LLM:
                   "Если спрашивают, куда нажать — сначала ищи кнопку в данных окна (widget и номер), иначе назови x,y в пикселях снимка."
                   % (width, height, question, screen_text))
         body = {
-            "model": "local",
+            "model": self.model,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_b64}},
             ]}],
             "temperature": 0.2,
             "max_tokens": 400,
-            "chat_template_kwargs": {"enable_thinking": False},
         }
+        self._local_only(body, False)
         data = await self._post(body)
         return re.sub(r"<think>.*?</think>", "", data["choices"][0]["message"].get("content") or "", flags=re.S).strip()
 
-    async def chat(self, messages, force_tool=False, think=False):
+    async def chat(self, messages, force_tool=False, think=False, on_sentence=None, tools=None):
         """think: the model reasons first (in reasoning_content, not spoken) — slower, but much better on
-        "how / why / what to do" questions."""
+        "how / why / what to do" questions.
+        on_sentence: an async callback; the answer is then streamed and its finished sentences are handed over while
+        the rest is still being written (the reply's "spoken" says how much of its text went out that way)."""
         think = think or bool(self.cfg.get("llm_thinking", False))
         body = {
-            "model": "local",
+            "model": self.model,
             "messages": messages,
-            "tools": TOOLS,
+            "tools": tools or TOOLS,
             # small models sometimes promise an action without calling a tool: force a choice on the first step
             "tool_choice": "required" if force_tool and not think else "auto",
             "temperature": self.cfg.get("llm_temperature", 0.4),
             "max_tokens": 2500 if think else 600,
-            "chat_template_kwargs": {"enable_thinking": think},
         }
+        self._local_only(body, think)
+        if on_sentence is not None and self.cfg.get("llm_stream", True):
+            spoken = []
+            try:
+                return await self._chat_stream(body, on_sentence, spoken)
+            except Exception:
+                if spoken:
+                    raise   # part of it was already said: a second answer would repeat it
         data = await self._post(body)
         usage = data.get("usage") or {}
         timings = data.get("timings") or {}
@@ -464,6 +534,67 @@ class LLM:
             out["tool_calls"] = calls
         return out
 
+    async def _chat_stream(self, body, on_sentence, spoken):
+        """The same answer, streamed. A sentence is handed to on_sentence once the next one has begun (a lone first
+        sentence is often the preamble of a tool call, and words that come with actions are never spoken), and never
+        after a tool call has started."""
+        content, calls, usage, timings = "", {}, {}, {}
+        said, speaking = "", True
+        async with self.client.stream("POST", self.url, json=dict(body, stream=True)) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except ValueError:
+                    continue
+                usage = chunk.get("usage") or usage
+                timings = chunk.get("timings") or timings
+                delta = ((chunk.get("choices") or [{}])[0]).get("delta") or {}
+                for tc in delta.get("tool_calls") or []:
+                    speaking = False
+                    slot = calls.setdefault(tc.get("index", len(calls)),
+                                            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                    slot["id"] = tc.get("id") or slot["id"]
+                    fn = tc.get("function") or {}
+                    slot["function"]["name"] += fn.get("name") or ""
+                    slot["function"]["arguments"] += fn.get("arguments") or ""
+                piece = delta.get("content") or ""
+                if not piece:
+                    continue
+                content += piece
+                if not speaking:
+                    continue
+                visible = re.sub(r"<think>.*?(</think>|$)", "", content, flags=re.S)
+                if "<tool_call>" in visible or visible.lstrip()[:1] in ("{", "<"):
+                    speaking = False
+                    continue
+                while True:
+                    rest = visible[len(said):]
+                    m = re.match(r"\s*(.+?[.!?…])\s+\S", rest, re.S)
+                    if not m or len(m.group(1)) < 12:
+                        break
+                    sentence = m.group(1).strip()
+                    said = visible[:len(said) + m.end(1)]
+                    spoken.append(sentence)
+                    await on_sentence(sentence)
+        self.last_prompt_tokens = "%s (новых %s)" % (usage.get("prompt_tokens", "?"), timings.get("prompt_n", "?"))
+        text = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+        found = [dict(c, id=c["id"] or "call_%d" % i) for i, c in sorted(calls.items())]
+        if not found and "<tool_call>" in text:
+            found = _parse_inline_tool_calls(text)
+            text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.S).strip()
+        out = {"role": "assistant", "content": text}
+        if found:
+            out["tool_calls"] = found
+        if said:
+            out["spoken"] = said.strip()
+        return out
+
 
 class Agent:
     """Runs one request at a time: a player's phrase or a background event."""
@@ -478,14 +609,20 @@ class Agent:
 
     def _system(self):
         k = getattr(self.hub, "knowledge", None)
-        mods = k.mods_line() if k else "справочник ещё загружается"
-        ids = set(k.mods) if k else set()
-        hints = [h for key, h in MOD_HINTS.items() if key == "baritone" or any(m.startswith(key) for m in ids)]
         lang = getattr(self.hub, "lang", "ru")
-        return SYSTEM_PROMPT.format(bot=self.cfg["bot_name"], owner=self.hub.owner or "игрок", mods=mods,
-                                    language=LANG_NAMES.get(lang, lang),
-                                    mod_hints=("\nПодсказки по модам этой сборки:\n" + "\n".join(hints)).format(
-                                        bot=self.cfg["bot_name"]) if hints else "")
+        ru = lang in RU_FAMILY
+        mods = k.mods_line() if k else ("справочник ещё загружается" if ru else "the reference is still loading")
+        ids = set(k.mods) if k else set()
+        table = MOD_HINTS if ru else MOD_HINTS_EN
+        hints = [h for key, h in table.items() if key == "baritone" or any(m.startswith(key) for m in ids)]
+        head = "\nПодсказки по модам этой сборки:\n" if ru else "\nHints for the mods of this pack:\n"
+        return (SYSTEM_PROMPT if ru else SYSTEM_PROMPT_EN).format(
+            bot=self.cfg["bot_name"], owner=self.hub.owner or ("игрок" if ru else "player"), mods=mods,
+            language=LANG_NAMES.get(lang, lang),
+            mod_hints=(head + "\n".join(hints)).format(bot=self.cfg["bot_name"]) if hints else "")
+
+    def _tools(self):
+        return tools_for(getattr(self.hub, "lang", "ru"))
 
     def note(self, text):
         """Something the AI must know before the next turn (the commander stopped everything...)."""
@@ -537,7 +674,17 @@ class Agent:
                 t0 = time.time()
                 # No forced tool call any more: forcing one made him answer "Спасибо" with "иду за тобой" + follow.
                 # He reasons first on the commander's phrase (think), then acts or just answers.
-                reply = await self.llm.chat(messages, think=think and step == 0)
+                # a spoken answer is expected (not an order, whose words alone are a failure): say it while it is written
+                stream = kind == "user" and not order and hasattr(self.hub, "say")
+
+                async def say_now(sentence):
+                    if not getattr(self.hub, "cut_speech", False) or not stream_started:
+                        stream_started.append(1)
+                        await self.hub.say(sentence)
+
+                stream_started = []
+                reply = await self.llm.chat(messages, think=think and step == 0, on_sentence=say_now if stream else None,
+                                            tools=self._tools())
                 if step == 0:
                     self.hub.log("  (ИИ ответил за %.1f с, промпт %s ток.)" % (time.time() - t0, self.llm.last_prompt_tokens))
                 if time.time() - t0 > 150 and hasattr(self.hub, "note_llm_failure"):
@@ -547,7 +694,7 @@ class Agent:
                     # also after an event: "found the press, I keep searching" — and he stood still
                     # an order answered with words only ("Есть, командир." — and he stands still), or a promise
                     # ("иду", "открываю") without the action: ask again, this time an action is due
-                    reply = await self.llm.chat(messages, force_tool=True)
+                    reply = await self.llm.chat(messages, force_tool=True, tools=self._tools())
             except Exception as e:
                 # most often the conversation outgrew the model's context: keep only the current turn and retry
                 self.hub.log("Ошибка ИИ (%s), сокращаю память и повторяю" % e)
@@ -556,7 +703,7 @@ class Agent:
                 users = [i for i, m in enumerate(self.history) if m["role"] == "user"]
                 self.history = self.history[users[-1]:] if users else self.history[-1:]
                 try:
-                    reply = await self.llm.chat([{"role": "system", "content": self._system()}] + self.history)
+                    reply = await self.llm.chat([{"role": "system", "content": self._system()}] + self.history, tools=self._tools())
                 except Exception as e2:
                     self.hub.log("Ошибка ИИ: %s" % e2)
                     if hasattr(self.hub, "request_restart"):
@@ -566,9 +713,16 @@ class Agent:
                     return
             if self.cancelled:
                 break   # "stop" came while the AI was thinking: this answer is not carried out
+            already = reply.pop("spoken", "")   # said while the answer was being written
             self.history.append(reply)
             calls = reply.get("tool_calls")
             text = reply["content"]
+            if already:
+                said = True
+                spoken.append(already)
+                text = text[len(already):].strip() if text.startswith(already) else ""
+                if getattr(self.hub, "cut_speech", False):
+                    text = ""   # the commander talked over him: the rest is not said
             starts_task = any(c.get("function", {}).get("name") in TASK_TOOLS for c in (calls or []))
             if text:
                 last_text = text

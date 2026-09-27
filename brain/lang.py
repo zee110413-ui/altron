@@ -37,9 +37,35 @@ PHRASES = {
     "thinking": {"ru": "Секунду, подумаю.", "en": "One moment, thinking.", "uk": "Секунду, подумаю.",
                  "de": "Einen Moment, ich denke nach.", "fr": "Un instant, je réfléchis.", "es": "Un momento, pienso.",
                  "pl": "Chwilę, pomyślę.", "pt": "Um momento, pensando."},
+    "creeper": {"ru": "%s, крипер рядом! Отойди!", "en": "%s, creeper next to you! Move!",
+                "uk": "%s, кріпер поруч! Відійди!", "de": "%s, ein Creeper neben dir! Weg da!",
+                "fr": "%s, un creeper à côté de toi ! Bouge !", "es": "¡%s, un creeper a tu lado! ¡Muévete!",
+                "pl": "%s, creeper obok ciebie! Odsuń się!", "pt": "%s, creeper do seu lado! Sai daí!"},
+    "boss": {"ru": "Внимание: рядом %s.", "en": "Warning: %s nearby.", "uk": "Увага: поруч %s.",
+             "de": "Achtung: %s in der Nähe.", "fr": "Attention : %s à proximité.", "es": "Atención: %s cerca.",
+             "pl": "Uwaga: %s w pobliżu.", "pt": "Atenção: %s por perto."},
+    "crowd": {"ru": "%s, вокруг тебя %d монстров, осторожно.", "en": "%s, %d monsters around you, careful.",
+              "uk": "%s, навколо тебе %d монстрів, обережно.", "de": "%s, %d Monster um dich herum, Vorsicht.",
+              "fr": "%s, %d monstres autour de toi, prudence.", "es": "%s, %d monstruos a tu alrededor, cuidado.",
+              "pl": "%s, wokół ciebie %d potworów, ostrożnie.", "pt": "%s, %d monstros ao seu redor, cuidado."},
+    "commander": {"ru": "Командир", "en": "Commander", "uk": "Командире", "de": "Kommandant", "fr": "Commandant",
+                  "es": "Comandante", "pl": "Dowódco", "pt": "Comandante"},
     "stuck": {"ru": "Командир, я застрял %s: выход закрыт, а ломать твоё я не буду. Открой мне, пожалуйста.",
               "en": "Commander, I am stuck %s: the way out is closed and I will not break your things. Please let me out."},
 }
+
+
+RU_FAMILY = {"ru", "uk", "be", "kk"}
+_ui = ["ru"]
+
+
+def set_ui(lang):
+    """The brain's window speaks Russian with a Russian-speaking commander (and its neighbours), English otherwise."""
+    _ui[0] = "ru" if lang in RU_FAMILY else "en"
+
+
+def ui(ru, en):
+    return ru if _ui[0] == "ru" else en
 
 
 def phrase(key, lang):

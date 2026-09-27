@@ -86,6 +86,7 @@ if (-not $Nvidia) { Warn "Видеокарта NVIDIA не найдена: ИИ 
 # ------------------------------------------------------------------------------------------------ code
 Step 'code' {
     $have = Test-Path (Join-Path $Brain 'altron.py')
+    $global:Fresh = -not (Test-Path (Join-Path $Brain 'config.json'))
     $get = -not $have
     if ($have) { $get = (Read-Host "`n   Обновить код Альтрона до последней версии? Update Altron's code? [y/N]") -match '^(y|д)' }
     if (-not $get) { return }
@@ -172,6 +173,7 @@ Step 'llama.cpp' {
 # ------------------------------------------------------------------------------------------------ the AI model
 Step 'model' {
     Say 'Модель ИИ (несколько ГБ, это долго)' 'AI model (several GB, takes a while)'
+    if ($Cfg.llm_url) { Ok "нейросеть в интернете, модель не нужна / online AI: $($Cfg.llm_url)"; return }
     if (Exists-FromBrain $Cfg.llm_model) { Ok "есть / present: $($Cfg.llm_model)"; return }
     foreach ($repo in $LlmRepos) {
         $files = Get-HfFiles $repo
@@ -282,6 +284,11 @@ Step 'modpack' {
 # ------------------------------------------------------------------------------------------------ config
 Step 'config' {
     Say 'Настройки' 'Settings'
+    if ($global:Fresh) {
+        # a new install speaks the language of this Windows first (the brain's window and Altron's voice)
+        $c = (Get-Culture).TwoLetterISOLanguageName
+        $global:Updates.languages = if (@('ru', 'uk', 'be', 'kk') -contains $c) { @('ru', 'en') } else { @('en', 'ru') }
+    }
     $upd = Join-Path $env:TEMP 'altron-config-updates.json'
     [IO.File]::WriteAllText($upd, ($global:Updates | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
     $merge = @'
