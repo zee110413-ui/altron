@@ -6,11 +6,11 @@ import numpy as np
 from launcher import rel
 
 PROMPT = ("Альтрон, иди за мной. Альтрон, найди алмазы. Добудь железо, уголь, дерево, руду. "
-          "Принеси бочки с нефтью. Скрафти кирку. Стреляй по зомби. Охраняй меня. Стоп. "
-          "Наковальня из мода HBM, ракета HBM, TaCZ, Immersive Engineering. Запомни это место.")
+          "Скрафти кирку. Стреляй по зомби. Охраняй меня. Стоп. Запомни это место. "
+          "Altron, follow me. Mine some iron. Craft a pickaxe. Guard me. Stop.")
 
-# words of this pack Whisper should prefer when unsure ("ракету", not "руку"; "танк", not "танец")
-HOTWORDS = "Альтрон командир ракета ракету танк танке HBM TaCZ наковальня печка уголь железо нефть стоп стой"
+# words Whisper should prefer when unsure (only with "stt_prompt": true)
+HOTWORDS = "Альтрон Altron командир commander уголь железо алмазы печка стоп стой stop"
 
 # Whisper's typical hallucinations on silence/noise
 HALLUCINATIONS = ("субтитр", "продолжение следует", "спасибо за просмотр", "редактор субтитров", "корректор",
@@ -68,7 +68,7 @@ class STT:
             try:
                 # on the video card a phrase takes ~0.1-0.3 s instead of ~2 s on the processor
                 self.model = WhisperModel(path, device="cuda", compute_type=cfg.get("stt_compute_gpu", "float16"))
-                self.model.transcribe(np.zeros(16000, dtype=np.float32), language="ru")   # load the CUDA kernels now
+                self.model.transcribe(np.zeros(16000, dtype=np.float32), language="en")   # load the CUDA kernels now
                 self.device = "видеокарта"
             except Exception as e:
                 log("Распознавание речи на видеокарте не запустилось (%s) — работаю на процессоре." % e)
@@ -84,6 +84,12 @@ class STT:
         # ("Стреляй по зону", "Принеси бочки с нефтью" said by nobody): off unless asked for
         self.prompt = PROMPT if cfg.get("stt_prompt", False) else None
         self.hotwords = HOTWORDS if cfg.get("stt_prompt", False) else None
+        # "auto": Whisper hears which language it is, but only among the ones Altron is set to speak (a short
+        # phrase alone is easily taken for a neighbouring language)
+        lang = str(cfg.get("language", "auto")).lower()
+        self.language = None if lang == "auto" else lang
+        self.allowed = [c.lower() for c in cfg.get("languages", [])] if self.language is None else [self.language]
+        self.last_lang = self.language or (self.allowed[0] if self.allowed else "en")
 
     def transcribe(self, pcm48):
         """pcm48: int16 numpy array, mono 48 kHz. Returns recognized text ('' if nothing)."""
@@ -94,9 +100,13 @@ class STT:
         (about -0.2 for clear speech, below -0.9 for mumbling, noise or a guess)."""
         x = pcm48.astype(np.float32) / 32768.0
         x = np.convolve(x, _LP_48_16, mode="same")[::3]
-        segments, _ = self.model.transcribe(x, language="ru", beam_size=self.beam, vad_filter=True,
+        lang = self.language or self._detect(x)
+        segments, info = self.model.transcribe(x, language=lang, beam_size=self.beam, vad_filter=True,
                                             condition_on_previous_text=False, without_timestamps=True,
                                             initial_prompt=self.prompt, hotwords=self.hotwords)
+        heard = lang or getattr(info, "language", None)
+        if heard and (not self.allowed or heard in self.allowed):
+            self.last_lang = heard
         parts, logp, weight = [], 0.0, 0
         for s in segments:
             # Whisper's own rule for "this was not speech": likely silence and an unsure guess
@@ -113,6 +123,19 @@ class STT:
             return "", -9.0
         return text, logp / weight
 
+    def _detect(self, x):
+        """The most likely of the allowed languages (None: let Whisper decide by itself)."""
+        if not self.allowed:
+            return None
+        if len(self.allowed) == 1:
+            return self.allowed[0]
+        try:
+            _, _, probs = self.model.detect_language(x)
+        except Exception:
+            return None
+        best = max(((p, c) for c, p in probs if c in self.allowed), default=None)
+        return best[1] if best else self.allowed[0]
+
 
 def clean_for_speech(text):
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
@@ -123,33 +146,75 @@ def clean_for_speech(text):
 
 
 class TTS:
-    def __init__(self, cfg):
-        from piper import PiperVoice, SynthesisConfig
-        self.voice = PiperVoice.load(str(rel(cfg["tts_voice"])))
-        speed = max(0.5, float(cfg.get("tts_speed", 1.0)))
-        self.syn = SynthesisConfig(length_scale=1.0 / speed, volume=1.0)
-        self.robot = float(cfg.get("tts_robot", 0.25))
+    """Piper voices, one per language ("tts_voices": {"ru": path, "en": path}); "tts_voice" is the fallback.
+    "tts_style": "robot" — a light metallic helmet; "ultron" — a lower, doubled, cold synthetic voice with a
+    metal resonance and a short hall (an effect on any voice model, not a copy of anyone's real voice)."""
 
-    def _robotize(self, y, sr):
-        """Metallic 'helmet' resonance from two short echoes. No amplitude modulation:
-        the earlier ring modulator made the voice sound choppy."""
-        if self.robot <= 0:
-            return y
+    STYLES = {
+        # pitch factor, metal comb, chorus depth, drive, hall
+        "plain": (1.0, 0.0, 0.0, 0.0, 0.0),
+        "robot": (1.0, 0.25, 0.0, 0.0, 0.0),
+        "ultron": (0.84, 0.35, 0.55, 0.6, 0.22),
+    }
+
+    def __init__(self, cfg):
+        from piper import SynthesisConfig
+        self.cfg = cfg
+        self.paths = {k.lower(): v for k, v in (cfg.get("tts_voices") or {}).items()}
+        self.voices = {}
+        style = str(cfg.get("tts_style", "robot")).lower()
+        pitch, comb, chorus, drive, hall = self.STYLES.get(style, self.STYLES["robot"])
+        if "tts_robot" in cfg and style == "robot":
+            comb = float(cfg["tts_robot"])
+        self.pitch = float(cfg.get("tts_pitch", pitch))
+        self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
+        speed = max(0.5, float(cfg.get("tts_speed", 1.0)))
+        # lowering the pitch slows the voice down: speak that much faster first, so the pace stays the same
+        self.syn = SynthesisConfig(length_scale=self.pitch / speed, volume=1.0)
+        self._voice(None)   # the fallback voice loads now: a broken path shows at start, not at the first word
+
+    def _voice(self, lang):
+        key = lang if lang in self.paths else None
+        if key not in self.voices:
+            from piper import PiperVoice
+            path = self.paths[key] if key else self.cfg["tts_voice"]
+            self.voices[key] = PiperVoice.load(str(rel(path)))
+        return self.voices[key]
+
+    def _effects(self, y, sr):
         out = y.copy()
-        for delay_ms, gain in ((3.1, 0.9), (7.3, 0.5)):
-            d = int(sr * delay_ms / 1000)
-            out[d:] += gain * self.robot * y[:-d]
+        if self.chorus > 0:
+            # a second, slightly wandering copy of the voice (5-11 ms): the "many voices in one" of a machine
+            n = np.arange(len(y), dtype=np.float32)
+            delay = sr * (0.008 + 0.003 * np.sin(2 * np.pi * 0.6 * n / sr))
+            out += self.chorus * np.interp(n - delay, n, y, left=0.0)
+        if self.comb > 0:
+            # metallic resonance from two short echoes (no amplitude modulation: that made the voice choppy)
+            for delay_ms, gain in ((3.1, 0.9), (7.3, 0.5)):
+                d = int(sr * delay_ms / 1000)
+                out[d:] += gain * self.comb * y[:-d]
+        if self.drive > 0:
+            peak = float(np.max(np.abs(out))) or 1.0
+            out = np.tanh(out / peak * (1 + 3 * self.drive)) / np.tanh(1 + 3 * self.drive)
+        if self.hall > 0:
+            tail = out.copy()
+            for delay_ms, gain in ((43, 0.55), (71, 0.4), (113, 0.28), (167, 0.18)):
+                d = int(sr * delay_ms / 1000)
+                if d < len(out):
+                    tail[d:] += gain * self.hall * out[:-d]
+            out = tail
         return out
 
-    def synth(self, text):
+    def synth(self, text, lang=None):
         """Yields 48 kHz mono s16le PCM chunks, one per sentence."""
         text = clean_for_speech(text)
         if not text:
             return
-        for chunk in self.voice.synthesize(text, self.syn):
+        for chunk in self._voice(lang).synthesize(text, self.syn):
             a = np.asarray(chunk.audio_int16_array, dtype=np.float32).reshape(-1) / 32768.0
-            y = resample(a, chunk.sample_rate, 48000)
-            y = self._robotize(y, 48000)
+            # read at a lower rate than it was made: the whole voice goes down by the pitch factor
+            y = resample(a, chunk.sample_rate * self.pitch, 48000)
+            y = self._effects(y, 48000)
             peak = float(np.max(np.abs(y))) if len(y) else 0.0
             if peak > 0:
                 y = y * (0.85 / peak)

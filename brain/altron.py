@@ -2,37 +2,42 @@
 import asyncio
 import base64
 import json
+import os
 import re
 import subprocess
 import sys
 import threading
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import httpx
 import numpy as np
 
 from agent import ACTION_WORDS, Agent, NOTIFY_DONE, TASK_TOOLS, _said_before, is_question, is_recipe_question, needs_thinking
-from launcher import BRAIN_DIR, PROFILES, apply_profile, install_new_mod, launch_bot, rel, server_address
+from launcher import (BRAIN_DIR, PROFILES, apply_profile, install_new_mod, launch_bot, primary_language, rel,
+                      resolve_install, server_address)
+from lang import NAMES as LANG_NAMES, guess_lang, phrase
 from memory import LongMemory, keywords, stems
 from speech import loud_enough
 
 # "стой", "останови все задачи", "прекрати" must stop him at once (they went to the AI as orders before)
-STOP_RE = re.compile(r"\b(стоп|стой|хватит|останови\w*|прекрати\w*|отмена|отмени\w*|отбой|замри|stop)\b", re.I)
+STOP_RE = re.compile(r"\b(стоп|стой|хватит|останови\w*|прекрати\w*|отмена|отмени\w*|отбой|замри|stop|halt|cancel|freeze)\b", re.I)
 ENDLESS = {"follow", "guard"}  # modes: a new task simply replaces them
 MOVES = {"come", "goto", "goto_place"}   # just walking: a new order replaces it instead of waiting behind it
 MEMORY_TOOLS = {"remember", "forget", "recall", "mark_place", "goto_place"}
 VOICED_RMS = 400        # a 20 ms voice frame louder than this is speech (s16 scale)
 SILENCE_END = 0.6       # this long without speech ends a phrase (shorter would cut phrases at pauses)
-# Said at once to an order (synthesized in advance), so the commander hears an answer without waiting for the AI
-ACKS = ("Есть, командир.", "Принял.", "Сделаю.", "Понял, командир.")
 SPEECH_CHARS = 260               # long answers go to chat; only the start is spoken
 SPEECH_CHARS_VOICE_ONLY = 420    # without chat replies the voice is the only channel: speak more of it
 # work blocks that are not used up: if one stands nearby, the supply chain does not build another
 STATIONS = ["minecraft:crafting_table", "minecraft:furnace"]
 REPEAT_SEC = 25                  # the same words are not said again within this time
 ROUTINES = {"fetch": "принести предмет из сундука", "stash": "сложить вещи в сундук",
-            "study": "изучение производства"}
+            "study": "изучение производства", "load_machine": "перенос материала в машину", "sleep": "сон в кровати",
+            "supply": "раскладка сырья по линиям", "check_lines": "проверка линий", "tidy": "раскладка своих вещей по местам"}
+# the jobs in which he picks things up on purpose; otherwise the host keeps him from sweeping belts and floors
+GATHERING = {"mine", "collect_items", "break_block", "transport_block"}
 # "куда это положить?", "что делать с рудой?" — answered from the production map he learned
 WHERE_PUT_RE = re.compile(r"куда\s+(?:мне\s+|нам\s+|его\s+|её\s+|их\s+)?(?:положить|класть|ложить|девать|деть|отнести|сунуть|кинуть|"
                           r"засунуть|отправить)|что\s+(?:мне\s+)?делать\s+с|где\s+(?:переработать|переплавить|сделать)", re.I)
@@ -86,6 +91,15 @@ class Hub:
         self.pending = {}         # cmd id -> Future(result)
         self.task_waiters = {}    # task id -> Future(event)
         self.agent_tasks = set()  # task ids started by the agent that we did not wait for
+        self.pickup_on = None         # may Altron pick up things lying about (host side switch)
+        self.pickup_tasks = set()
+        self.maintain_on = False      # "поддерживай производство": keep the lines' input chests filled from his stock
+        self.backpack_seen = {}       # what his backpack held last time he opened it
+        self.maintain_line = ""
+        self.watch_lines_on = False   # "следи за производством": a quiet check of the lines every 15 min
+        self.watch_me_on = False      # "смотри, как я делаю": what the commander does is summed up afterwards
+        self.watch_log = []
+        self.ignored = []             # times the commander's phrases turned out not to be for Altron
         self.running = None       # (task id, tool name) of the agent's task in progress
         self.running_args = None
         self.queue = []           # [(tool name, args)] waiting for the running task
@@ -103,7 +117,8 @@ class Hub:
         self.voice = {}           # speaker uuid -> {"name","chunks","last","dist"}
         self.windows = {}         # speaker name -> time until which no wake word is needed
         self.heard = 0            # voice phrases addressed to Altron so far
-        self.acks = []            # [(text, pcm)] instant acknowledgements, synthesized once
+        self.acks = {}            # language -> [(text, pcm)]: instant acknowledgements, synthesized once
+        self.lang = primary_language(cfg)   # the language the commander speaks now (Altron answers in it)
         self.ack_n = 0
         self.acked = False        # the current order was already acknowledged aloud
         self.said_recently = []   # [(time, text)]: no saying the same thing twice in a row
@@ -121,6 +136,8 @@ class Hub:
         self.agent = Agent(cfg, self)
         self.loop = None
         self.busy = False
+        self.last_talk = time.time()   # last word between Altron and anyone: long silence invites small talk
+        self.reminders = set()         # the commander's reminders waiting for their time
 
     # ------------------------------------------------------------------ utils
     def log(self, text):
@@ -147,6 +164,7 @@ class Hub:
             self.log("(повтор, не говорю) " + text)
             return
         self.said_recently.append((now, text))
+        self.last_talk = now
         self.log("Альтрон: " + text)
         self.memory.log("Альтрон", text)
         if self.owner:
@@ -168,7 +186,7 @@ class Hub:
             cut = max(spoken.rfind(". ", 0, limit), spoken.rfind("! ", 0, limit), spoken.rfind("? ", 0, limit))
             spoken = spoken[:cut + 1] if cut > 40 else spoken[:limit]
         # sentence by sentence: the first one sounds while the next ones are still being synthesized
-        gen = self.tts.synth(spoken)
+        gen = self.tts.synth(spoken, self.lang)
         chunks, at = [], None
         while True:
             pcm = await asyncio.to_thread(next, gen, None)
@@ -192,13 +210,15 @@ class Hub:
 
     async def acknowledge(self):
         """Instant answer to an order, before the AI has even thought: a short phrase synthesized in advance."""
-        if not self.acks and self.tts is not None:
+        lang = self.lang
+        if lang not in self.acks and self.tts is not None:
             def make():
-                return [(t, b"".join(self.tts.synth(t))) for t in ACKS]
-            self.acks = await asyncio.to_thread(make)
-        if not self.acks:
+                return [(t, b"".join(self.tts.synth(t, lang))) for t in phrase("acks", lang)]
+            self.acks[lang] = await asyncio.to_thread(make)
+        acks = self.acks.get(lang)
+        if not acks:
             return
-        text, pcm = self.acks[self.ack_n % len(self.acks)]
+        text, pcm = acks[self.ack_n % len(acks)]
         self.ack_n += 1
         self.log("Альтрон (сразу): " + text)
         if self.recorder is not None:
@@ -342,13 +362,70 @@ class Hub:
                 if res.get("ok"):
                     have = res.get("items") or {}
             return await asyncio.to_thread(self.knowledge.plan, str(args.get("item", "")), args.get("count", 1) or 1, have)
+        if name == "remind":
+            return self.remind(args)
         if self.bot is None:
             return "Альтрон ещё не в игре. Попроси игрока ввести команду /altron в своём мире."
+        if name == "emote":
+            return await self.emote(args)
         far = self.too_far(name, args)
         if far:
             return far
         if name == "look":
             return await self.look(args.get("question", ""))
+        if name == "watch_me":
+            on = str(args.get("on", True)).lower() not in ("false", "0", "no", "нет", "off")
+            if on:
+                self.watch_me_on, self.watch_log = True, []
+                return "смотрю, что ты делаешь с сундуками и машинами; когда закончишь, скажи «всё» или «понял?»"
+            self.watch_me_on = False
+            if not self.watch_log:
+                return "пока ничего не заметил: ты не клал и не брал вещи из сундуков и машин"
+            return "понял и запомнил: " + "; ".join(self.watch_log[-10:])
+        if name == "watch_lines":
+            on = str(args.get("on", True)).lower() not in ("false", "0", "no", "нет", "off")
+            if on and not self.watch_lines_on:
+                self.watch_lines_on = True
+                asyncio.create_task(self.line_watch_loop())
+                self.save_modes()
+                return "слежу за производством: раз в 15 минут проверяю линии и скажу, если какая-то встанет"
+            self.watch_lines_on = on
+            self.save_modes()
+            return "слежу за производством" if on else "больше не слежу за линиями"
+        if name == "maintain":
+            on = str(args.get("on", True)).lower() not in ("false", "0", "no", "нет", "off")
+            self.maintain_line = str(args.get("line") or "")
+            if not on:
+                self.maintain_on = False
+                self.save_modes()
+                return "перестал поддерживать производство"
+            data = self.memory.load_world_json("production")
+            if not data:
+                return "производство здесь ещё не изучено — сначала скажи «изучи производство»"
+            lines = [z for z in self.pick_lines(data, self.maintain_line) if z.get("needs") and z.get("sources")]
+            if not lines:
+                return "не нашёл линий, которым нужно сырьё"
+            k = self.knowledge
+            name = (lambda i: k.name(i).split(" [")[0]) if k else (lambda i: i)  # noqa: E731
+            inv = (await self.bot_call("inventory_ids", {})).get("items") or {}
+            await self.open_backpack()
+            await self.bot_call("close_container", {})
+            carried = defaultdict(int, inv)
+            for i, n in self.backpack_seen.items():
+                carried[i] += n
+            plan = "; ".join("«%s»: %s" % (z["title"], ", ".join("%s (у меня %d)" % (name(i), carried.get(i, 0))
+                                                                 for i in z["needs"][:4])) for z in lines[:6])
+            if not self.maintain_on:
+                self.maintain_on = True
+                asyncio.create_task(self.maintain_loop())
+            self.save_modes()
+            return "поддерживаю производство: раз в 2 минуты досыпаю во входы линий из своего запаса и рюкзака. " + plan
+        if name == "listen_mode":
+            only_name = str(args.get("mode", "name")).lower() in ("name", "имя", "по имени", "only_name")
+            self.cfg["wake_word_required"] = only_name
+            self.save_modes()
+            return ("теперь отвечаю, только когда меня зовут по имени «Альтрон»" if only_name
+                    else "теперь слушаю всё, что говорит командир")
         if name == "gui":
             name = self.GUI_ACTIONS.get(args.get("action", "info"), "screen")
         if name == "build_multiblock" and str(args.get("name", "")).lower() in ("", "list", "список"):
@@ -439,8 +516,19 @@ class Hub:
                 parts.append("%s:\n%s" % (title, "\n".join(lines[:8])))
         return "\n".join(parts)
 
+    def set_pickup(self, on):
+        if self.host is not None and on != self.pickup_on:
+            self.pickup_on = on
+            self.send(self.host, {"type": "bot_pickup", "on": on})
+
     async def start_task(self, name, args, wait_sec):
+        if name in GATHERING:
+            self.set_pickup(True)
         res = await self.bot_call(name, args)
+        if name in GATHERING and res.get("task_id") is not None:
+            self.pickup_tasks.add(res["task_id"])
+        elif name in GATHERING and not self.pickup_tasks:
+            self.set_pickup(False)
         msg = res.get("msg", "")
         if not res.get("ok"):
             return "ОШИБКА: " + msg
@@ -470,7 +558,8 @@ class Hub:
         res = await self.bot_call("stations", {"blocks": STATIONS, "radius": 96})
         found = set((res.get("found") or {}).keys()) if res.get("ok") else set()
         if self.knowledge is not None:
-            res = await self.bot_call("stations", {"blocks": self.knowledge.MACHINE_BLOCKS, "radius": 320})
+            blocks = await asyncio.to_thread(self.knowledge.all_machine_blocks)
+            res = await self.bot_call("stations", {"blocks": blocks, "radius": 320})
             found |= set((res.get("found") or {}).keys()) if res.get("ok") else set()
         return found
 
@@ -480,8 +569,10 @@ class Hub:
             return "ОШИБКА: справочник ещё загружается"
         inv = await self.bot_call("inventory_ids", {})
         have = inv.get("items") or {}
+        creative = bool(inv.get("creative"))
         root, steps, unresolved = await asyncio.to_thread(self.knowledge.acquire, item, count, have, await self.stations(),
-                                                          bool(inv.get("creative")), self.memory.bad_recipes())
+                                                          creative, self.memory.bad_recipes(),
+                                                          None if creative else self.stock_map(machines=True))
         if root is None:
             return "ОШИБКА: " + "; ".join(unresolved)
         if unresolved:
@@ -529,8 +620,10 @@ class Hub:
                 if left <= 0:
                     result = "ГОТОВО: в инвентаре %dx %s" % (have.get(root, 0), k.name(root))
                     break
+                creative = bool(inv.get("creative"))
                 _, steps, unresolved = await asyncio.to_thread(k.acquire, root, left, have, await self.stations(),
-                                                               bool(inv.get("creative")), self.memory.bad_recipes())
+                                                               creative, self.memory.bad_recipes(),
+                                                               None if creative else self.stock_map(machines=True))
                 if unresolved:
                     result = "не смог сам: " + "; ".join(unresolved)
                     break
@@ -539,7 +632,13 @@ class Hub:
                     break
                 failed = None
                 for name, args in steps:
-                    r = await self.start_task(name, args, 2400 if name == "explore" else 1200)   # searching buildings is slow
+                    if name == "take_stored":
+                        # what the base already has: from the chest or machine where he saw it
+                        got, why = await self.take_from(args["from"], args["item"], args["count"])
+                        r = ("ГОТОВО: взял %d %s из %d %d %d" % (got, args["item"], *args["from"]) if got > 0
+                             else "НЕ УДАЛОСЬ: не взял %s из %d %d %d: %s" % (args["item"], *args["from"], why[:100]))
+                    else:
+                        r = await self.start_task(name, args, 2400 if name == "explore" else 1200)   # searching buildings is slow
                     self.log("  [obtain] %s %s -> %s" % (name, json.dumps(args, ensure_ascii=False), r[:400]))
                     done_log.append("%s: %s" % (name, r[:120]))
                     self.learn_from(name, args, r, not r.startswith(("ОШИБКА", "НЕ УДАЛОСЬ", "ОТМЕНЕНО", "задача ещё")))
@@ -593,7 +692,7 @@ class Hub:
     async def routine(self, name, args):
         """A common job done step by step by the code: the small model only has to choose it, not to carry it out."""
         try:
-            result = await (self.fetch(args) if name == "fetch" else self.study(args) if name == "study" else self.stash(args))
+            result = await getattr(self, name)(args)
         except asyncio.CancelledError:
             result = "остановлено"
         except Exception as e:
@@ -650,13 +749,14 @@ class Hub:
         todo = machines[:25] + stores[:15]
         self.log("  [study] вижу %d машин и %d хранилищ, осматриваю %d" % (len(machines), len(stores), len(todo)))
         lines, shut, names, far = [], 0, {}, 0
+        blocked = []   # what he could not get to: said once at the end, not after every one
         for b in todo:
             x, y, z = b["pos"]
             res = await self.start_task("inspect", {"x": x, "y": y, "z": z}, 120)
             if "Я ЗАПЕРТ" in res or (far >= 3 and "дойти" in res):
                 # shut in (a door only the owner opens) or no way further: say so instead of "25 did not open"
                 where = "в %s" % " ".join(str(int(v)) for v in self.state.get("pos", [])) if self.state.get("pos") else ""
-                await self.say("Командир, я застрял %s: выход закрыт, а ломать твоё я не буду. Открой мне, пожалуйста." % where)
+                await self.say(phrase("stuck", self.lang) % where)
                 self.log("  [study] застрял: " + res[:200])
                 return ("изучение прервано: застрял — %s. Успел осмотреть: %s"
                         % (res[:160], "; ".join(lines) or "ничего"))
@@ -665,12 +765,17 @@ class Hub:
             if res.startswith("ГОТОВО"):
                 items = [re.sub(r"^- слот \d+: ", "", ln) for ln in res.splitlines() if ln.startswith("- слот")]
                 inside = ", ".join(items[:14]) + (" и ещё %d" % (len(items) - 14) if len(items) > 14 else "") if items else "пусто"
+                full = re.search(r"занято (\d+) из (\d+)( — ПОЛОН)?", res)
+                if full and full.group(3) and b in stores:
+                    inside = "ПОЛОН (%s из %s): %s" % (full.group(1), full.group(2), inside)
                 energy = re.search(r"энергия (\d+)/(\d+)", res)
                 if energy:
                     inside += "; энергия %s/%s%s" % (energy.group(1), energy.group(2), " — НЕТ ПИТАНИЯ" if energy.group(1) == "0" else "")
             else:
                 shut += 1
                 inside = "не открылся: " + res[:100]
+                if re.search(r"дойти|за стеной|не вижу", res):
+                    blocked.append("%s (%d %d %d)" % (b["name"], x, y, z))
             kind = "хранилище" if b in stores else "машина"
             # what is inside first (it is what tells what the line really does), the reference role after it
             text = "%s «%s» (%s) в %d %d %d. Внутри: %s%s" % (kind, b["name"], b["id"], x, y, z, inside,
@@ -684,8 +789,56 @@ class Hub:
             lines.append("%s (%d %d %d)%s" % (b["name"], x, y, z, " — " + role.split(";")[0] if role else ""))
         if not todo:
             return "обошёл округу, но машин и хранилищ не увидел. " + r[:200]
-        return ("изучил %d машин и %d хранилищ%s; всё записал в память (что где стоит, что делает, что внутри). Главное: %s"
-                % (min(len(machines), 25), min(len(stores), 15), ", не открылись %d" % shut if shut else "", "; ".join(lines[:8])))
+        if blocked:
+            await self.say("Не смог добраться до: %s. Там закрыто или за стеной — открой проход, если нужно, "
+                           "и скажи «изучи ещё раз»." % ", ".join(blocked[:4]))
+        # then how it all hangs together: what passes things to what, the lines, the buildings
+        try:
+            layout = await self.production_lines(center, radius + 16)
+        except Exception as e:
+            self.log("  [study] разбор линий не удался: %r" % e)
+            layout = ""
+        return ("изучил %d машин и %d хранилищ%s; всё записал в память. %s"
+                % (min(len(machines), 25), min(len(stores), 15), ", не открылись %d" % shut if shut else "",
+                   layout or "Главное: " + "; ".join(lines[:8])))
+
+    async def production_lines(self, center, radius):
+        """The production map of this world: from what Altron has seen (which way hoppers and belts face, what touches
+        what, what lies in the machines) work out the lines and buildings, what each line makes, where its raw
+        materials go and where its products end up; remember it and draw the map (brain/logs/production_map.html)."""
+        import production
+        pm = await self.bot_call("production_map", {"radius": radius, "x": center[0], "y": center[1], "z": center[2]})
+        blocks = pm.get("blocks") or []
+        if not blocks:
+            return ""
+        contents = {}
+        for les in self.memory.lessons_here():
+            m = re.search(r"@(-?\d+),(-?\d+),(-?\d+)", les["key"]) if les["kind"] == "production" else None
+            if m:
+                inside = les["text"].split("Внутри:")[-1].split(". По справочнику")[0]
+                contents[tuple(int(v) for v in m.groups())] = [(int(n), i) for n, i in production.ITEM_RE.findall(inside)]
+        seen_names = {}
+        for les in self.memory.lessons_here():
+            for nm, iid in production.NAME_RE.findall(les["text"]):
+                seen_names.setdefault(iid, nm.strip())
+        res = await asyncio.to_thread(production.analyze, blocks, contents, self.knowledge, seen_names)
+        # the old map of this world is replaced by the new one
+        self.memory.lessons = [les for les in self.memory.lessons
+                               if not (les["kind"] == "production_zone" and les["world"] == self.memory.world)]
+        for text in production.describe(res, 30):
+            self.memory.learn("production_zone", text.split(":")[0], text)
+        # the same as data: for laying out raw materials and checking the lines later
+        keep = ("n", "title", "building", "made", "needs", "sources", "sinks", "machine_list", "center")
+        self.memory.save_world_json("production", {"t": time.time(), "lines": [{k2: z[k2] for k2 in keep if k2 in z}
+                                                                             for z in res["lines"]]})
+        page = production.map_html(res, "Производство", None, "Составил Альтрон по тому, что видел сам: куда смотрят воронки и конвейеры, что лежит в машинах и сундуках.")
+        (BRAIN_DIR / "logs" / "production_map.html").write_text(page, encoding="utf-8")
+        self.log("  [study] линии: " + " | ".join(production.describe(res, 30))[:1500])
+        by_building = defaultdict(list)
+        for z in res["lines"]:
+            by_building[z["building"]].append("«%s»" % z["title"])
+        return "Разобрался, что куда идёт: %s. Карта нарисована." % "; ".join(
+            "здание %d — %s" % (b, ", ".join(names[:6])) for b, names in sorted(by_building.items()))
 
     def where_answer(self, text):
         """«Куда положить X?»: the machines of the learned production map that take X, and the stores that already hold it."""
@@ -711,7 +864,504 @@ class Hub:
         out += "\nМашины, которые его берут: " + ("\n- " + "\n- ".join(m[:260] for m in machines[:4]) if machines else "среди изученных нет")
         if stores:
             out += "\nУже лежит в: " + "; ".join(s.split(". Внутри")[0] for s in stores[:3])
+        habit = self.habit_places("put").get(item)
+        if habit:
+            out += "\nКомандир сам обычно кладёт это в %d %d %d — так и советуй." % habit
         return out
+
+    # ------------------------------------------------------------------ working the production (after "study")
+    def stock_map(self, machines=False, exclude=()):
+        """What lies where in this world, as last seen: {item id: [(pos, count)]} — chests (and machines if asked)."""
+        import production
+        out = defaultdict(list)
+        skip = {tuple(p) for p in exclude}
+        for les in self.memory.lessons_here():
+            if les["kind"] != "production":
+                continue
+            if not machines and not les["text"].startswith("хранилище"):
+                continue
+            m = re.search(r"@(-?\d+),(-?\d+),(-?\d+)", les["key"])
+            if not m or tuple(int(v) for v in m.groups()) in skip:
+                continue
+            pos = tuple(int(v) for v in m.groups())
+            inside = les["text"].split("Внутри:")[-1].split(". По справочнику")[0]
+            sums = defaultdict(int)
+            for n, i in production.ITEM_RE.findall(inside):
+                sums[i] += int(n)
+            for i, n in sums.items():
+                out[i].append((pos, n))
+        for spots in out.values():
+            spots.sort(key=lambda s: -s[1])
+        return out
+
+    def note_contents(self, pos, item, delta):
+        """He moved things in or out of a chest: the remembered contents change too (until he looks again)."""
+        for les in self.memory.lessons_here():
+            if les["kind"] == "production" and les["key"].endswith("@%d,%d,%d" % tuple(pos)):
+                les["text"] += " [потом: %s%d %s]" % ("+" if delta > 0 else "", delta, item)
+                self.memory._save()
+                return
+
+    async def take_from(self, pos, item, count):
+        """Walk to a chest or machine, open it, take up to `count` of an item, close it: (how many, what happened)."""
+        x, y, z = (int(v) for v in pos)
+        before = ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0)
+        r = await self.start_task("open_block", {"x": x, "y": y, "z": z}, 120)   # a chest, or a machine by its visible side
+        if not r.startswith("ГОТОВО") or "Открыт" not in r:
+            await self.bot_call("close_container", {})
+            return 0, "не открыл %d %d %d: %s" % (x, y, z, r[:120])
+        t = await self.bot_call("container_take", {"item": item, "count": count})
+        await self.bot_call("close_container", {})
+        await asyncio.sleep(0.5)
+        got = ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0) - before
+        if got > 0:
+            self.note_contents((x, y, z), item, -got)
+        return max(0, got), t.get("msg", "")
+
+    async def put_into(self, pos, item, count):
+        x, y, z = (int(v) for v in pos)
+        before = ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0)
+        r = await self.start_task("open_block", {"x": x, "y": y, "z": z}, 120)
+        if not r.startswith("ГОТОВО") or "Открыт" not in r:
+            await self.bot_call("close_container", {})
+            return 0, "не открыл %d %d %d: %s" % (x, y, z, r[:120])
+        full = "ПОЛОН" in r
+        t = await self.bot_call("container_put", {"item": item, "count": count})
+        await self.bot_call("close_container", {})
+        await asyncio.sleep(0.5)
+        if full and not t.get("ok"):
+            return 0, "сундук %d %d %d полон" % (x, y, z)
+        put = before - ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0)
+        if put > 0:
+            self.note_contents((x, y, z), item, put)
+        return max(0, put), t.get("msg", "")
+
+    def pick_lines(self, data, want):
+        """Lines by number ("линия 3"), by what they make or by a word of their title; all when nothing is said."""
+        lines = data.get("lines", [])
+        want = str(want or "").strip().lower()
+        if not want:
+            return lines
+        num = re.search(r"\d+", want)
+        if num:
+            return [z for z in lines if z["n"] == int(num.group())]
+        words = [w[:5] for w in re.findall(r"[а-яёa-z]{4,}", want)]
+        k = self.knowledge
+        names = lambda z: " ".join([z["title"]] + [k.name(i) if k else i for i in z.get("made", [])]  # noqa: E731
+                                   + [m.get("name", "") for m in z.get("machine_list", [])]).lower()
+        return [z for z in lines if any(w in names(z) for w in words)] or lines
+
+    async def supply(self, args):
+        """«Разложи сырьё»: for each line, what it needs goes from the store chests into its input chest (where the
+        commander usually puts it, if he has shown that)."""
+        data = self.memory.load_world_json("production")
+        if not data:
+            return "производство здесь ещё не изучено — сначала скажи «изучи производство»"
+        k = self.knowledge
+        name = (lambda i: k.name(i).split(" [")[0]) if k else (lambda i: i)  # noqa: E731
+        lines = self.pick_lines(data, args.get("line") or args.get("item"))
+        inputs = [s["pos"] for z in data["lines"] for s in z.get("sources", [])]
+        stock = self.stock_map(exclude=inputs)
+        habits = self.habit_places("put")
+        done, missing = [], []
+        for z in lines:
+            needs = [i for i in z.get("needs", []) if not (args.get("item") and args["item"] not in (i, name(i)))]
+            if not needs or not (z.get("sources") or any(i in habits for i in needs)):
+                continue
+            for item in needs[:4]:
+                dest = habits.get(item) or z["sources"][0]["pos"]
+                inv = ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0)
+                if inv < 8:
+                    spots = [s for s in stock.get(item, []) if s[1] > 0]
+                    if not spots:
+                        missing.append("%s для линии «%s»" % (name(item), z["title"]))
+                        continue
+                    pos, cnt = spots[0]
+                    got, why = await self.take_from(pos, item, min(64, cnt))
+                    stock[item][0] = (pos, cnt - got)
+                    if got <= 0:
+                        missing.append("%s (не взял из %d %d %d: %s)" % (name(item), *pos, why[:60]))
+                        continue
+                put, why = await self.put_into(dest, item, 64)
+                if put > 0:
+                    done.append("%d %s → %s (%d %d %d), линия «%s»" % (put, name(item), "сундук", *dest, z["title"]))
+                else:
+                    missing.append("%s: не положил в %d %d %d (%s)" % (name(item), *dest, why[:60]))
+        text = ("разложил: " + "; ".join(done)) if done else "ничего не разложил"
+        if missing:
+            text += ". Нет на складах или не вышло: " + "; ".join(missing[:6])
+        return text
+
+    async def tidy(self, args):
+        """«Разложи свои вещи по местам»: what he carries that belongs to the base goes back — a line's product to its
+        output chest, anything else to a chest that already holds the same. Tools, weapons and food stay with him."""
+        inv = (await self.bot_call("inventory_ids", {})).get("items") or {}
+        data = self.memory.load_world_json("production") or {}
+        stock = self.stock_map()
+        keep = re.compile(r"sword|pickaxe|axe|shovel|hoe|helmet|chestplate|leggings|boots|gun|rifle|pistol|ammo|food|"
+                          r"bread|apple|steak|remote|sentry|key|stamp|battery")
+        done, left, full = [], [], []
+        for item, n in inv.items():
+            if keep.search(item):
+                continue
+            # the line's output chest first, then any chest where the same already lies (the next one if one is full)
+            cands = [tuple(z["sinks"][0]["pos"]) for z in data.get("lines", []) if item in z.get("made", []) and z.get("sinks")]
+            cands += [p for p, _ in stock.get(item, [])]
+            cands = list(dict.fromkeys(cands))[:4]
+            if not cands:
+                left.append(item)
+                continue
+            why = ""
+            for dest in cands:
+                put, why = await self.put_into(dest, item, n)
+                if put > 0:
+                    done.append("%d %s → %d %d %d" % (put, item, *dest))
+                    n -= put
+                if n <= 0:
+                    break
+            if n > 0:
+                if "полон" in why:
+                    full.append("%s (%s)" % (item, why))
+                else:
+                    left.append(item)
+        text = ("вернул на места: " + "; ".join(done)) if done else "ничего не вернул"
+        if full:
+            text += ". Некуда: " + "; ".join(dict.fromkeys(full)) + " — освободи сундук или поставь рядом ещё один"
+        if left:
+            text += ". Не знаю, куда положить: " + ", ".join(left[:6])
+        return text
+
+    async def check_lines(self, args, quiet=False):
+        """«Проверь линии»: look into each line's input chest and one of its machines — is it working, short of
+        raw materials, without power?"""
+        data = self.memory.load_world_json("production")
+        if not data:
+            return "производство здесь ещё не изучено — сначала скажи «изучи производство»"
+        k = self.knowledge
+        name = (lambda i: k.name(i).split(" [")[0]) if k else (lambda i: i)  # noqa: E731
+        report, status = [], {}
+        for z in self.pick_lines(data, args.get("line")):
+            src_items, mach_items, no_power = None, None, False
+            for s in z.get("sources", [])[:1]:
+                r = await self.start_task("inspect", {"x": s["pos"][0], "y": s["pos"][1], "z": s["pos"][2]}, 120)
+                if r.startswith("ГОТОВО"):
+                    src_items = [ln for ln in r.splitlines() if ln.startswith("- слот")]
+            for m in z.get("machine_list", [])[:1]:
+                r = await self.start_task("inspect", {"x": m["pos"][0], "y": m["pos"][1], "z": m["pos"][2]}, 120)
+                if r.startswith("ГОТОВО"):
+                    mach_items = [ln for ln in r.splitlines() if ln.startswith("- слот")]
+                    no_power = bool(re.search(r"энергия 0/", r))
+            sink_full = None
+            for s in [s for s in z.get("sinks", []) if not re.search(r"cell|tank|бак|ячейк", s["name"].lower())][:2]:
+                r = await self.start_task("inspect", {"x": s["pos"][0], "y": s["pos"][1], "z": s["pos"][2]}, 120)
+                if "ПОЛОН" in r:
+                    sink_full = "%s (%d %d %d)" % (s["name"], *s["pos"])
+            if sink_full:
+                st = "выход забит: %s полон — линия встанет, а готовое посыплется с конвейеров" % sink_full
+            elif no_power:
+                st = "нет питания"
+            elif mach_items == [] and (src_items == [] or src_items is None):
+                st = "стоит: нет сырья" + (" (нужно: %s)" % ", ".join(name(i) for i in z.get("needs", [])[:3]) if z.get("needs") else "")
+            elif mach_items is None:
+                st = "не смог заглянуть в машину"
+            else:
+                st = "работает, сырьё есть"
+            status[str(z["n"])] = st
+            report.append("линия %d «%s»: %s" % (z["n"], z["title"], st))
+        data["last_check"] = {"t": time.time(), "status": status}
+        self.memory.save_world_json("production", data)
+        return "; ".join(report) or "линий не нашёл"
+
+    # ------------------------------------------------------------------ keeping the production running from his stock
+    async def open_backpack(self):
+        """Open the backpack he carries (Sophisticated Backpacks...): its window, or None."""
+        inv = (await self.bot_call("inventory_ids", {})).get("items") or {}
+        bp = next((i for i in inv if "backpack" in i), None)
+        if not bp:
+            return None
+        await self.bot_call("close_container", {})
+        await self.start_task("use_item", {"item": bp}, 20)
+        await asyncio.sleep(1)
+        seen = (await self.bot_call("container", {})).get("msg", "")
+        if "Открыт" not in seen:
+            return None
+        import production
+        sums = defaultdict(int)
+        for n, i in production.ITEM_RE.findall(seen):
+            sums[i] += int(n)
+        self.backpack_seen = dict(sums)
+        return seen
+
+    async def own_supply(self, item, count):
+        """Get `count` of an item into his inventory from what he carries: the inventory itself, then the backpack.
+        Returns how many he now has in the inventory."""
+        have = ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0)
+        if have >= count:
+            return have
+        if await self.open_backpack():
+            if self.backpack_seen.get(item):
+                await self.bot_call("container_take", {"item": item, "count": count - have})
+            await self.bot_call("close_container", {})
+            await asyncio.sleep(0.5)
+            have = ((await self.bot_call("inventory_ids", {})).get("items") or {}).get(item, 0)
+        return have
+
+    def line_types(self, z):
+        """Recipe types the machines of a line run (a furnace line: smelting...)."""
+        k = self.knowledge
+        out = set()
+        for m in z.get("machine_list", []):
+            out |= set(k.block_recipe_types(m["id"])) if k else set()
+        return out
+
+    def remember_inside(self, pos, res):
+        """He looked into a chest or machine again: the production map gets what is inside now."""
+        key_end = "@%d,%d,%d" % tuple(pos)
+        items = [re.sub(r"^- слот \d+: ", "", ln) for ln in res.splitlines() if ln.startswith("- слот")]
+        inside = ", ".join(items[:14]) or "пусто"
+        for les in self.memory.lessons_here():
+            if les["kind"] == "production" and les["key"].endswith(key_end):
+                head, _, tail = les["text"].partition("Внутри:")
+                ref = tail.split(". По справочнику")[1] if ". По справочнику" in tail else ""
+                les["text"] = head + "Внутри: " + inside + (". По справочнику" + ref if ref else "")
+                les["t"] = time.time()
+                self.memory._save()
+                return
+
+    async def carried(self):
+        """What he has with him: inventory plus what the backpack held when he last opened it."""
+        inv = defaultdict(int, (await self.bot_call("inventory_ids", {})).get("items") or {})
+        for i, n in self.backpack_seen.items():
+            inv[i] += n
+        return inv
+
+    async def feed_processing(self, lines):
+        """Raw materials he carries that a line of the base processes (ore and powder into the furnace line...):
+        into that line's input chest, so the factory turns them into what the other lines need."""
+        k = self.knowledge
+        if k is None:
+            return []
+        name = lambda i: k.name(i).split(" [")[0]  # noqa: E731
+        did = []
+        needs_all = {i for z in lines for i in z.get("needs", [])}
+        keep = re.compile(r"backpack|sword|pickaxe|axe|shovel|helmet|chestplate|leggings|boots|apple|remote|sentry|chest$")
+        for item, n in list((await self.carried()).items()):
+            if n <= 0 or keep.search(item) or item in needs_all:
+                continue
+            uses = set(k.consumers(item))
+            target = next((z for z in lines if z.get("sources") and uses & self.line_types(z)), None)
+            if not target:
+                continue
+            have = await self.own_supply(item, min(64, n))
+            if have <= 0:
+                continue
+            for s in target["sources"][:3]:
+                put, why = await self.put_into(s["pos"], item, min(64, have))
+                if put > 0:
+                    did.append("%d %s → в линию «%s» на переработку" % (put, name(item), target["title"]))
+                    break
+        return did
+
+    async def fetch_made(self, lines, item, want):
+        """An item a line of the base makes (ingots from the furnace line...): look into that line's output chests
+        and take it from there."""
+        k = self.knowledge
+        makers = [z for z in lines if item in z.get("made", []) or
+                  any(r["type"] in self.line_types(z) for i in (k._index[0].get(item, []) if k and k._index else [])
+                      for r in [k.recipes[i]])]
+        for z in makers:
+            for s in [s for s in z.get("sinks", []) if not re.search(r"cell|tank|бак|ячейк", s["name"].lower())][:2]:
+                r = await self.start_task("inspect", {"x": s["pos"][0], "y": s["pos"][1], "z": s["pos"][2]}, 120)
+                if not r.startswith("ГОТОВО"):
+                    continue
+                self.remember_inside(s["pos"], r)
+                if "(%s)" % item in r:
+                    got, _ = await self.take_from(s["pos"], item, want)
+                    if got > 0:
+                        return got
+        return 0
+
+    async def maintain_round(self, lines):
+        """One round: every line's input chest gets topped up with what the line needs (from his inventory, his
+        backpack, then the store chests); a full output chest is reported. Returns (what he did, what is short)."""
+        import production
+        k = self.knowledge
+        name = (lambda i: k.name(i).split(" [")[0]) if k else (lambda i: i)  # noqa: E731
+        did, short = [], []
+        all_lines = (self.memory.load_world_json("production") or {}).get("lines", lines)
+        # first the raw materials he carries go to the lines that process them (ore and powder into the furnaces)
+        did += await self.feed_processing(all_lines)
+        for z in lines:
+            if not z.get("sources") or not z.get("needs"):
+                continue
+            r, src = "", None
+            for cand in z["sources"][:3]:   # a line may have several input chests: the first one he can get to
+                src = cand["pos"]
+                r = await self.start_task("inspect", {"x": src[0], "y": src[1], "z": src[2]}, 120)
+                if r.startswith("ГОТОВО"):
+                    break
+            if not r.startswith("ГОТОВО"):
+                short.append("не добрался до входов линии «%s» (%s)" % (
+                    z["title"], ", ".join("%d %d %d" % tuple(c["pos"]) for c in z["sources"][:3])))
+                continue
+            self.remember_inside(src, r)
+            inside = defaultdict(int)
+            for n, i in production.ITEM_RE.findall(r):
+                inside[i] += int(n)
+            for item in z["needs"][:4]:
+                if inside.get(item, 0) >= 16:
+                    continue
+                want = 64 - inside.get(item, 0)
+                have = await self.own_supply(item, want)
+                if have <= 0:
+                    spots = [s for s in self.stock_map(exclude=[src]).get(item, []) if s[1] > 0]
+                    if spots:
+                        have, _ = await self.take_from(spots[0][0], item, min(want, spots[0][1]))
+                if have <= 0:
+                    # made by another line of the base (ingots out of the furnace line): from its output chest
+                    have = await self.fetch_made(all_lines, item, want)
+                if have <= 0:
+                    short.append("%s для линии «%s»" % (name(item), z["title"]))
+                    continue
+                put, why = await self.put_into(src, item, min(have, want))
+                if put > 0:
+                    did.append("+%d %s в линию «%s»" % (put, name(item), z["title"]))
+        return did, short
+
+    async def maintain_loop(self):
+        """"Поддерживай производство": a round every 5 minutes while he is free; says what he topped up only when he did,
+        and asks for more when his own stock runs out."""
+        asked = set()
+        while self.maintain_on:
+            if self.bot is None or self.busy or self.running is not None or (self.macro_task and not self.macro_task.done()):
+                await asyncio.sleep(10)   # busy (talking, another job): the round comes as soon as he is free
+                continue
+            if True:
+                data = self.memory.load_world_json("production") or {}
+                did, short = await self.maintain_round(self.pick_lines(data, self.maintain_line))
+                if did:
+                    self.log("  [maintain] " + "; ".join(did))
+                new_short = [s for s in short if s not in asked]
+                if new_short:
+                    asked |= set(new_short)
+                    await self.say("Командир, для производства не хватает: %s. Дай мне ещё, я разложу." % "; ".join(new_short[:3]))
+            for _ in range(int(self.cfg.get("maintain_every_sec", 120)) // 5):   # a round every 2 minutes; stops at once when told
+                if not self.maintain_on:
+                    return
+                await asyncio.sleep(5)
+
+    async def line_watch_loop(self):
+        """Keeping an eye on the lines (when the commander asked): every 15 min, when free, a quiet check; only
+        a line that has just stopped is reported."""
+        while self.watch_lines_on:
+            await asyncio.sleep(15 * 60)
+            if not self.watch_lines_on or self.bot is None or self.busy or self.running or \
+                    (self.macro_task and not self.macro_task.done()):
+                continue
+            data = self.memory.load_world_json("production") or {}
+            before = (data.get("last_check") or {}).get("status", {})
+            await self.check_lines({})
+            after = ((self.memory.load_world_json("production") or {}).get("last_check") or {}).get("status", {})
+            news = [(n, st) for n, st in after.items() if not st.startswith("работает") and before.get(n) != st]
+            if news:
+                titles = {str(z["n"]): z["title"] for z in data.get("lines", [])}
+                await self.say("Командир, " + "; ".join("линия «%s»: %s" % (titles.get(n, n), st) for n, st in news[:3]))
+
+    # ------------------------------------------------------------------ learning from the commander's hands
+    # ------------------------------------------------------------------ staying alive (brain/supervisor.py restarts the brain)
+    MODES_FILE = BRAIN_DIR / "logs" / "brain_modes.json"
+
+    def save_modes(self):
+        """What he was doing (keeping the production, watching the lines...): a restarted brain carries on with it."""
+        try:
+            self.MODES_FILE.write_text(json.dumps({
+                "maintain_on": self.maintain_on, "maintain_line": self.maintain_line,
+                "watch_lines_on": self.watch_lines_on, "wake_word_required": bool(self.cfg.get("wake_word_required")),
+                "world": self.memory.world}, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+
+    def restore_modes(self):
+        try:
+            m = json.loads(self.MODES_FILE.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if m.get("world") and m["world"] != self.memory.world:
+            return []
+        back = []
+        self.cfg["wake_word_required"] = bool(m.get("wake_word_required"))
+        if m.get("maintain_on"):
+            self.maintain_on, self.maintain_line = True, m.get("maintain_line", "")
+            asyncio.create_task(self.maintain_loop())
+            back.append("поддерживаю производство")
+        if m.get("watch_lines_on"):
+            self.watch_lines_on = True
+            asyncio.create_task(self.line_watch_loop())
+            back.append("слежу за линиями")
+        return back
+
+    def note_llm_failure(self, hard=False, why=""):
+        """The AI failed (an error, no answer, a very slow answer). Three times in 5 minutes, or a hard failure:
+        the brain asks to be restarted together with the AI server (the supervisor does it; the game stays)."""
+        now = time.time()
+        self.llm_failures = [t for t in getattr(self, "llm_failures", []) if now - t < 300] + [now]
+        if hard or len(self.llm_failures) >= 3:
+            self.request_restart("ИИ не справляется: %s" % why, llm=True)
+
+    def request_restart(self, reason, llm=False):
+        """Exit with code 3: brain/supervisor.py starts a fresh brain (and the AI server if llm), the game and the body
+        stay and connect to it again."""
+        self.save_modes()
+        try:
+            (BRAIN_DIR / "logs" / "restart_request.json").write_text(
+                json.dumps({"t": time.time(), "reason": reason, "llm": llm,
+                            "pending": getattr(self, "last_phrase", None)}, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+        self.log("ПЕРЕЗАПУСК МОЗГА: %s" % reason)
+        sys.stdout.flush()
+        os._exit(3)
+
+    async def on_ignored(self):
+        """The commander's phrase was not for Altron (he talks with someone else nearby). Several in a row: from now
+        on only phrases with his name — and he says so once."""
+        now = time.time()
+        self.ignored = [t for t in self.ignored if now - t < 180] + [now]
+        if len(self.ignored) >= 4 and not self.cfg.get("wake_word_required"):
+            self.cfg["wake_word_required"] = True
+            self.ignored = []
+            await self.say("Похоже, ты сейчас говоришь не со мной. Буду отвечать, только когда позовёшь «Альтрон». "
+                           "Скажи «слушай всё», чтобы было как раньше.")
+
+    def habit_places(self, action):
+        """{item id: pos} where the commander usually puts (or takes) an item, from what he was seen doing."""
+        best = {}
+        for les in self.memory.lessons_here():
+            if les["kind"] != "habit" or not les["key"].startswith(action + ":"):
+                continue
+            m = re.match(r"\w+:([^@]+)@(-?\d+),(-?\d+),(-?\d+)", les["key"])
+            if m:
+                item, pos = m.group(1), tuple(int(v) for v in m.groups()[1:])
+                if item not in best or les.get("n", 1) > best[item][1]:
+                    best[item] = (pos, les.get("n", 1))
+        return {i: p for i, (p, _) in best.items()}
+
+    def on_watch(self, msg):
+        """The host saw the commander put things into / take things out of a chest or machine: learn his ways."""
+        pos = [int(v) for v in msg.get("pos", [0, 0, 0])]
+        where = "%s (%d %d %d)" % (msg.get("name", "?"), *pos)
+        seen = []
+        for action, word in (("put", "кладёт"), ("took", "берёт")):
+            for item, n, iname in msg.get(action, []):
+                key = "%s:%s@%d,%d,%d" % ("put" if action == "put" else "take", item, *pos)
+                text = "Командир %s %s %s %s (обычно по %d)" % (word, iname, "в" if action == "put" else "из", where, n)
+                self.memory.learn("habit", key, text)
+                seen.append("%s %d %s %s %s" % ("положил" if action == "put" else "взял", n, iname,
+                                                "в" if action == "put" else "из", where))
+        if seen:
+            self.log("(вижу руки командира) " + "; ".join(seen))
+            if self.watch_me_on:
+                self.watch_log += seen
 
     def item_id(self, query):
         return (self.knowledge.find_id(query) if self.knowledge else None) or query
@@ -765,6 +1415,126 @@ class Hub:
                 return "%s в сундук %s %s %s" % (put.get("msg", "положил"), x, y, z)
         return "не получилось открыть сундук рядом"
 
+    async def load_machine(self, args):
+        """«Перенеси/загрузи/насыпь X в машину»: заберёт ВЕСЬ материал из сундуков/бочек, где его видел, за один
+        обход, дойдёт до названной машины и положит всё разом — один поход, а не по стаку за раз."""
+        item = str(args.get("item") or "all")
+        item_id = None if item in ("all", "всё", "все", "*") else self.item_id(item)
+        machine_query = str(args.get("machine", "")).strip()
+        machine_id = self.item_id(machine_query) if machine_query else None
+        await self.bot_call("look_around", {})
+        found = (await self.bot_call("find_block", {"block": "chest,barrel,trapped_chest", "radius": 48})).get("msg", "")
+        spots = re.findall(r"(-?\d+) (-?\d+) (-?\d+) \(", found)
+        for x, y, z in spots[:6]:
+            opened = await self.start_task("use_block", {"x": int(x), "y": int(y), "z": int(z)}, 90)
+            if not opened.startswith("ГОТОВО"):
+                continue
+            await self.bot_call("container_take", {"item": item_id or "all"})   # без count — весь предмет, не один стек
+            await self.bot_call("close_container", {})
+        inv = (await self.bot_call("inventory_ids", {})).get("items") or {}
+        have_total = sum(n for i, n in inv.items() if item_id is None or i == item_id)
+        if have_total <= 0:
+            return ("не нашёл %s ни у себя, ни в сундуках рядом"
+                    % (self.knowledge.name(item_id) if self.knowledge and item_id else item))
+        where = (await self.bot_call("find_block", {"block": machine_id or machine_query, "radius": 96})).get("msg", "") \
+            if (machine_id or machine_query) else ""
+        spot = re.search(r"(-?\d+) (-?\d+) (-?\d+) \(", where)
+        if not spot:
+            return ("взял %d шт., но не вижу рядом %s — подойди к машине сам или скажи точные координаты"
+                    % (have_total, ("«%s»" % machine_query) if machine_query else "нужную машину"))
+        mx, my, mz = (int(v) for v in spot.groups())
+        opened = await self.start_task("use_block", {"x": mx, "y": my, "z": mz}, 90)
+        if not opened.startswith("ГОТОВО"):
+            return "взял %d шт., но не смог открыть машину в %d %d %d: %s" % (have_total, mx, my, mz, opened)
+        put = await self.bot_call("container_put", {"item": item_id or "all"})   # без count — весь предмет разом
+        await self.bot_call("close_container", {})
+        return "%s в машину %d %d %d" % (put.get("msg", "положил"), mx, my, mz)
+
+    async def sleep(self, args):
+        """«Иди спать»: the nearest bed he has seen; a sleeping player helps the server skip the night."""
+        await self.bot_call("look_around", {})
+        found = (await self.bot_call("find_block", {"block": "#minecraft:beds", "radius": 48})).get("msg", "")
+        spots = re.findall(r"(-?\d+) (-?\d+) (-?\d+) \(", found)
+        if not spots:
+            return "рядом не видел ни одной кровати — поставь её или покажи, где спать"
+        res = ""
+        for x, y, z in spots[:3]:
+            res = await self.start_task("use_block", {"x": int(x), "y": int(y), "z": int(z)}, 40)
+            if res.startswith("ГОТОВО"):
+                return "лёг в кровать %s %s %s: %s" % (x, y, z, res)
+        return "не получилось лечь: %s" % res
+
+    # gestures from head turns and short key presses (no tasks: following or guarding goes on meanwhile)
+    EMOTES = {
+        "nod": [("turn", {"direction": "down", "seconds": 1}), ("turn", {"direction": "forward", "seconds": 1})] * 2,
+        "shake": [("turn", {"direction": "left", "degrees": 30, "seconds": 1}),
+                  ("turn", {"direction": "right", "degrees": 60, "seconds": 1}),
+                  ("turn", {"direction": "left", "degrees": 60, "seconds": 1}),
+                  ("turn", {"direction": "right", "degrees": 30, "seconds": 1})],
+        "wave": [("press_key", {"key": "sneak", "ticks": 4})] * 3,
+        "jump": [("press_key", {"key": "jump", "ticks": 2})] * 2,
+        "bow": [("turn", {"direction": "down", "seconds": 2}), ("press_key", {"key": "sneak", "ticks": 20})],
+        "dance": [("press_key", {"key": "sneak", "ticks": 3}), ("turn", {"direction": "left", "degrees": 45, "seconds": 1}),
+                  ("press_key", {"key": "jump", "ticks": 2}), ("turn", {"direction": "right", "degrees": 90, "seconds": 1}),
+                  ("press_key", {"key": "sneak", "ticks": 3}), ("turn", {"direction": "left", "degrees": 45, "seconds": 1}),
+                  ("press_key", {"key": "jump", "ticks": 2})],
+        "look_around": [("turn", {"direction": "left", "degrees": 70, "seconds": 1}),
+                        ("turn", {"direction": "right", "degrees": 140, "seconds": 1}),
+                        ("turn", {"direction": "left", "degrees": 70, "seconds": 1})],
+    }
+
+    async def emote(self, args):
+        kind = str(args.get("kind", "nod")).lower()
+        steps = self.EMOTES.get(kind)
+        if not steps:
+            return "ОШИБКА: нет жеста %s (есть: %s)" % (kind, ", ".join(self.EMOTES))
+        for name, a in steps:
+            await self.bot_call(name, a)
+            await asyncio.sleep(0.45)
+        if self.owner and kind != "look_around":
+            await self.bot_call("turn", {"direction": "player", "player": self.owner, "seconds": 3})
+        return "сделал жест: %s" % kind
+
+    def remind(self, args):
+        """«Напомни через 10 минут ...»: the AI says it in its own words when the time comes."""
+        try:
+            minutes = max(0.1, float(args.get("minutes", 1)))
+        except (TypeError, ValueError):
+            return "ОШИБКА: minutes — число минут"
+        text = str(args.get("text", "")).strip()
+
+        async def later():
+            await asyncio.sleep(minutes * 60)
+            self.reminders.discard(task)
+            await self.requests.put(("event", "", "[Событие] Пора напомнить командиру то, что он просил %s мин назад: «%s». "
+                                     "Скажи это ему коротко, своими словами." % (round(minutes, 1), text)))
+
+        task = asyncio.create_task(later())
+        self.reminders.add(task)
+        return "Поставил напоминание через %s мин." % round(minutes, 1)
+
+    async def chatter_loop(self):
+        """Long silence, the commander near, nothing to do: the AI may say something by itself — or keep quiet."""
+        minutes = float(self.cfg.get("chatter_minutes", 6))
+        if minutes <= 0:
+            return
+        while True:
+            await asyncio.sleep(30)
+            s = self.state
+            working = (self.running is not None and self.running[1] not in ENDLESS) or \
+                (self.macro_task is not None and not self.macro_task.done())
+            if not self.joined or self.busy or working or not self.requests.empty() or not s.get("pos") \
+                    or not s.get("owner_pos") or time.time() - self.last_talk < minutes * 60:
+                continue
+            dist = sum((a - b) ** 2 for a, b in zip(s["pos"], s["owner_pos"])) ** 0.5
+            if dist > 24:
+                continue
+            self.last_talk = time.time()
+            await self.requests.put(("event", "", "[Событие] Тишина уже %d мин, командир рядом (%d бл.), ты свободен. Можешь "
+                                     "сам коротко заговорить с ним: одно наблюдение об обстановке, шутка, вопрос о его делах "
+                                     "или предложение, чем заняться. Не повторяй то, что уже говорил. Сказать нечего — ignore."
+                                     % (minutes, dist)))
+
     async def run_queue(self):
         """Start queued tasks one after another; returns when one is running in the background or the queue is empty."""
         while self.queue and self.running is None and (self.macro_task is None or self.macro_task.done()):
@@ -798,6 +1568,8 @@ class Hub:
                     if role == "host":
                         self.host = writer
                         self.log("Игра игрока подключена.")
+                        self.pickup_on = None
+                        self.set_pickup(False)   # no sweeping of belts and floors unless he gathers on purpose
                     elif role == "bot":
                         self.bot = writer
                         self.log("Тело Альтрона подключено.")
@@ -873,8 +1645,13 @@ class Hub:
             self.world_name = msg.get("world", self.world_name)
             if self.bot is not None:
                 self.send(self.bot, {"type": "config", "owner": self.owner, "world": self.world_name})
-            if self.bot_proc is not None and self.bot_proc.poll() is None:
+            if (self.bot_proc is not None and self.bot_proc.poll() is None) or self.bot is not None:
+                # his body is already there (also after the brain was restarted with the game still running)
                 self.send(self.host, {"type": "notify", "text": "Альтрон уже запущен."})
+                return
+            if getattr(self, "attach_mode", False):
+                # a restarted brain: the game says "ready" again the moment it reconnects, and the body is only a few
+                # seconds behind — starting another one would kick it out. keep_body starts it if it does not come.
                 return
             try:
                 self.bot_server = int(msg.get("port", 25566))
@@ -899,6 +1676,8 @@ class Hub:
         elif t == "mic_failed":
             self.mic_failed = msg.get("msg", "ошибка")
             self.log("Микрофон демо не смог говорить в голосовой чат: %s" % self.mic_failed)
+        elif t == "watch":
+            self.on_watch(msg)
         elif t == "text":
             who = msg.get("from", "игрок")
             self.owner = self.owner or who
@@ -943,6 +1722,10 @@ class Hub:
         ev = msg.get("event")
         if ev in ("task_done", "task_failed", "task_cancelled"):
             tid = msg.get("task_id")
+            if tid in self.pickup_tasks:
+                self.pickup_tasks.discard(tid)
+                if not self.pickup_tasks:
+                    self.set_pickup(False)
             task_args = self.running_args if self.running is not None and self.running[0] == tid else {}
             if self.running is not None and self.running[0] == tid:
                 self.running = None
@@ -994,14 +1777,37 @@ class Hub:
         elif ev == "joined":
             self.joined = True
             self.memory.world = msg.get("world", "")
+            try:   # a brain restarted with the game still running (session.py --attach) takes the world from here
+                (BRAIN_DIR / "logs" / "last_world.txt").write_text(self.memory.world, encoding="utf-8")
+            except OSError:
+                pass
             self.log(msg.get("msg", ""))
-            await self.say("Альтрон на связи. Жду приказов.")
+            await self.say(phrase("online", self.lang))
         elif ev == "death":
             pos = self.state.get("pos")
+            dim = self.state.get("dim", "")
             self.memory.log("событие", "Альтрон погиб" + (" в %d %d %d" % tuple(int(v) for v in pos) if pos else ""))
-            await self.say("Меня уничтожили. Перезагружаюсь.")
+            await self.say(phrase("died", self.lang))
+            if pos:
+                asyncio.create_task(self.recover_death_drop([round(v) for v in pos], dim))
         elif ev == "low_health":
-            await self.say("Внимание, мои системы повреждены, здоровья мало.")
+            await self.say(phrase("low_health", self.lang))
+
+    async def recover_death_drop(self, pos, dim):
+        """After dying, go back for the dropped items myself, like a player, before they despawn."""
+        await asyncio.sleep(3)   # the client waits ~30 ticks before it closes the death screen and respawns
+        if not self.joined:
+            return
+        if dim and self.state.get("dim") and self.state.get("dim") != dim:
+            await self.requests.put(("event", "", "[Событие] Погиб в измерении %s на %d %d %d, а возродился в другом "
+                                     "измерении — сам туда не дойти. Сообщи командиру, что вещи остались там."
+                                     % (dim, *pos)))
+            return
+        await self.requests.put(("event", "", "[Событие] Только что погиб и возродился. Вещи выпали на месте смерти "
+                                 "%d %d %d. Молча дойди туда (goto) и подбери их (collect_items, radius 4-6), пока они "
+                                 "не пропали — обычно 5 минут с момента смерти, часть времени уже прошла. Если по пути "
+                                 "явно опасно (лава, враги) или на месте вещей уже нет — сообщи командиру и не рискуй."
+                                 % tuple(pos)))
 
     # ------------------------------------------------------------------ voice
     def on_voice(self, msg):
@@ -1043,7 +1849,7 @@ class Hub:
                             continue
                         if self.addressed(v["name"], text):
                             self.heard += 1
-                        await self.handle_phrase(v["name"], text)
+                        await self.handle_phrase(v["name"], text, self.stt.last_lang)
 
     def name_required(self, speaker):
         """The commander is heard without "Альтрон" (config wake_word_required=false); other players say his name,
@@ -1061,7 +1867,7 @@ class Hub:
         if conf < STT_MIN_CONF:
             return False
         low = text.lower().replace("ё", "е")
-        words = re.findall(r"[а-яa-z0-9]+", low)
+        words = re.findall(r"[^\W_]+", low)   # words of any alphabet
         if not words:
             return False
         if STOP_RE.search(low):
@@ -1102,6 +1908,13 @@ class Hub:
         except Exception as e:
             self.log("не сохранил запись голоса: %s" % e)
 
+    def set_lang(self, lang):
+        """Answer in the language the commander speaks (a fixed "language" in config.json keeps it)."""
+        if str(self.cfg.get("language", "auto")).lower() != "auto" or not lang or lang == self.lang:
+            return
+        self.lang = lang
+        self.log("Язык разговора: %s" % LANG_NAMES.get(lang, lang))
+
     def note_question(self, question):
         """Allow a question to the player only if none is pending (asked < 2 min ago and not answered)."""
         now = time.time()
@@ -1118,15 +1931,19 @@ class Hub:
             return True   # the commander does not have to call him by name
         return time.time() < self.windows.get(speaker, 0)
 
-    async def handle_phrase(self, speaker, text):
+    async def handle_phrase(self, speaker, text, lang=None):
         if not self.addressed(speaker, text):
             return
         if not self.owner:
             self.owner = speaker
+        if speaker == self.owner:
+            self.set_lang(lang or guess_lang(text, self.cfg.get("languages") or [self.lang], self.lang))
+        self.last_talk = time.time()
         if self.bot is not None:
             # like a person who hears his name: turn to the one speaking (when not busy with a job)
             self.send(self.bot, {"type": "cmd", "id": 0, "name": "attention", "args": {"player": speaker}})
         self.memory.log(speaker, text)
+        self.last_phrase = [speaker, text, time.time()]   # a restarted brain answers it if it was cut short
         self.last_question = None  # the player spoke: any pending question is answered
         # a plain "стоп / стой / хватит"; "стой тут и охраняй меня" is an order with a stop word in it, not a stop
         pure_stop = STOP_RE.search(text) and not ACTION_WORDS.search(STOP_RE.sub(" ", text))
@@ -1140,7 +1957,7 @@ class Hub:
             # the AI must not pick the cancelled job up again from the conversation history
             self.agent.note("[Командир сказал: «%s». Всё остановлено. Прежнее задание ОТМЕНЕНО — не продолжай его, "
                             "пока командир снова не попросит.]" % text)
-            await self.say("Остановился.")
+            await self.say(phrase("stopped", self.lang))
             return
         # really talking to him: his name, or a conversation with him going on. The commander's microphone also carries
         # what he says to others in the room ("сюда мы берём") — no instant "Принял" and no rules from that
@@ -1212,7 +2029,7 @@ class Hub:
             # he thinks before every answer to the commander (a few seconds); on real "how/why" questions he says so
             think = kind == "user" and self.cfg.get("llm_think_user", True)
             if think and needs_thinking(text) and not acked:
-                await self.say("Секунду, подумаю.")
+                await self.say(phrase("thinking", self.lang))
             try:
                 order = kind == "user" and bool(ACTION_WORDS.search(text)) and not is_question(text)
                 await self.agent.run(prompt, kind, question=(kind == "user" and is_question(text)), acked=acked,
@@ -1334,19 +2151,23 @@ def choose_launch(cfg, argv):
     ap.add_argument("--ai", help="адрес второго ПК с нейросетью (ai_server); пусто — на этом ПК")
     ap.add_argument("--pack", help="другая сборка (имя папки в .minecraft\\versions): Альтрон берёт её моды")
     args = ap.parse_args(argv)
-    if args.pack:
-        # another modpack of the same Minecraft/Forge: his body takes that pack's mods (plus Altron's own and Baritone)
-        # from its own folder, so the Total War setup is not touched; the encyclopedia is read from that pack
-        if not (rel(cfg["minecraft_dir"]) / "versions" / args.pack / (args.pack + ".json")).exists():
-            raise SystemExit("Нет такой сборки: %s" % args.pack)
-        cfg["pack_version"] = args.pack
-        cfg["bot_dir"] = "../bot_" + (re.sub(r"[^A-Za-z0-9]+", "_", args.pack).strip("_")[:24] or "other")
-        cfg["other_pack"] = True
     try:
         last = json.loads(LAST_LAUNCH.read_text(encoding="utf-8"))
     except Exception:
         last = {}
     ask = sys.stdin is not None and sys.stdin.isatty()
+    if args.pack:
+        cfg["pack_version"] = args.pack
+    if not cfg.get("game_pc_mode"):
+        # any Forge 1.20.1 modpack: the Minecraft folder, the pack and Java are found when config.json leaves them empty
+        resolve_install(cfg, "" if args.pack else last.get("pack", ""), ask and not args.pack)
+    if args.pack:
+        # another modpack of the same Minecraft/Forge: his body takes that pack's mods (plus Altron's own and Baritone)
+        # from its own folder, so the usual pack is not touched; the encyclopedia is read from that pack
+        if cfg["pack_version"] != args.pack:
+            raise SystemExit("Нет такой сборки: %s" % args.pack)
+        cfg["bot_dir"] = "../bot_" + (re.sub(r"[^A-Za-z0-9]+", "_", args.pack).strip("_")[:24] or "other")
+        cfg["other_pack"] = True
 
     if cfg.get("game_pc_mode"):
         # Altron runs on the second PC (the ai_server kit): the only question is where the commander's game is
@@ -1409,7 +2230,8 @@ def choose_launch(cfg, argv):
         cfg["history_chars"] = max(int(cfg.get("history_chars", 0)), 54000)
     try:
         LAST_LAUNCH.write_text(json.dumps({"profile": profile, "server": server or last.get("server", ""),
-                                           "owner": owner, "ai": ai or last.get("ai", "")},
+                                           "owner": owner, "ai": ai or last.get("ai", ""),
+                                           "pack": last.get("pack", "") if args.pack else cfg["pack_version"]},
                                           ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:
         pass
@@ -1432,7 +2254,7 @@ async def main():
         print(" Альтрон заходит на сервер %s сам (1-2 минуты)." % server)
         print(" Командир: %s. Говори в Voice Chat рядом с ним: «Альтрон, иди за мной»" % (owner or "первый, кто позовёт"))
     else:
-        print(" 1) Запусти сборку в TLauncher и зайди в свой мир")
+        print(" 1) Запусти сборку «%s» в своём лаунчере и зайди в свой мир" % cfg["pack_version"])
         print(" 2) Напиши в чате игры: /altron")
         print(" 3) Говори в Voice Chat: «Альтрон, иди за мной»")
     print(" Здесь можно печатать команды текстом. /quit — выход.")
@@ -1480,7 +2302,7 @@ async def main():
         hub.log("Проверка ИИ не прошла: %s" % e)
     try:
         async with listener:
-            await asyncio.gather(listener.serve_forever(), hub.voice_loop(), hub.agent_loop())
+            await asyncio.gather(listener.serve_forever(), hub.voice_loop(), hub.agent_loop(), hub.chatter_loop())
     finally:
         hub.stop_bot()
         if llm_proc is not None:

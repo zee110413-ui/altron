@@ -149,6 +149,8 @@ class Knowledge:
         self.disabled = set()      # items the pack switched off with Item Obliterator (exact ids)
         self.disabled_re = []      # ... and by regular expression ("!minecraft:.*_chestplate")
         self._index = None
+        self._generic = None       # recipe type -> blocks of any mod that seem to run it (by name)
+        self._types = None
 
     # ------------------------------------------------------------ items switched off in this pack
     def load_disabled(self, cfg, log=print):
@@ -680,6 +682,29 @@ class Knowledge:
     }
     MACHINE_BLOCKS = sorted({b for m in MACHINES.values() for b in m["blocks"]})
 
+    def generic_machines(self):
+        """Machines of ANY mod, matched to recipe types by their names (thermal:machine_pulverizer -> thermal:pulverizer).
+        Worked like a player does it: open, put the inputs in, wait, take the products. Used only for machines Altron
+        has already seen: an unknown machine is not worth a search that may find nothing."""
+        if self._generic is None:
+            known = {b for m in self.MACHINES.values() for b in m["blocks"]} | set(self.VANILLA_STATIONS)
+            out = defaultdict(list)
+            for bid, e in self.entries.items():
+                if e.get("kind") != "block" or bid in known or bid.startswith("minecraft:"):
+                    continue
+                for t in self.block_recipe_types(bid):
+                    if t not in self.MACHINES and not t.startswith("minecraft:"):
+                        out[t].append(bid)
+            self._generic = {t: {"blocks": sorted(bl)} for t, bl in out.items()}
+        return self._generic
+
+    def machine(self, rtype):
+        """How to work the machine of a recipe type: a known one, or any mod's by name (None: no machine for it)."""
+        return self.MACHINES.get(rtype) or self.generic_machines().get(rtype)
+
+    def all_machine_blocks(self):
+        return sorted(set(self.MACHINE_BLOCKS) | {b for m in self.generic_machines().values() for b in m["blocks"]})
+
     PICKAXES = ["minecraft:wooden_pickaxe", "minecraft:stone_pickaxe", "minecraft:iron_pickaxe",
                 "minecraft:diamond_pickaxe", "minecraft:netherite_pickaxe"]
     # minimal pickaxe tier (index in PICKAXES) to get drops from a block
@@ -693,13 +718,15 @@ class Knowledge:
             tier = max(tier, self.MINE_TIER.get(name, -1))
         return tier
 
-    def acquire(self, query, count, have, stations=(), creative=False, avoid=()):
+    def acquire(self, query, count, have, stations=(), creative=False, avoid=(), stored=None):
         """Concrete steps [(tool, args)] to end up with `count` of an item, starting from inventory `have`.
         stations: work blocks (furnace, crafting table, mod machines...) already standing nearby — no need to make new ones;
         a mod machine among them (MACHINES) makes its recipes with a "machine" step.
         creative: he plays in creative mode — raw materials, tools and what needs a machine he has not found come from the
         creative menu (creative_take), like a player there would do; what has a recipe by hand or in a found machine is made.
         avoid: recipe ids a machine refused before (learned): another recipe is taken if there is one.
+        stored: {item id: [(pos, count)]} — what lies in the chests and machines he has looked into: taken from there
+        first (a take_stored step), like a player uses what the base already has before making it anew.
         Returns (root_id, steps, unresolved) — unresolved lists what the bot cannot get by itself."""
         if self._index is None:
             self._build_index()
@@ -721,7 +748,7 @@ class Knowledge:
         missing = []   # machine types he can work but has not seen yet
 
         def machine_here(rtype):
-            m = self.MACHINES.get(rtype)
+            m = self.machine(rtype)
             return bool(m) and any(b in owned for b in m["blocks"])
 
         def ensure(item_id):
@@ -741,6 +768,23 @@ class Knowledge:
             if tier < 0 or any(p in owned for p in self.PICKAXES[tier:]):
                 return
             ensure(self.PICKAXES[tier])
+
+        stored_left = {i: [[tuple(p), c] for p, c in spots] for i, spots in (stored or {}).items()}
+
+        def take_stored(ref, n):
+            took = 0
+            for i in (self.resolve_tag(ref) if ref.startswith("#") else [ref]):
+                for spot in stored_left.get(i, []):
+                    t = min(n - took, spot[1])
+                    if t > 0:
+                        steps.append(("take_stored", {"item": i, "count": t, "from": list(spot[0])}))
+                        spot[1] -= t
+                        took += t
+                    if took >= n:
+                        break
+                if took >= n:
+                    break
+            return took
 
         def from_stock(ref, n):
             took = 0
@@ -817,13 +861,19 @@ class Knowledge:
 
         def machine_step(ref, n, r, out_n, times, depth, seen):
             """Load a machine standing nearby: its ingredients first, then one "machine" step for the whole batch."""
-            m = self.MACHINES[r["type"]]
+            m = self.machine(r["type"])
             inputs = []
             for inp, k in r["in"]:
                 if self.NOT_INGREDIENT.search(inp):
                     if "stamp" in inp:   # a press stamp is a tool: one is enough and it comes back
                         st = concrete(inp)
-                        ensure(st)
+                        # a stamp of this kind already lies in a machine (the press has its own): it uses that one
+                        members = set(self.resolve_tag(inp)) if inp.startswith("#") else {inp}
+                        own = [i for i in members if stored_left.get(i)]
+                        if own:
+                            st = own[0]
+                        else:
+                            ensure(st)
                         inputs.append({"item": st, "count": 1, "slot": m.get("stamp_slot", -1), "back": True,
                                        "alts": self.resolve_tag(inp) if inp.startswith("#") else []})
                     continue
@@ -843,6 +893,10 @@ class Knowledge:
                 n -= from_stock(ref, n)
                 if n <= 0:
                     return
+                if stored_left:
+                    n -= take_stored(ref, n)
+                    if n <= 0:
+                        return
             ref = concrete(ref)
             if self.is_disabled(ref):
                 unresolved.append(self.disabled_note(ref))
@@ -878,6 +932,10 @@ class Knowledge:
                     # (even in creative: the commander wants it made in the machines, not taken from the menu)
                     if not machine_here(r["type"]) and r["type"] not in missing:
                         missing.append(r["type"])
+                    machine_step(ref, n, r, out_n, times, depth, seen)
+                    return
+                if machine_here(r["type"]):
+                    # any other mod's machine he has seen standing around: worked the same way
                     machine_step(ref, n, r, out_n, times, depth, seen)
                     return
                 if creative and depth > 0:
@@ -926,8 +984,9 @@ class Knowledge:
         core = re.sub(r"^(machine|block|electric|advanced|basic)_|_(machine|block|controller|core|master)$", "", path)
         if len(core) < 4:
             return []
-        types = {r["type"] for r in self.recipes}
-        for t in types:
+        if self._types is None:
+            self._types = {r["type"] for r in self.recipes}
+        for t in self._types:
             tns, _, tpath = t.partition(":")
             if tns != ns:
                 continue

@@ -5,6 +5,7 @@ import com.altron.Config;
 import com.altron.J;
 import com.google.gson.JsonObject;
 import de.maxhenkel.voicechat.api.ForgeVoicechatPlugin;
+import de.maxhenkel.voicechat.api.Group;
 import de.maxhenkel.voicechat.api.VoicechatApi;
 import de.maxhenkel.voicechat.api.VoicechatConnection;
 import de.maxhenkel.voicechat.api.VoicechatPlugin;
@@ -13,6 +14,8 @@ import de.maxhenkel.voicechat.api.audiochannel.AudioChannel;
 import de.maxhenkel.voicechat.api.audiochannel.AudioPlayer;
 import de.maxhenkel.voicechat.api.audiochannel.EntityAudioChannel;
 import de.maxhenkel.voicechat.api.audiochannel.LocationalAudioChannel;
+import de.maxhenkel.voicechat.api.audiochannel.StaticAudioChannel;
+import de.maxhenkel.voicechat.api.events.PlayerConnectedEvent;
 import de.maxhenkel.voicechat.api.events.ClientReceiveSoundEvent;
 import de.maxhenkel.voicechat.api.events.EventRegistration;
 import de.maxhenkel.voicechat.api.events.MicrophonePacketEvent;
@@ -45,6 +48,10 @@ public class AltronVoicePlugin implements VoicechatPlugin {
     private final Object lock = new Object();
     private AudioPlayer player;
     private int idleFrames;
+    /** The commander and Altron are in one voice chat group from the start: they hear each other at any distance. */
+    private volatile Group group;
+    private final Map<UUID, ConcurrentLinkedQueue<short[]>> toMember = new ConcurrentHashMap<>();
+    private final Map<UUID, AudioPlayer> memberPlayers = new ConcurrentHashMap<>();
 
     @Override
     public String getPluginId() {
@@ -69,6 +76,7 @@ public class AltronVoicePlugin implements VoicechatPlugin {
             decoders.clear();
         });
         registration.registerEvent(MicrophonePacketEvent.class, this::onMicrophone);
+        registration.registerEvent(PlayerConnectedEvent.class, this::onConnected);
         if (Config.BOT && Config.BOT_VOICE) {
             // someone else's server: Altron hears players near him through his own voice chat client
             registration.registerEvent(ClientReceiveSoundEvent.EntitySound.class, AltronVoicePlugin::onHeard);
@@ -96,6 +104,57 @@ public class AltronVoicePlugin implements VoicechatPlugin {
         }
         com.altron.bot.BotClient.LINK.send(J.obj("type", "voice", "uuid", event.getId().toString(), "name", name,
                 "dist", Math.round(dist * 10) / 10.0, "pcm", Base64.getEncoder().encodeToString(bytes)));
+    }
+
+    private Group group(VoicechatServerApi s) {
+        if (group == null) {
+            group = s.groupBuilder().setName("Альтрон").setType(Group.Type.OPEN).setPersistent(true).build();
+        }
+        return group;
+    }
+
+    /** A player's voice chat connected (the commander, a friend, Altron): into the group «Альтрон». */
+    private void onConnected(PlayerConnectedEvent event) {
+        VoicechatServerApi s = server;
+        VoicechatConnection c = event.getConnection();
+        if (s == null || c == null || c.isInGroup()) return;
+        try {
+            c.setGroup(group(s));
+        } catch (RuntimeException e) {
+            AltronMod.LOG.warn("[Altron] could not put a player into the voice group: {}", e.toString());
+        }
+    }
+
+    /** Altron's speech straight to everyone in his group (no fading with distance); false if nobody is in it. */
+    private boolean toGroup(java.util.List<short[]> frames) {
+        VoicechatServerApi s = server;
+        MinecraftServer mcs = ServerLifecycleHooks.getCurrentServer();
+        if (s == null || mcs == null) return false;
+        boolean any = false;
+        for (ServerPlayer p : mcs.getPlayerList().getPlayers()) {
+            if (p.getGameProfile().getName().equalsIgnoreCase(Config.BOT_NAME)) continue;
+            VoicechatConnection c = s.getConnectionOf(p.getUUID());
+            if (c == null || !c.isInGroup()) continue;
+            any = true;
+            ConcurrentLinkedQueue<short[]> q = toMember.computeIfAbsent(p.getUUID(), u -> new ConcurrentLinkedQueue<>());
+            q.addAll(frames);
+            AudioPlayer ap = memberPlayers.get(p.getUUID());
+            if (ap != null && ap.isPlaying()) continue;
+            StaticAudioChannel ch = s.createStaticAudioChannel(UUID.randomUUID(), s.fromServerLevel(p.level()), c);
+            if (ch == null) continue;
+            int[] idle = {0};
+            ap = s.createAudioPlayer(ch, api.createEncoder(), () -> {
+                short[] f = q.poll();
+                if (f != null) {
+                    idle[0] = 0;
+                    return f;
+                }
+                return ++idle[0] < 25 ? new short[FRAME] : null;   // a short pause does not cut the next sentence
+            });
+            memberPlayers.put(p.getUUID(), ap);
+            ap.startPlaying();
+        }
+        return any;
     }
 
     private void onMicrophone(MicrophonePacketEvent event) {
@@ -130,18 +189,22 @@ public class AltronVoicePlugin implements VoicechatPlugin {
     private void onBrain(JsonObject o) {
         if ("speak_stop".equals(J.str(o, "type", ""))) {
             queue.clear();
+            toMember.values().forEach(ConcurrentLinkedQueue::clear);
             return;
         }
         byte[] data = Base64.getDecoder().decode(J.str(o, "pcm", ""));
         int samples = data.length / 2;
+        java.util.List<short[]> frames = new java.util.ArrayList<>();
         for (int off = 0; off < samples; off += FRAME) {
             short[] frame = new short[FRAME];
             for (int i = 0; i < FRAME && off + i < samples; i++) {
                 int b = (off + i) * 2;
                 frame[i] = (short) ((data[b] & 0xFF) | (data[b + 1] << 8));
             }
-            queue.add(frame);
+            frames.add(frame);
         }
+        if (toGroup(frames)) return;   // his group hears him wherever they are
+        queue.addAll(frames);
         ensurePlaying();
     }
 

@@ -1,0 +1,4 @@
+numpy
+httpx
+faster-whisper>=1.1
+piper-tts>=1.3

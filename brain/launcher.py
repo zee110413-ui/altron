@@ -74,7 +74,7 @@ PROFILES = {
                  "меньше лучей зрения, низкий приоритет, короче память разговора ИИ",
         "bot_lite": True, "bot_memory_mb": 2048, "bot_render_distance": 3, "bot_simulation_distance": 4,
         "bot_rays": 25, "bot_render_always": False, "bot_low_priority": True,
-        "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 16000,
+        "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 9000,
     },
     "balanced": {
         "title": "Сбалансированный (обычный)",
@@ -82,7 +82,7 @@ PROFILES = {
                  "низкий приоритет",
         "bot_lite": True, "bot_memory_mb": 2560, "bot_render_distance": 4, "bot_simulation_distance": 5,
         "bot_rays": 50, "bot_render_always": False, "bot_low_priority": True,
-        "llm_context": 24576, "llm_cache_ram_mb": 1024, "history_chars": 36000,
+        "llm_context": 24576, "llm_cache_ram_mb": 1024, "history_chars": 20000,
     },
     "max": {
         "title": "Максимальный — всё на полную",
@@ -90,7 +90,7 @@ PROFILES = {
                  "3,5 ГБ Java, больше лучей зрения, обычный приоритет, длинная память разговора ИИ",
         "bot_lite": False, "bot_memory_mb": 3584, "bot_render_distance": 8, "bot_simulation_distance": 8,
         "bot_rays": 100, "bot_render_always": True, "bot_low_priority": False,
-        "llm_context": 32768, "llm_cache_ram_mb": 2048, "history_chars": 54000,
+        "llm_context": 32768, "llm_cache_ram_mb": 2048, "history_chars": 40000,
     },
 }
 PROFILE_KEYS = {"eco": "eco", "эконом": "eco", "1": "eco", "balanced": "balanced", "баланс": "balanced", "2": "balanced",
@@ -151,8 +151,81 @@ def install_new_mod(cfg, log=print):
 
 
 def rel(p):
-    p = Path(p)
+    p = Path(os.path.expandvars(os.path.expanduser(str(p))))
     return p if p.is_absolute() else (BRAIN_DIR / p).resolve()
+
+
+# Minecraft's own language codes for the bot's client (item names he reads follow it)
+MC_LANG = {"ru": "ru_ru", "en": "en_us", "uk": "uk_ua", "be": "be_by", "kk": "kk_kz", "de": "de_de", "fr": "fr_fr",
+           "es": "es_es", "it": "it_it", "pl": "pl_pl", "pt": "pt_br", "tr": "tr_tr", "cs": "cs_cz", "nl": "nl_nl",
+           "zh": "zh_cn", "ja": "ja_jp", "ko": "ko_kr"}
+
+
+def primary_language(cfg):
+    """The language Altron starts in: a fixed "language", or the first of "languages" when it is "auto"."""
+    lang = str(cfg.get("language", "auto")).lower()
+    if lang != "auto":
+        return lang
+    return (cfg.get("languages") or ["en"])[0]
+
+
+def default_minecraft_dir():
+    if os.environ.get("APPDATA"):
+        return Path(os.environ["APPDATA"]) / ".minecraft"
+    mac = Path.home() / "Library" / "Application Support" / "minecraft"
+    return mac if mac.exists() else Path.home() / ".minecraft"
+
+
+def modded_versions(mc):
+    """Installed game versions that carry mods: a folder in versions/ with its own json and a mods folder."""
+    vers = mc / "versions"
+    if not vers.is_dir():
+        return []
+    return sorted(d.name for d in vers.iterdir() if (d / (d.name + ".json")).exists() and (d / "mods").is_dir())
+
+
+def find_java(mc):
+    """Java 17 that Minecraft 1.20 ships with (the launcher's runtime), else the one on PATH."""
+    for pattern in ("runtime/java-runtime-gamma/*/java-runtime-gamma/bin/javaw.exe",
+                    "runtime/java-runtime-gamma/*/java-runtime-gamma/bin/java",
+                    "runtime/java-runtime-gamma/*/java-runtime-gamma/jre.bundle/Contents/Home/bin/java"):
+        found = sorted(mc.glob(pattern))
+        if found:
+            return str(found[0])
+    return shutil.which("javaw") or shutil.which("java") or ""
+
+
+def resolve_install(cfg, remembered_pack="", ask=False, world=""):
+    """Fill in the Minecraft folder, the modpack and Java when config.json leaves them empty (or they moved):
+    any Forge 1.20.1 pack works, not only the one Altron was first made for. world: prefer the pack that has this
+    save. Returns the pack's name."""
+    mc = rel(cfg["minecraft_dir"]) if cfg.get("minecraft_dir") else None
+    if mc is None or not mc.is_dir():
+        mc = default_minecraft_dir()
+    cfg["minecraft_dir"] = str(mc)
+    packs = modded_versions(mc)
+    if world and not cfg.get("pack_version"):
+        packs = [p for p in packs if (mc / "versions" / p / "saves" / world).is_dir()] + \
+                [p for p in packs if not (mc / "versions" / p / "saves" / world).is_dir()]
+    pack = cfg.get("pack_version") or remembered_pack
+    if pack not in packs:
+        if not packs:
+            raise SystemExit("В %s нет ни одной сборки с модами (versions/<имя>/mods). Укажи minecraft_dir и "
+                             "pack_version в config.json." % mc)
+        pack = packs[0]
+        if len(packs) > 1 and ask:
+            print("\nВ какой сборке играть с Альтроном?")
+            for i, name in enumerate(packs, 1):
+                print("  %d — %s" % (i, name))
+            answer = input("Сборка [1-%d]: " % len(packs)).strip()
+            if answer.isdigit() and 1 <= int(answer) <= len(packs):
+                pack = packs[int(answer) - 1]
+    cfg["pack_version"] = pack
+    if not cfg.get("java") or not rel(cfg["java"]).exists():
+        cfg["java"] = find_java(mc)
+        if not cfg["java"]:
+            raise SystemExit("Не нашёл Java 17. Установи её или укажи путь в config.json (\"java\").")
+    return pack
 
 
 def offline_uuid(name):
@@ -270,6 +343,7 @@ def prepare_bot_dir(cfg, log=print, game_dir=None, voice=False, options=None, li
     if options is None:
         opts["renderDistance"] = str(cfg.get("bot_render_distance", 4))
         opts["simulationDistance"] = str(cfg.get("bot_simulation_distance", 5))
+        opts["lang"] = cfg.get("game_lang") or MC_LANG.get(primary_language(cfg), "en_us")
     _patch_key_values(bot / "options.txt", opts, ":")
     if lite:
         _patch_key_values(bot / "config" / "modernfix-mixins.properties", BOT_MODERNFIX, "=")
@@ -372,7 +446,9 @@ def build_command(cfg, server, name=None, game_dir=None, props=None, memory_mb=N
 def launch_bot(cfg, server, log=print, lite=True):
     """server: the LAN port of the commander's world, or "ip:port" of a server (Radmin VPN)."""
     lite = lite and cfg.get("bot_lite", True)
-    bot = prepare_bot_dir(cfg, log, lite=lite, voice=bool(cfg.get("bot_voice")))
+    # his voice chat client is on (muted, sound off) also in the commander's own world: then he shows up in the voice
+    # group «Альтрон» next to the commander. He still hears and speaks through the host's plugin there.
+    bot = prepare_bot_dir(cfg, log, lite=lite, voice=bool(cfg.get("bot_voice") or cfg.get("bot_in_voice_group", True)))
     size = tuple(cfg.get("bot_window", (854, 480)))
     cmd = build_command(cfg, server, size=size)
     (bot / "logs").mkdir(exist_ok=True)
@@ -394,7 +470,7 @@ HOST_OPTIONS["soundCategory_master"] = "0.3"
 def launch_host(cfg, world, name="MJreggich", log=print, live=False):
     """Host client for demos and tests: opens (or creates) `world` and shares it with the bot.
     live: the commander plays in it himself — a normal window and frame rate, his real microphone on (voice activation)."""
-    options = dict(HOST_OPTIONS, maxFps="60", renderDistance="8", soundCategory_master="1.0") if live else HOST_OPTIONS
+    options = dict(HOST_OPTIONS, maxFps="60", renderDistance="6", soundCategory_master="1.0") if live else HOST_OPTIONS
     host = prepare_bot_dir(cfg, log, game_dir=cfg.get("host_dir", "../host"), voice=True, options=options)
     # a bigger jitter buffer: Altron's voice stays smooth even when the PC is busy
     voice = {"output_buffer_size": "12", "audio_packet_threshold": "6"}

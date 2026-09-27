@@ -263,16 +263,42 @@ public final class Info {
         if (menu == p.inventoryMenu) return "Контейнер не открыт.";
         StringBuilder sb = new StringBuilder();
         String title = Bot.mc().screen != null ? Bot.mc().screen.getTitle().getString() : menu.getClass().getSimpleName();
-        sb.append("Открыт: ").append(title).append('\n');
+        // how full it is: a full output chest is why a line backs up and spills onto its belts
+        int total = 0, used = 0;
+        for (Slot s : menu.slots) {
+            if (Inv.isPlayerSlot(p, s)) continue;
+            total++;
+            if (!s.getItem().isEmpty()) used++;
+        }
+        sb.append("Открыт: ").append(title).append(" (занято ").append(used).append(" из ").append(total)
+                .append(total > 0 && used >= total ? " — ПОЛОН" : "").append(")\n");
+        // totals across ALL slots first: a stack is capped at 64, so one item often sits in several slots —
+        // without this a "x64" on the first slot reads as the whole amount and container_take is called for
+        // just that one stack, over and over, instead of taking everything in one go
+        Map<String, Integer> totals = new LinkedHashMap<>();
+        Map<String, String> names = new LinkedHashMap<>();
+        StringBuilder slots = new StringBuilder();
         int shown = 0;
         for (Slot s : menu.slots) {
             if (Inv.isPlayerSlot(p, s)) continue;
             ItemStack st = s.getItem();
             if (st.isEmpty()) continue;
             shown++;
-            sb.append("- слот ").append(s.index).append(": ").append(Bot.describe(st)).append('\n');
+            String id = Bot.id(st.getItem());
+            totals.merge(id, st.getCount(), Integer::sum);
+            names.putIfAbsent(id, st.getHoverName().getString());
+            slots.append("- слот ").append(s.index).append(": ").append(Bot.describe(st)).append('\n');
         }
-        if (shown == 0) sb.append("(пусто)");
+        if (shown == 0) return sb.append("(пусто)").toString().trim();
+        sb.append("Всего: ");
+        boolean first = true;
+        for (Map.Entry<String, Integer> e : totals.entrySet()) {
+            if (!first) sb.append(", ");
+            first = false;
+            sb.append(names.get(e.getKey())).append(" (").append(e.getKey()).append(") x").append(e.getValue());
+        }
+        sb.append(" (container_take/container_put без count или с большим count берут/кладут СРАЗУ ВСЁ количество, "
+                + "не только один стек)\n").append(slots);
         return sb.toString().trim();
     }
 

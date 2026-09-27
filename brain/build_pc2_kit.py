@@ -7,10 +7,17 @@ import shutil
 import sys
 from pathlib import Path
 
+from launcher import resolve_install
+
 BRAIN = Path(__file__).resolve().parent
 ALTRON = BRAIN.parent
 KIT = ALTRON / "ai_server"
 cfg = json.loads((BRAIN / "config.json").read_text(encoding="utf-8"))
+try:
+    _last = json.loads((BRAIN / "last_launch.json").read_text(encoding="utf-8"))
+except Exception:
+    _last = {}
+resolve_install(cfg, _last.get("pack", ""), ask=sys.stdin is not None and sys.stdin.isatty())
 MC = Path(cfg["minecraft_dir"])
 PACK_NAME = cfg["pack_version"]
 PACK = MC / "versions" / PACK_NAME
@@ -52,7 +59,7 @@ copy_tree(BRAIN / ".venv", KIT / "venv", skip=("__pycache__",))
 done()
 
 step("мозг и его долгая память...")
-for f in list(BRAIN.glob("*.py")) + [BRAIN / "knowledge_cache.json"]:
+for f in list(BRAIN.glob("*.py")) + [p for p in (BRAIN / "knowledge_cache.json",) if p.exists()]:
     copy_file(f, KIT / "brain" / f.name)
 if (BRAIN / "memory").exists():
     copy_tree(BRAIN / "memory", KIT / "brain" / "memory")

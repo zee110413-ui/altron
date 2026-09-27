@@ -1,21 +1,28 @@
 @echo off
 chcp 65001 >nul
-title Сборка мода Альтрона
+title Сборка мода Альтрона / Building the Altron mod
 set "ROOT=%~dp0"
-set "JAVA_HOME=%ROOT%tools\jdk-17.0.20.1+1"
-set "GRADLE_USER_HOME=%ROOT%tools\gradle-home"
-set "PACK_MODS=%APPDATA%\.minecraft\versions\Total War - TaCZ, SuperbWarfare, SurvivalInstict Total War-v1\mods"
+rem JDK 17: tools\jdk-17* next to this file if there is one, otherwise the JAVA_HOME already set on this PC
+for /d %%J in ("%ROOT%tools\jdk-17*") do set "JAVA_HOME=%%~fJ"
+if exist "%ROOT%tools" set "GRADLE_USER_HOME=%ROOT%tools\gradle-home"
+if not defined JAVA_HOME (
+    echo Нужна Java 17 ^(JDK^). Установи её или положи в папку tools\jdk-17...
+    echo Java 17 ^(JDK^) is required. Install it or put it into tools\jdk-17...
+    pause
+    exit /b 1
+)
 
 echo Собираю мод Альтрона (первый раз 5-15 минут: скачиваются файлы Forge)...
+echo Building the Altron mod (the first time takes 5-15 minutes: Forge is downloaded)...
 cd /d "%ROOT%mod"
 call gradlew.bat --no-daemon --console=plain build
 if errorlevel 1 (
     echo.
-    echo ОШИБКА СБОРКИ. Скопируй текст выше и покажи его Claude.
+    echo ОШИБКА СБОРКИ / BUILD FAILED
     pause
     exit /b 1
 )
-copy /y "%ROOT%mod\build\libs\altron-0.1.0.jar" "%PACK_MODS%\altron-0.1.0.jar" >nul
 echo.
-echo Готово: мод установлен в сборку Total War.
+echo Готово. Мозг Альтрона сам поставит мод в выбранную сборку при запуске.
+echo Done. Altron's brain installs the mod into the chosen modpack when it starts.
 pause

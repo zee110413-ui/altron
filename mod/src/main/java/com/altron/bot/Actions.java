@@ -27,6 +27,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -82,8 +83,17 @@ public final class Actions {
     }
 
     private static JsonObject start(Task t) {
+        leaveBed();
         int id = BotClient.setTask(t);
         return J.obj("ok", true, "msg", "начал: " + t.name(), "task_id", id);
+    }
+
+    /** A sleeping player can neither walk, mine nor fight: out of bed first. */
+    private static void leaveBed() {
+        LocalPlayer p = Bot.player();
+        if (p != null && p.isSleeping()) {
+            p.connection.send(new ServerboundPlayerCommandPacket(p, ServerboundPlayerCommandPacket.Action.STOP_SLEEPING));
+        }
     }
 
     private static BlockPos pos(JsonObject a) {
@@ -336,6 +346,7 @@ public final class Actions {
                                 if (f != null) o.addProperty("be_facing", f.toString());
                             } catch (Exception ignored) {
                             }
+                            ProductionLook.describe(bent, o);   // pipes' channels, machine sides, tanks
                         }
                         o.addProperty("gui", bent instanceof net.minecraft.world.MenuProvider || st.getMenuProvider(Bot.level(), bp) != null);
                     }
@@ -343,6 +354,12 @@ public final class Actions {
                     if (out.size() >= 1500) break;
                 }
                 return J.obj("ok", true, "msg", "схема: " + out.size() + " блоков", "blocks", out);
+            }
+            case "open_block": {
+                // open a chest or a machine (by any side of it he can see) and leave its window open
+                BlockPos at = BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0));
+                if (Bot.level().getBlockState(at).isAir()) return err("в " + Bot.pos(at) + " пусто");
+                return start(MachineTask.open(at));
             }
             case "inspect": {
                 BlockPos at = BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0));
@@ -394,6 +411,7 @@ public final class Actions {
 
             // ---------- movement ----------
             case "stop":
+                leaveBed();
                 BotClient.setTask(null);
                 Baritone.cancel();
                 Input.releaseAll();
