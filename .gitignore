@@ -1,0 +1,38 @@
+# Whitelist approach: ignore everything at root, then re-include source dirs
+/*
+!/.gitignore
+!/*.bat
+!/*.txt
+!/mod/
+!/brain/
+!/ai_server/
+
+# Inside ai_server, only keep brain (python source) and mod (java source)
+ai_server/*
+!ai_server/brain/
+!ai_server/mod/
+
+# Python venvs, caches, logs, runtime memory (not source)
+**/venv/
+**/.venv/
+**/__pycache__/
+**/logs/
+**/memory/
+**/memory_demo/
+**/memory_test/
+*.pyc
+
+# Java/Gradle build output
+**/.gradle/
+**/build/
+*.class
+
+# Binaries, archives, model weights
+*.gguf
+*.jar
+*.zip
+*.exe
+
+# Big generated reports
+polygon_report.txt
+polygon_report_hodba.txt

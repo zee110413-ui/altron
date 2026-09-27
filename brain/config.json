@@ -1,0 +1,42 @@
+{
+  "bot_name": "altron",
+  "wake_words": ["альтрон", "алтрон", "ультрон", "альтрона", "альтрону", "altron", "ultron", "альтран", "эльтрон"],
+  "conversation_window_sec": 20,
+  "wake_word_required": false,
+  "hear_distance": 0,
+
+  "brain_port": 47800,
+  "llm_port": 8081,
+  "llm_host": "127.0.0.1",
+  "llm_api_key": "HHKk2pmbru76JgWaMhBCPyQF",
+  "llm_model": "../models/Qwen3.5-9B-Q4_K_M.gguf",
+  "llm_mmproj": "../models/mmproj-F16.gguf",
+  "llm_context": 24576,
+  "llm_gpu_layers": 99,
+  "llm_thinking": false,
+  "llm_temperature": 0.2,
+
+  "stt_model": "../models/whisper-large-v3-turbo",
+  "stt_compute_gpu": "int8_float16",
+  "stt_model_cpu": "../models/whisper-small",
+  "stt_device": "auto",
+  "stt_threads": 4,
+
+  "tts_voice": "../models/piper/ru_RU-dmitri-medium.onnx",
+  "tts_speed": 1.0,
+  "tts_robot": 0.25,
+  "chat_replies": false,
+
+  "minecraft_dir": "C:/Users/EGOR/AppData/Roaming/.minecraft",
+  "pack_version": "Total War - TaCZ, SuperbWarfare, SurvivalInstict Total War-v1",
+  "java": "C:/Users/EGOR/AppData/Roaming/.minecraft/runtime/java-runtime-gamma/windows/java-runtime-gamma/bin/javaw.exe",
+  "bot_dir": "../bot",
+  "host_dir": "../host",
+  "host_memory_mb": 3072,
+  "ffmpeg": "../tools/ffmpeg/ffmpeg-9.0.2-essentials_build/bin/ffmpeg.exe",
+  "bot_memory_mb": 2560,
+  "bot_low_priority": true,
+  "bot_render_always": false,
+  "stt_keep_audio": true,
+  "extra_bot_mods": ["../mod/libs/baritone-api-forge-1.10.1.jar"]
+}
