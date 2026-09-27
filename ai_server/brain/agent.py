@@ -50,7 +50,6 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - «перенеси блок/бочку» → transport_block. Если координаты не названы — сначала find_block.
 - «принеси/дай мне X» (X лежит в сундуке или у тебя) → fetch. «сложи/убери всё в сундук» → stash. Это готовые приёмы: сами делают все шаги.
 - Сложное с конкретным сундуком («возьми из сундука на 10 64 5») → use_block на сундук, потом container_put / container_take, потом close_container.
-- Переноска материала между сундуком/бочкой и машиной («переложи железо в пресс», «загрузи сталь в машину», «насыпь всё железо в дробилку») → сразу load_machine(item, machine). Он сам заберёт ВЕСЬ предмет (не один стек) и отнесёт за один поход. Вручную (use_block/container_take/container_put) — только если командир сам назвал точные координаты сундука и машины; и тогда тоже бери/клади предмет ВСЕГО за раз (без count, или item='all') — не по одному стеку с беготнёй туда-обратно.
 - SecurityCraft: блоки, турели и пульты НАСТРАИВАЕТ ТОЛЬКО ВЛАДЕЛЕЦ (кто поставил). Чужую турель ты не перенастроишь — сервер не даст. Скажи командиру, что сделать самому: вставить в турель модуль белого списка (allowlist module) с ником altron, чтобы она не стреляла в тебя; режим «атаковать игроков» — в его пульте. Свои турели (поставленные тобой) настраивай сам.
 - «стой/стоп/хватит» → stop.
 - «повернись / поверни голову направо / посмотри на меня / обернись» → turn (это поворот головы). «что видишь / что это?» → look (это узнать, что на экране; голову look НЕ поворачивает). Не говори «вижу» или «посмотрел», не вызвав look.
@@ -125,13 +124,27 @@ TOOLS = [
           {"item": _S, "count": _I, "player": _S}, ["item"]),
     _tool("stash", "ГОТОВЫЙ ПРИЁМ «сложи в сундук»: сам дойдёт до ближайшего сундука/бочки и положит вещи (item='all' — всё, "
                    "кроме инструментов, оружия, брони и еды; или конкретный предмет).", {"item": _S}),
-    _tool("load_machine", "ГОТОВЫЙ ПРИЁМ «перенеси/загрузи/насыпь X в машину» (сталь в пресс и т.п.): сам заберёт ВЕСЬ "
-                          "материал из сундуков/бочек рядом (или где видел его раньше) за один обход, дойдёт до названной "
-                          "машины и положит всё внутрь разом — один поход, а не по стаку за раз. machine — название или id "
-                          "машины (пресс, hbm_m:press...).", {"item": _S, "machine": _S}, ["item", "machine"]),
     _tool("study", "ГОТОВЫЙ ПРИЁМ «изучи производство / базу / завод / что где стоит»: сам обойдёт здания вокруг командира, "
                    "откроет каждую машину и хранилище, поймёт что каждая делает и что в неё кладут, что где лежит, и запомнит "
                    "навсегда (потом отвечаешь «куда что класть»).", {"radius": _I}),
+    _tool("supply", "ГОТОВЫЙ ПРИЁМ «разложи сырьё / загрузи линию / подай на пресс»: по изученной карте производства сам возьмёт "
+                    "нужное сырьё со складских сундуков и положит во входные сундуки линий (туда, куда командир обычно кладёт).",
+          {"line": {"type": "string", "description": "номер линии или что она делает («пресс», «порох»); пусто — все"},
+           "item": _S}),
+    _tool("tidy", "ГОТОВЫЙ ПРИЁМ «разложи свои вещи по местам / верни, что подобрал»: всё, что Альтрон несёт и что принадлежит "
+                  "базе, отнесёт обратно (изделия линии — в её выходной сундук, остальное — туда, где такое уже лежит).", {}),
+    _tool("check_lines", "ГОТОВЫЙ ПРИЁМ «проверь линии / что стоит / всё ли работает»: заглянет во входы и машины каждой линии "
+                         "и скажет, какая работает, какая стоит без сырья, где нет питания.",
+          {"line": {"type": "string", "description": "номер или что делает; пусто — все"}}),
+    _tool("maintain", "«Поддерживай производство» (on=true) / «хватит» (on=false): раз в 2 минуты сам досыпает во входные сундуки "
+                      "линий то, что кончается, из своего инвентаря и рюкзака (командир даёт ему рюкзак с сырьём), и просит ещё, "
+                      "когда запас кончается.", {"on": {"type": "boolean"}, "line": {"type": "string", "description": "одна линия или пусто — все"}}),
+    _tool("watch_lines", "«Следи за производством» (on=true) / «перестань следить» (on=false): раз в 15 минут сам проверяет линии "
+                         "и говорит, если какая-то встала.", {"on": {"type": "boolean"}}),
+    _tool("watch_me", "«Смотри, как я делаю» (on=true): запоминать, что командир кладёт в сундуки и машины и что берёт; "
+                      "«всё / понял?» (on=false): сказать, чему научился.", {"on": {"type": "boolean"}}),
+    _tool("listen_mode", "«Отвечай только по имени» (mode=name) / «слушай всё» (mode=all): отвечать командиру только когда зовут "
+                         "«Альтрон», или на всё, что он говорит.", {"mode": {"type": "string", "enum": ["name", "all"]}}, ["mode"]),
     _tool("plan","Показать цепочку рецептов предмета до сырья (только посмотреть, без действий).",
           {"item": {"type": "string", "description": "id или название"}, "count": _I}, ["item"]),
     _tool("remember", "Запомнить НАВСЕГДА факт или договорённость (что сказал командир, чьё что, правила, планы). Когда говорят «запомни».",
@@ -178,13 +191,8 @@ TOOLS = [
           dict(_XYZ, item=_S), ["item"]),
     _tool("use_block", "ПКМ по блоку: открыть сундук/машину/верстак, нажать кнопку/рычаг; с item — применить предмет к блоку (ведро на нефть, целеуказатель, ключ, молот); sneak — присесть; ticks — держать ПКМ.",
           dict(_XYZ, item=_S, sneak={"type": "boolean"}, ticks=_I), ["x", "y", "z"]),
-    _tool("container_take", "Забрать предметы из открытого контейнера. item='all' — все виды предметов; без count (или "
-                            "с count побольше) — ВЕСЬ этот предмет разом, все стеки, а не один стек по 64. Не бери по одному "
-                            "стеку и не ходи за добавкой несколько раз — считай сколько всего нужно и бери/клади это за один заход.",
-          {"item": _S, "count": _I}, ["item"]),
-    _tool("container_put", "Положить предметы в открытый контейнер/машину. item='all' — все виды предметов; без count "
-                           "(или с count побольше) — ВЕСЬ этот предмет разом, все стеки, а не один стек по 64.",
-          {"item": _S, "count": _I}, ["item"]),
+    _tool("container_take", "Забрать предметы из открытого контейнера (item='all' — всё).", {"item": _S, "count": _I}, ["item"]),
+    _tool("container_put", "Положить предметы в открытый контейнер/машину (item='all' — всё).", {"item": _S, "count": _I}, ["item"]),
     _tool("close_container", "Закрыть открытое окно."),
     _tool("climb", "Залезть или спуститься по ближайшей лестнице (любой, и из модов), как игрок. direction up/down, y — до какой "
                    "высоты (необязательно). Когда просят «поднимись/спустись по лестнице» или ходьба не дошла из-за лестницы.",
@@ -230,8 +238,8 @@ TOOLS = [
 # Commands that start a task on the bot. The bot does one task at a time, so the hub queues them.
 TASK_TOOLS = {"mine", "collect_items", "attack", "smelt", "transport_block", "goto", "come", "drive", "climb",
               "build_multiblock", "revive", "craft", "give", "drop", "eat", "use_item", "use_block", "break_block",
-              "place_block", "use_entity", "follow", "guard", "obtain", "goto_place", "fetch", "stash", "explore",
-              "study", "load_machine"}
+              "place_block", "use_entity", "follow", "guard", "obtain", "goto_place", "fetch", "stash", "explore", "study",
+              "supply", "check_lines", "tidy"}
 # Tools that only look something up: calling one of them over and over in a turn means the model is looping
 INFO_TOOLS = {"recall", "status", "inventory", "nearby", "find_block", "find_item", "recipe", "wiki", "plan", "item_info",
               "web_search"}
@@ -264,7 +272,8 @@ ACTION_WORDS = re.compile(r"\b(иди|пойд|ид[её]м|пошли|пош[е
                           r"стреля|атаку|огонь|убей|убива|дай|отдай|положи|возьми|следуй|охраня|защища|перенес|запусти|"
                           r"поставь|сломай|можешь|сможешь|давай|надо|нужно|сходи|найди|приготов|переплав|собери|подбери|"
                           r"стой|стоп|сюда|ко мне|за мной|вперед|вперёд|назад|беги|прыга|садись|залез|вылез|жди|подожди|"
-                          r"запомни|запоминай|забудь|вспомни|посмотри|покажи|открой|закрой|нажми|изучи|осмотри|обойди|разберись)", re.I)
+                          r"запомни|запоминай|забудь|вспомни|посмотри|покажи|открой|закрой|нажми|изучи|осмотри|обойди|разберись|"
+                          r"разложи|загрузи|подай|проверь|следи|смотри|слушай|отвечай|поддерживай|обслуживай)", re.I)
 
 
 THINK_RE = re.compile(r"\b(как\s+(сделать|мне|нам|его|её|ее|их|это|настроить|работает|пользоваться|получить|построить|"
@@ -451,6 +460,11 @@ class Agent:
             if self.cancelled:
                 break
             self._trim()
+            # the model's own count says the conversation nearly fills its memory: cut harder before it overflows
+            ctx = int(self.cfg.get("llm_context", 24576))
+            used = str(self.llm.last_prompt_tokens or "").split(" ")[0]
+            if used.isdigit() and int(used) > ctx * 0.8:
+                self._trim(int(self.cfg.get("history_chars", HISTORY_CHARS)) // 2)
             messages = [{"role": "system", "content": self._system()}] + self.history
             try:
                 t0 = time.time()
@@ -459,6 +473,8 @@ class Agent:
                 reply = await self.llm.chat(messages, think=think and step == 0)
                 if step == 0:
                     self.hub.log("  (ИИ ответил за %.1f с, промпт %s ток.)" % (time.time() - t0, self.llm.last_prompt_tokens))
+                if time.time() - t0 > 150 and hasattr(self.hub, "note_llm_failure"):
+                    self.hub.note_llm_failure(why="ответ шёл %.0f с" % (time.time() - t0))   # the PC is choking
                 promised = PROMISE_RE.search(reply.get("content") or "")
                 if step == 0 and not reply.get("tool_calls") and ((kind == "user" and order) or promised):
                     # also after an event: "found the press, I keep searching" — and he stood still
@@ -468,12 +484,17 @@ class Agent:
             except Exception as e:
                 # most often the conversation outgrew the model's context: keep only the current turn and retry
                 self.hub.log("Ошибка ИИ (%s), сокращаю память и повторяю" % e)
+                if hasattr(self.hub, "note_llm_failure"):
+                    self.hub.note_llm_failure(why=str(e)[:80])
                 users = [i for i, m in enumerate(self.history) if m["role"] == "user"]
                 self.history = self.history[users[-1]:] if users else self.history[-1:]
                 try:
                     reply = await self.llm.chat([{"role": "system", "content": self._system()}] + self.history)
                 except Exception as e2:
                     self.hub.log("Ошибка ИИ: %s" % e2)
+                    if hasattr(self.hub, "request_restart"):
+                        await self.hub.say("Мозг сбоит, перезагружаюсь, это полминуты.")
+                        self.hub.request_restart("ИИ не отвечает дважды подряд: %s" % str(e2)[:80], llm=True)
                     await self.hub.say("Мой мозг не отвечает, проверь окно Альтрона.")
                     return
             if self.cancelled:
@@ -544,6 +565,8 @@ class Agent:
                     self.task_calls.append((key, now))
                 if name == "ignore":
                     self.hub.log("(не мне — молчу)")
+                    if kind == "user" and hasattr(self.hub, "on_ignored"):
+                        await self.hub.on_ignored()
                     self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": "промолчал"})
                     continue
                 if name in ("reply", "ask_player"):

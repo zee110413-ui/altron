@@ -258,6 +258,64 @@ public final class HostSetup {
         }
         if (msg.has("tp_bot") && bot != null) tp(bot, level, msg.getAsJsonArray("tp_bot"));
         if (msg.has("tp_host") && host != null) tp(host, level, msg.getAsJsonArray("tp_host"));
+        if (msg.has("host_container") && host != null) {
+            // test of learning from the commander: he opens a chest, puts in / takes out, closes — as if by hand
+            JsonObject hc = msg.getAsJsonObject("host_container");
+            JsonArray pa = hc.getAsJsonArray("pos");
+            BlockPos cpos = new BlockPos(pa.get(0).getAsInt(), pa.get(1).getAsInt(), pa.get(2).getAsInt());
+            var cbe = level.getBlockEntity(cpos);
+            if (cbe instanceof net.minecraft.world.MenuProvider mp && cbe instanceof net.minecraft.world.Container single) {
+                // a double chest is one container of two halves
+                net.minecraft.world.Container box = single;
+                var cst = level.getBlockState(cpos);
+                if (cst.getBlock() instanceof net.minecraft.world.level.block.ChestBlock cb) {
+                    var both = net.minecraft.world.level.block.ChestBlock.getContainer(cb, cst, level, cpos, true);
+                    if (both != null) box = both;
+                }
+                HostServerEvents.INSTANCE.clicked(host, cpos);
+                host.openMenu(mp);
+                if (hc.has("put")) {
+                    for (JsonElement it : hc.getAsJsonArray("put")) {
+                        Item item = BuiltInRegistries.ITEM.get(new ResourceLocation(it.getAsJsonArray().get(0).getAsString()));
+                        int left = it.getAsJsonArray().get(1).getAsInt();
+                        for (int i = 0; i < host.getInventory().getContainerSize() && left > 0; i++) {
+                            ItemStack s = host.getInventory().getItem(i);
+                            if (!s.is(item)) continue;
+                            int n = Math.min(left, s.getCount());
+                            ItemStack rest = net.minecraft.world.level.block.entity.HopperBlockEntity.addItem(null, box, s.split(n), null);
+                            s.grow(rest.getCount());
+                            left -= n - rest.getCount();
+                        }
+                    }
+                }
+                if (hc.has("take")) {
+                    for (JsonElement it : hc.getAsJsonArray("take")) {
+                        Item item = BuiltInRegistries.ITEM.get(new ResourceLocation(it.getAsJsonArray().get(0).getAsString()));
+                        int left = it.getAsJsonArray().get(1).getAsInt();
+                        for (int i = 0; i < box.getContainerSize() && left > 0; i++) {
+                            ItemStack s = box.getItem(i);
+                            if (!s.is(item)) continue;
+                            ItemStack got = s.split(Math.min(left, s.getCount()));
+                            left -= got.getCount();
+                            host.getInventory().add(got);
+                        }
+                        box.setChanged();
+                    }
+                }
+                host.closeContainer();
+            }
+        }
+        if (msg.has("bot_gamemode") && bot != null) {
+            // for photographing a base from above and through walls (spectator), then back to how he played
+            GameType mode = GameType.byName(msg.get("bot_gamemode").getAsString(), GameType.SURVIVAL);
+            bot.setGameMode(mode);
+            // a dark workshop would come out black: night vision for the shoot, off again after it
+            if (mode == GameType.SPECTATOR) {
+                bot.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.NIGHT_VISION, 20 * 60 * 30, 0, false, false));
+            } else {
+                bot.removeEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
+            }
+        }
         if (msg.has("blocks")) {
             JsonObject b = new JsonObject();
             for (JsonElement e : msg.getAsJsonArray("blocks")) {
@@ -509,17 +567,6 @@ public final class HostSetup {
                     p.setGameMode(GameType.SPECTATOR);
                     if (bot != null) p.teleportTo(level, bot.getX() + 3, bot.getY() + 3, bot.getZ() + 3, p.getYRot(), p.getXRot());
                 }
-            }
-        }
-        if (msg.has("bot_gamemode") && bot != null) {
-            // for photographing a base from above and through walls (spectator), then back to how he played
-            GameType mode = GameType.byName(msg.get("bot_gamemode").getAsString(), GameType.SURVIVAL);
-            bot.setGameMode(mode);
-            // a dark workshop would come out black: night vision for the shoot, off again after it
-            if (mode == GameType.SPECTATOR) {
-                bot.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.NIGHT_VISION, 20 * 60 * 30, 0, false, false));
-            } else {
-                bot.removeEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
             }
         }
         if (msg.has("give_bot") && bot != null) {

@@ -34,6 +34,7 @@ public final class HostBridge {
             case "setup" -> HostSetup.apply(o);
             case "probe" -> HostSetup.probe(o);
             case "host_chat" -> HostClientEvents.sayInChat(J.str(o, "text", ""));
+            case "bot_pickup" -> HostServerEvents.BOT_PICKUP = o.has("on") && o.get("on").getAsBoolean();
             default -> {
             }
         }

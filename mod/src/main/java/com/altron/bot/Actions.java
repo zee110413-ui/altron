@@ -346,6 +346,7 @@ public final class Actions {
                                 if (f != null) o.addProperty("be_facing", f.toString());
                             } catch (Exception ignored) {
                             }
+                            ProductionLook.describe(bent, o);   // pipes' channels, machine sides, tanks
                         }
                         o.addProperty("gui", bent instanceof net.minecraft.world.MenuProvider || st.getMenuProvider(Bot.level(), bp) != null);
                     }
@@ -353,6 +354,12 @@ public final class Actions {
                     if (out.size() >= 1500) break;
                 }
                 return J.obj("ok", true, "msg", "схема: " + out.size() + " блоков", "blocks", out);
+            }
+            case "open_block": {
+                // open a chest or a machine (by any side of it he can see) and leave its window open
+                BlockPos at = BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0));
+                if (Bot.level().getBlockState(at).isAir()) return err("в " + Bot.pos(at) + " пусто");
+                return start(MachineTask.open(at));
             }
             case "inspect": {
                 BlockPos at = BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0));

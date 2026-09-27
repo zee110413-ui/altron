@@ -160,7 +160,8 @@ class LongMemory:
     def learn(self, kind, key, text, world=True):
         """Remember a lesson. The same lesson again only counts up (and moves to the front): repeated failures weigh more.
         world=False: true in every world (a recipe, a rule); True: only here (where a machine stands, no trees here)."""
-        text = re.sub(r"\s+", " ", text or "").strip()[:300]
+        # the production map keeps what lies inside a machine: longer notes there
+        text = re.sub(r"\s+", " ", text or "").strip()[:1200 if kind in ("production", "production_zone") else 300]
         if not text:
             return None
         w = self.world if world else ""
@@ -168,7 +169,7 @@ class LongMemory:
         for les in self.lessons:
             if les["kind"] == kind and les["key"] == key and les["world"] == w:
                 old = stems(les["text"])
-                if kind in ("success", "bad_recipe", "production") or (new and old and len(new & old) / len(new | old) > 0.6):
+                if kind in ("success", "bad_recipe", "production", "production_zone") or (new and old and len(new & old) / len(new | old) > 0.6):
                     les.update(t=time.time(), text=text, n=les.get("n", 1) + 1)
                     self._save()
                     return les
@@ -183,6 +184,22 @@ class LongMemory:
         if phrase and self.RULE_RE.search(phrase) and len(phrase) < 250:
             return self.learn("rule", "", phrase, world=False)
         return None
+
+    # ------------------------------------------------------------------ per-world data files (the production map...)
+    def world_file(self, name):
+        safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", self.world or "world")
+        return self.dir / ("%s_%s.json" % (name, safe))
+
+    def save_world_json(self, name, data):
+        tmp = self.world_file(name).with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.world_file(name))
+
+    def load_world_json(self, name):
+        try:
+            return json.loads(self.world_file(name).read_text(encoding="utf-8"))
+        except Exception:
+            return None
 
     def lessons_here(self):
         return [les for les in self.lessons if les["world"] in ("", self.world)]
@@ -208,7 +225,7 @@ class LongMemory:
             out.append("Правила командира (соблюдай всегда):\n" + "\n".join("- " + r["text"] for r in rules))
         if scored:
             mark = {"success": "получилось", "failure": "НЕ получилось", "bad_recipe": "машина не приняла",
-                    "production": "производство"}
+                    "production": "производство", "production_zone": "линия производства"}
             out.append("Твой опыт (учти, не повторяй ошибок):\n" + "\n".join(
                 "- [%s%s] %s" % (mark.get(les["kind"], les["kind"]), ", %d раз" % les["n"] if les.get("n", 1) > 1 else "", les["text"])
                 for _, _, les in scored[:limit]))

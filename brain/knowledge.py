@@ -718,13 +718,15 @@ class Knowledge:
             tier = max(tier, self.MINE_TIER.get(name, -1))
         return tier
 
-    def acquire(self, query, count, have, stations=(), creative=False, avoid=()):
+    def acquire(self, query, count, have, stations=(), creative=False, avoid=(), stored=None):
         """Concrete steps [(tool, args)] to end up with `count` of an item, starting from inventory `have`.
         stations: work blocks (furnace, crafting table, mod machines...) already standing nearby — no need to make new ones;
         a mod machine among them (MACHINES) makes its recipes with a "machine" step.
         creative: he plays in creative mode — raw materials, tools and what needs a machine he has not found come from the
         creative menu (creative_take), like a player there would do; what has a recipe by hand or in a found machine is made.
         avoid: recipe ids a machine refused before (learned): another recipe is taken if there is one.
+        stored: {item id: [(pos, count)]} — what lies in the chests and machines he has looked into: taken from there
+        first (a take_stored step), like a player uses what the base already has before making it anew.
         Returns (root_id, steps, unresolved) — unresolved lists what the bot cannot get by itself."""
         if self._index is None:
             self._build_index()
@@ -766,6 +768,23 @@ class Knowledge:
             if tier < 0 or any(p in owned for p in self.PICKAXES[tier:]):
                 return
             ensure(self.PICKAXES[tier])
+
+        stored_left = {i: [[tuple(p), c] for p, c in spots] for i, spots in (stored or {}).items()}
+
+        def take_stored(ref, n):
+            took = 0
+            for i in (self.resolve_tag(ref) if ref.startswith("#") else [ref]):
+                for spot in stored_left.get(i, []):
+                    t = min(n - took, spot[1])
+                    if t > 0:
+                        steps.append(("take_stored", {"item": i, "count": t, "from": list(spot[0])}))
+                        spot[1] -= t
+                        took += t
+                    if took >= n:
+                        break
+                if took >= n:
+                    break
+            return took
 
         def from_stock(ref, n):
             took = 0
@@ -848,7 +867,13 @@ class Knowledge:
                 if self.NOT_INGREDIENT.search(inp):
                     if "stamp" in inp:   # a press stamp is a tool: one is enough and it comes back
                         st = concrete(inp)
-                        ensure(st)
+                        # a stamp of this kind already lies in a machine (the press has its own): it uses that one
+                        members = set(self.resolve_tag(inp)) if inp.startswith("#") else {inp}
+                        own = [i for i in members if stored_left.get(i)]
+                        if own:
+                            st = own[0]
+                        else:
+                            ensure(st)
                         inputs.append({"item": st, "count": 1, "slot": m.get("stamp_slot", -1), "back": True,
                                        "alts": self.resolve_tag(inp) if inp.startswith("#") else []})
                     continue
@@ -868,6 +893,10 @@ class Knowledge:
                 n -= from_stock(ref, n)
                 if n <= 0:
                     return
+                if stored_left:
+                    n -= take_stored(ref, n)
+                    if n <= 0:
+                        return
             ref = concrete(ref)
             if self.is_disabled(ref):
                 unresolved.append(self.disabled_note(ref))
