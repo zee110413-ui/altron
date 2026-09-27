@@ -9,7 +9,6 @@ import sys
 import threading
 import time
 from collections import defaultdict
-from pathlib import Path
 
 import httpx
 import numpy as np

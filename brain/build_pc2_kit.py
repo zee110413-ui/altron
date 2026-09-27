@@ -2,7 +2,6 @@
 Nothing is installed anywhere: portable Python, the brain with its memories, speech models, llama.cpp and the Minecraft
 files Altron's body needs (Java, the pack's mods/configs, libraries, assets). The big model is downloaded there."""
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
