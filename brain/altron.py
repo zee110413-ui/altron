@@ -141,6 +141,8 @@ class Hub:
         self.friends = {n.lower() for n in cfg.get("friends", [])}   # players Altron also obeys
         self.assist = bool(cfg.get("assist", False))   # help without orders: eat, retreat, feed and defend the commander
         self.event_talk = 0.0          # when an event last made the AI speak (they must not drown the talk)
+        self.speech_end = 0.0          # when the speech already sent to the game finishes playing
+        self.cut_speech = False        # the commander started talking: stop saying the rest
 
     # ------------------------------------------------------------------ utils
     def log(self, text):
@@ -189,11 +191,12 @@ class Hub:
             cut = max(spoken.rfind(". ", 0, limit), spoken.rfind("! ", 0, limit), spoken.rfind("? ", 0, limit))
             spoken = spoken[:cut + 1] if cut > 40 else spoken[:limit]
         # sentence by sentence: the first one sounds while the next ones are still being synthesized
+        self.cut_speech = False
         gen = self.tts.synth(spoken, self.lang)
         chunks, at = [], None
         while True:
             pcm = await asyncio.to_thread(next, gen, None)
-            if pcm is None:
+            if pcm is None or self.cut_speech:
                 break
             chunks.append(pcm)
             if at is None and self.recorder is not None:
@@ -206,10 +209,21 @@ class Hub:
         """Send speech (48 kHz s16le PCM) into the voice chat: in the commander's world the host's plugin plays it
         from Altron's head; on someone else's server Altron's own client says it like a player's microphone."""
         target = self.bot if self.remote else self.host
-        if target is None:
+        if target is None or self.cut_speech:
             return
         self.send(target, {"type": "speak", "pcm": base64.b64encode(pcm).decode("ascii")})
+        self.speech_end = max(time.time(), self.speech_end) + len(pcm) / 2 / 48000
         await target.drain()
+
+    def interrupt_speech(self, who):
+        """The commander talks over Altron: like a person, he stops mid-sentence and listens."""
+        if self.cut_speech or time.time() >= self.speech_end:
+            return
+        self.cut_speech = True
+        self.speech_end = 0.0
+        target = self.bot if self.remote else self.host
+        self.send(target, {"type": "speak_stop"})
+        self.log("(%s заговорил — замолкаю)" % who)
 
     async def acknowledge(self):
         """Instant answer to an order, before the AI has even thought: a short phrase synthesized in advance."""
@@ -222,6 +236,7 @@ class Hub:
         if not acks:
             return
         text, pcm = acks[self.ack_n % len(acks)]
+        self.cut_speech = False
         self.ack_n += 1
         self.log("Альтрон (сразу): " + text)
         if self.recorder is not None:
@@ -1890,7 +1905,12 @@ class Hub:
         now = time.time()
         v["last"] = now
         if len(pcm) and float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) > VOICED_RMS:
+            if now - v["voiced"] > 0.3:
+                v["since"] = now   # a new stretch of speech starts
             v["voiced"] = now
+            # talking over Altron for ~0.4 s (not a cough or a click): he stops and listens
+            if self.cfg.get("barge_in", True) and now - v.get("since", now) >= 0.4 and self.is_friend(v["name"]):
+                self.interrupt_speech(v["name"])
 
     async def voice_loop(self):
         while True:
