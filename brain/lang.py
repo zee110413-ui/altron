@@ -55,6 +55,19 @@ PHRASES = {
 }
 
 
+RU_FAMILY = {"ru", "uk", "be", "kk"}
+_ui = ["ru"]
+
+
+def set_ui(lang):
+    """The brain's window speaks Russian with a Russian-speaking commander (and its neighbours), English otherwise."""
+    _ui[0] = "ru" if lang in RU_FAMILY else "en"
+
+
+def ui(ru, en):
+    return ru if _ui[0] == "ru" else en
+
+
 def phrase(key, lang):
     """The phrase in this language; English (then Russian) when it has no translation yet."""
     table = PHRASES[key]

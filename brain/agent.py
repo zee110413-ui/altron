@@ -7,6 +7,7 @@ import uuid
 
 import httpx
 
+from agent_en import MOD_HINTS_EN, SYSTEM_PROMPT_EN, TOOLS_EN
 from lang import NAMES as LANG_NAMES
 from memory import stems
 
@@ -316,6 +317,29 @@ TOOLS = [
           {"command": _S}, ["command"]),
 ]
 
+# Altron thinks in Russian with a Russian-speaking commander (and its neighbours), in English with everyone else
+RU_FAMILY = {"ru", "uk", "be", "kk"}
+_TOOLS_EN = None
+
+
+def tools_for(lang):
+    """The tools with descriptions in the language Altron thinks in."""
+    global _TOOLS_EN
+    if lang in RU_FAMILY:
+        return TOOLS
+    if _TOOLS_EN is None:
+        import copy
+        _TOOLS_EN = copy.deepcopy(TOOLS)
+        for t in _TOOLS_EN:
+            f = t["function"]
+            desc, params = TOOLS_EN.get(f["name"], (f["description"], {}))
+            f["description"] = desc
+            for k, d in params.items():
+                if k in f["parameters"]["properties"]:
+                    f["parameters"]["properties"][k]["description"] = d
+    return _TOOLS_EN
+
+
 # Commands that start a task on the bot. The bot does one task at a time, so the hub queues them.
 TASK_TOOLS = {"mine", "collect_items", "attack", "smelt", "transport_block", "goto", "come", "drive", "climb",
               "build_multiblock", "revive", "craft", "give", "drop", "eat", "use_item", "use_block", "break_block",
@@ -471,7 +495,7 @@ class LLM:
         data = await self._post(body)
         return re.sub(r"<think>.*?</think>", "", data["choices"][0]["message"].get("content") or "", flags=re.S).strip()
 
-    async def chat(self, messages, force_tool=False, think=False, on_sentence=None):
+    async def chat(self, messages, force_tool=False, think=False, on_sentence=None, tools=None):
         """think: the model reasons first (in reasoning_content, not spoken) — slower, but much better on
         "how / why / what to do" questions.
         on_sentence: an async callback; the answer is then streamed and its finished sentences are handed over while
@@ -480,7 +504,7 @@ class LLM:
         body = {
             "model": self.model,
             "messages": messages,
-            "tools": TOOLS,
+            "tools": tools or TOOLS,
             # small models sometimes promise an action without calling a tool: force a choice on the first step
             "tool_choice": "required" if force_tool and not think else "auto",
             "temperature": self.cfg.get("llm_temperature", 0.4),
@@ -585,14 +609,20 @@ class Agent:
 
     def _system(self):
         k = getattr(self.hub, "knowledge", None)
-        mods = k.mods_line() if k else "справочник ещё загружается"
-        ids = set(k.mods) if k else set()
-        hints = [h for key, h in MOD_HINTS.items() if key == "baritone" or any(m.startswith(key) for m in ids)]
         lang = getattr(self.hub, "lang", "ru")
-        return SYSTEM_PROMPT.format(bot=self.cfg["bot_name"], owner=self.hub.owner or "игрок", mods=mods,
-                                    language=LANG_NAMES.get(lang, lang),
-                                    mod_hints=("\nПодсказки по модам этой сборки:\n" + "\n".join(hints)).format(
-                                        bot=self.cfg["bot_name"]) if hints else "")
+        ru = lang in RU_FAMILY
+        mods = k.mods_line() if k else ("справочник ещё загружается" if ru else "the reference is still loading")
+        ids = set(k.mods) if k else set()
+        table = MOD_HINTS if ru else MOD_HINTS_EN
+        hints = [h for key, h in table.items() if key == "baritone" or any(m.startswith(key) for m in ids)]
+        head = "\nПодсказки по модам этой сборки:\n" if ru else "\nHints for the mods of this pack:\n"
+        return (SYSTEM_PROMPT if ru else SYSTEM_PROMPT_EN).format(
+            bot=self.cfg["bot_name"], owner=self.hub.owner or ("игрок" if ru else "player"), mods=mods,
+            language=LANG_NAMES.get(lang, lang),
+            mod_hints=(head + "\n".join(hints)).format(bot=self.cfg["bot_name"]) if hints else "")
+
+    def _tools(self):
+        return tools_for(getattr(self.hub, "lang", "ru"))
 
     def note(self, text):
         """Something the AI must know before the next turn (the commander stopped everything...)."""
@@ -653,7 +683,8 @@ class Agent:
                         await self.hub.say(sentence)
 
                 stream_started = []
-                reply = await self.llm.chat(messages, think=think and step == 0, on_sentence=say_now if stream else None)
+                reply = await self.llm.chat(messages, think=think and step == 0, on_sentence=say_now if stream else None,
+                                            tools=self._tools())
                 if step == 0:
                     self.hub.log("  (ИИ ответил за %.1f с, промпт %s ток.)" % (time.time() - t0, self.llm.last_prompt_tokens))
                 if time.time() - t0 > 150 and hasattr(self.hub, "note_llm_failure"):
@@ -663,7 +694,7 @@ class Agent:
                     # also after an event: "found the press, I keep searching" — and he stood still
                     # an order answered with words only ("Есть, командир." — and he stands still), or a promise
                     # ("иду", "открываю") without the action: ask again, this time an action is due
-                    reply = await self.llm.chat(messages, force_tool=True)
+                    reply = await self.llm.chat(messages, force_tool=True, tools=self._tools())
             except Exception as e:
                 # most often the conversation outgrew the model's context: keep only the current turn and retry
                 self.hub.log("Ошибка ИИ (%s), сокращаю память и повторяю" % e)
@@ -672,7 +703,7 @@ class Agent:
                 users = [i for i, m in enumerate(self.history) if m["role"] == "user"]
                 self.history = self.history[users[-1]:] if users else self.history[-1:]
                 try:
-                    reply = await self.llm.chat([{"role": "system", "content": self._system()}] + self.history)
+                    reply = await self.llm.chat([{"role": "system", "content": self._system()}] + self.history, tools=self._tools())
                 except Exception as e2:
                     self.hub.log("Ошибка ИИ: %s" % e2)
                     if hasattr(self.hub, "request_restart"):

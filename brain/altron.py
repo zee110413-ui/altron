@@ -17,7 +17,7 @@ import numpy as np
 from agent import ACTION_WORDS, Agent, NOTIFY_DONE, TASK_TOOLS, _said_before, is_question, is_recipe_question, needs_thinking
 from launcher import (BRAIN_DIR, PROFILES, apply_profile, install_new_mod, launch_bot, primary_language, rel,
                       resolve_install, server_address)
-from lang import NAMES as LANG_NAMES, guess_lang, phrase
+from lang import NAMES as LANG_NAMES, guess_lang, phrase, set_ui, ui
 from memory import LongMemory, keywords, stems
 from speech import loud_enough
 
@@ -193,7 +193,7 @@ class Hub:
             return
         self.said_recently.append((now, text))
         self.last_talk = now
-        self.log("Альтрон: " + text)
+        self.log(ui("Альтрон: ", "Altron: ") + text)
         self.memory.log("Альтрон", text)
         if self.owner:
             # the commander may answer without saying the name
@@ -246,7 +246,7 @@ class Hub:
         self.speech_end = 0.0
         target = self.bot if self.remote else self.host
         self.send(target, {"type": "speak_stop"})
-        self.log("(%s заговорил — замолкаю)" % who)
+        self.log(ui("(%s заговорил — замолкаю)", "(%s started talking — I stop)") % who)
 
     async def acknowledge(self):
         """Instant answer to an order, before the AI has even thought: a short phrase synthesized in advance."""
@@ -261,7 +261,7 @@ class Hub:
         text, pcm = acks[self.ack_n % len(acks)]
         self.cut_speech = False
         self.ack_n += 1
-        self.log("Альтрон (сразу): " + text)
+        self.log(ui("Альтрон (сразу): ", "Altron (at once): ") + text)
         if self.recorder is not None:
             self.recorder.add(pcm, "Альтрон", text)
         await self.play(pcm)
@@ -1489,7 +1489,7 @@ class Hub:
         kind, who = str(msg.get("kind", "")), str(msg.get("who", ""))
         if who != "*" and not (self.is_friend(who) or kind in ("player_joined", "player_left")):
             return   # strangers' troubles are theirs; only their coming and going is news
-        self.log("(событие мира) %s %s" % (kind, {k: v for k, v in msg.items() if k not in ("type", "kind")}))
+        self.log(ui("(событие мира) %s %s", "(world event) %s %s") % (kind, {k: v for k, v in msg.items() if k not in ("type", "kind")}))
         if kind == "danger":
             what = msg.get("what")
             if what == "creeper":
@@ -2069,7 +2069,7 @@ class Hub:
                         self.log("%s сказал (распознал за %.1f с, уверенность %.2f): %s" % (
                             v["name"], time.time() - t0, conf, text))
                         if not self.worth_hearing(text, conf, v["name"]):
-                            self.log("  (это не мне или не разобрал — пропускаю)")
+                            self.log(ui("  (это не мне или не разобрал — пропускаю)", "  (not for me, or not understood — skipping)"))
                             continue
                         if self.addressed(v["name"], text):
                             self.heard += 1
@@ -2137,7 +2137,8 @@ class Hub:
         if str(self.cfg.get("language", "auto")).lower() != "auto" or not lang or lang == self.lang:
             return
         self.lang = lang
-        self.log("Язык разговора: %s" % LANG_NAMES.get(lang, lang))
+        set_ui(lang)
+        self.log(ui("Язык разговора: %s", "Conversation language: %s") % LANG_NAMES.get(lang, lang))
 
     def note_question(self, question):
         """Allow a question to the player only if none is pending (asked < 2 min ago and not answered)."""
@@ -2313,7 +2314,7 @@ def start_llm(cfg, log):
     url = "http://127.0.0.1:%d/health" % cfg["llm_port"]
     try:
         if httpx.get(url, timeout=1, trust_env=False).status_code == 200:
-            log("ИИ-сервер уже запущен.")
+            log(ui("ИИ-сервер уже запущен.", "The AI server is already running."))
             return None
     except Exception:
         pass
@@ -2336,7 +2337,7 @@ def start_llm(cfg, log):
     mmproj = rel(cfg.get("llm_mmproj", "")) if cfg.get("llm_mmproj") else None
     if mmproj is not None and mmproj.exists():
         args += ["--mmproj", str(mmproj)]  # vision: Altron can look at the screen
-    log("Запускаю ИИ (%s)..." % model.name)
+    log(ui("Запускаю ИИ (%s)...", "Starting the AI (%s)...") % model.name)
     return subprocess.Popen(args, stdout=logf, stderr=subprocess.STDOUT)
 
 
@@ -2362,7 +2363,7 @@ async def wait_llm(cfg, log):
             try:
                 r = await c.get(url, timeout=3)
                 if r.status_code == 200:
-                    log("ИИ готов%s." % (" (на другом ПК)" if remote else ""))
+                    log(ui("ИИ готов%s.", "AI ready%s.") % (ui(" (на другом ПК)", " (on the second PC)") if remote else ""))
                     return True
                 if r.status_code == 401:
                     log("Второй ПК не пустил: неверный пароль. api_key.txt в папке ai_server должен совпадать с llm_api_key.")
@@ -2420,10 +2421,11 @@ def choose_launch(cfg, argv):
         # Altron runs on the second PC (the ai_server kit): the only question is where the commander's game is
         game = args.server
         if game is None and ask:
-            print("Где твоя игра? Введи адрес игрового ПК: IP из Radmin VPN (26.x.x.x) или домашней сети (192.168.x.x).")
+            print(ui("Где твоя игра? Введи адрес игрового ПК: IP из Radmin VPN (26.x.x.x) или домашней сети (192.168.x.x).",
+                     "Where is your game? Enter the gaming PC's address: its Radmin VPN IP (26.x.x.x) or home network IP (192.168.x.x)."))
             if last.get("game"):
-                print("  «=» или Enter — прошлый: %s" % last["game"])
-            answer = input("Адрес игрового ПК: ").strip()
+                print(ui("  «=» или Enter — прошлый: %s", "  \"=\" or Enter — the last one: %s") % last["game"])
+            answer = input(ui("Адрес игрового ПК: ", "Gaming PC address: ")).strip()
             game = last.get("game", "") if answer in ("", "=") else answer
         game = (game or "").strip()
         # the mode only sets Altron's body (a light client: this PC also carries the big model); the model's own
@@ -2442,28 +2444,34 @@ def choose_launch(cfg, argv):
 
     profile = args.profile or last.get("profile") or cfg.get("profile", "balanced")
     if ask and not args.profile:
-        print("Режим работы Альтрона (меняется только его клиент и ИИ, твоя игра не трогается):")
+        print(ui("Режим работы Альтрона (меняется только его клиент и ИИ, твоя игра не трогается):",
+                 "Altron's mode (only his own client and the AI change, your game is not touched):"))
         for i, (key, p) in enumerate(PROFILES.items(), 1):
-            print("  %d — %s%s\n      %s" % (i, p["title"], "  <- прошлый" if key == profile else "", p["about"]))
-        answer = input("Режим [1/2/3, Enter — прошлый]: ").strip()
+            print("  %d — %s%s\n      %s" % (i, ui(p["title"], p["title_en"]), ui("  <- прошлый", "  <- last")
+                                              if key == profile else "", ui(p["about"], p["about_en"])))
+        answer = input(ui("Режим [1/2/3, Enter — прошлый]: ", "Mode [1/2/3, Enter — the last one]: ")).strip()
         profile = answer or profile
     profile = apply_profile(cfg, profile)
 
     server = args.server
     if server is None and ask:
-        print("\nКуда пустить Альтрона?")
-        print("  Enter — в свой мир: зайди в него и напиши в чате /altron")
-        print("  или адрес сервера из Radmin VPN: IP:порт, например 26.12.34.56:25565")
-        print("  (хозяин мира открывает его для Альтрона командой /altron lan и называет порт)")
+        print(ui("\nКуда пустить Альтрона?", "\nWhere should Altron go?"))
+        print(ui("  Enter — в свой мир: зайди в него и напиши в чате /altron",
+                 "  Enter — into your own world: open it and type /altron in chat"))
+        print(ui("  или адрес сервера из Radmin VPN: IP:порт, например 26.12.34.56:25565",
+                 "  or a server address (e.g. Radmin VPN): IP:port, like 26.12.34.56:25565"))
+        print(ui("  (хозяин мира открывает его для Альтрона командой /altron lan и называет порт)",
+                 "  (the world's host opens it for Altron with /altron lan and tells the port)"))
         if last.get("server"):
-            print("  «=» — прошлый сервер %s" % last["server"])
-        answer = input("Адрес: ").strip()
+            print(ui("  «=» — прошлый сервер %s", "  \"=\" — the last server %s") % last["server"])
+        answer = input(ui("Адрес: ", "Address: ")).strip()
         server = last.get("server") if answer == "=" else answer
     server = server_address(server) if server else ""
 
     owner = args.owner or last.get("owner") or cfg.get("owner") or ""
     if server and ask and not args.owner:
-        answer = input("Твой ник в игре (командир)%s: " % (" [Enter — %s]" % owner if owner else "")).strip()
+        answer = input(ui("Твой ник в игре (командир)%s: ", "Your in-game name (the commander)%s: ")
+                       % (" [Enter — %s]" % owner if owner else "")).strip()
         owner = answer or owner
 
     # the neural network on another PC (advanced: --ai IP); normally it runs here, or everything runs on the second PC
@@ -2487,26 +2495,32 @@ def choose_launch(cfg, argv):
 
 async def main():
     cfg = json.loads((BRAIN_DIR / "config.json").read_text(encoding="utf-8"))
+    set_ui(primary_language(cfg))
     profile, server, owner = choose_launch(cfg, sys.argv[1:])
     hub = Hub(cfg)
     hub.loop = asyncio.get_running_loop()
     print("=" * 60)
-    print(" АЛЬТРОН — ИИ-напарник для Minecraft. Режим: %s" % PROFILES[profile]["title"])
+    print(ui(" АЛЬТРОН — ИИ-напарник для Minecraft. Режим: %s", " ALTRON — an AI companion for Minecraft. Mode: %s")
+          % ui(PROFILES[profile]["title"], PROFILES[profile]["title_en"]))
     if cfg.get("llm_url"):
-        print(" Нейросеть в интернете: %s" % cfg["llm_url"])
+        print(ui(" Нейросеть в интернете: %s", " Online AI: %s") % cfg["llm_url"])
     elif llm_is_remote(cfg):
-        print(" Нейросеть на втором ПК: %s:%d" % (cfg["llm_host"], cfg["llm_port"]))
+        print(ui(" Нейросеть на втором ПК: %s:%d", " The AI runs on the second PC: %s:%d") % (cfg["llm_host"], cfg["llm_port"]))
     if cfg.get("game_pc"):
-        print(" Альтрон работает на этом ПК, игра — на %s." % cfg["game_pc"])
-        print(" На игровом ПК: зайди в свой мир и напиши в чате /altron — Альтрон придёт сам.")
+        print(ui(" Альтрон работает на этом ПК, игра — на %s.", " Altron runs on this PC, the game on %s.") % cfg["game_pc"])
+        print(ui(" На игровом ПК: зайди в свой мир и напиши в чате /altron — Альтрон придёт сам.",
+                 " On the gaming PC: open your world and type /altron in chat — Altron comes by himself."))
     elif server:
-        print(" Альтрон заходит на сервер %s сам (1-2 минуты)." % server)
-        print(" Командир: %s. Говори в Voice Chat рядом с ним: «Альтрон, иди за мной»" % (owner or "первый, кто позовёт"))
+        print(ui(" Альтрон заходит на сервер %s сам (1-2 минуты).", " Altron joins the server %s by himself (1-2 minutes).") % server)
+        print(ui(" Командир: %s. Говори в Voice Chat рядом с ним: «Альтрон, иди за мной»",
+                 " Commander: %s. Talk in voice chat next to him: \"Altron, follow me\"")
+              % (owner or ui("первый, кто позовёт", "whoever calls him first")))
     else:
-        print(" 1) Запусти сборку «%s» в своём лаунчере и зайди в свой мир" % cfg["pack_version"])
-        print(" 2) Напиши в чате игры: /altron")
-        print(" 3) Говори в Voice Chat: «Альтрон, иди за мной»")
-    print(" Здесь можно печатать команды текстом. /quit — выход.")
+        print(ui(" 1) Запусти сборку «%s» в своём лаунчере и зайди в свой мир",
+                 " 1) Start the modpack \"%s\" in your launcher and open your world") % cfg["pack_version"])
+        print(ui(" 2) Напиши в чате игры: /altron", " 2) Type in the game chat: /altron"))
+        print(ui(" 3) Говори в Voice Chat: «Альтрон, иди за мной»", " 3) Talk in voice chat: \"Altron, follow me\""))
+    print(ui(" Здесь можно печатать команды текстом. /quit — выход.", " You can type orders here too. /quit — exit."))
     print("=" * 60)
     if cfg.get("other_pack"):
         hub.log("Сборка: %s (моды Альтрона — в его папке, сама сборка не меняется)." % cfg["pack_version"])
@@ -2518,16 +2532,16 @@ async def main():
         from knowledge import Knowledge
         from speech import STT, TTS
         hub.knowledge = Knowledge.load(cfg, hub.log)
-        hub.log("Справочник по сборке готов: %d рецептов." % len(hub.knowledge.recipes))
-        hub.log("Загружаю распознавание речи и голос...")
+        hub.log(ui("Справочник по сборке готов: %d рецептов.", "The pack reference is ready: %d recipes.") % len(hub.knowledge.recipes))
+        hub.log(ui("Загружаю распознавание речи и голос...", "Loading speech recognition and the voice..."))
         hub.tts = TTS(cfg)
         hub.stt = STT(cfg, hub.log)
-        hub.log("Слух и голос готовы (распознавание речи: %s)." % hub.stt.device)
+        hub.log(ui("Слух и голос готовы (распознавание речи: %s).", "Hearing and voice are ready (speech recognition: %s).") % hub.stt.device)
 
     loader = threading.Thread(target=load_models, daemon=True)
     loader.start()
     listener = await listen(hub, cfg["brain_port"])
-    hub.log("Мозг слушает порт %d." % cfg["brain_port"])
+    hub.log(ui("Мозг слушает порт %d.", "The brain listens on port %d.") % cfg["brain_port"])
     threading.Thread(target=hub.console_thread, daemon=True).start()
     if cfg.get("game_pc"):
         asyncio.create_task(hub.game_link(cfg["game_pc"]))   # the commander's game is on the other PC
