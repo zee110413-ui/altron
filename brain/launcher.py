@@ -74,7 +74,7 @@ PROFILES = {
                  "меньше лучей зрения, низкий приоритет, короче память разговора ИИ",
         "bot_lite": True, "bot_memory_mb": 2048, "bot_render_distance": 3, "bot_simulation_distance": 4,
         "bot_rays": 25, "bot_render_always": False, "bot_low_priority": True,
-        "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 16000,
+        "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 9000,
     },
     "balanced": {
         "title": "Сбалансированный (обычный)",
@@ -82,7 +82,7 @@ PROFILES = {
                  "низкий приоритет",
         "bot_lite": True, "bot_memory_mb": 2560, "bot_render_distance": 4, "bot_simulation_distance": 5,
         "bot_rays": 50, "bot_render_always": False, "bot_low_priority": True,
-        "llm_context": 24576, "llm_cache_ram_mb": 1024, "history_chars": 36000,
+        "llm_context": 24576, "llm_cache_ram_mb": 1024, "history_chars": 20000,
     },
     "max": {
         "title": "Максимальный — всё на полную",
@@ -90,7 +90,7 @@ PROFILES = {
                  "3,5 ГБ Java, больше лучей зрения, обычный приоритет, длинная память разговора ИИ",
         "bot_lite": False, "bot_memory_mb": 3584, "bot_render_distance": 8, "bot_simulation_distance": 8,
         "bot_rays": 100, "bot_render_always": True, "bot_low_priority": False,
-        "llm_context": 32768, "llm_cache_ram_mb": 2048, "history_chars": 54000,
+        "llm_context": 32768, "llm_cache_ram_mb": 2048, "history_chars": 40000,
     },
 }
 PROFILE_KEYS = {"eco": "eco", "эконом": "eco", "1": "eco", "balanced": "balanced", "баланс": "balanced", "2": "balanced",
@@ -372,7 +372,9 @@ def build_command(cfg, server, name=None, game_dir=None, props=None, memory_mb=N
 def launch_bot(cfg, server, log=print, lite=True):
     """server: the LAN port of the commander's world, or "ip:port" of a server (Radmin VPN)."""
     lite = lite and cfg.get("bot_lite", True)
-    bot = prepare_bot_dir(cfg, log, lite=lite, voice=bool(cfg.get("bot_voice")))
+    # his voice chat client is on (muted, sound off) also in the commander's own world: then he shows up in the voice
+    # group «Альтрон» next to the commander. He still hears and speaks through the host's plugin there.
+    bot = prepare_bot_dir(cfg, log, lite=lite, voice=bool(cfg.get("bot_voice") or cfg.get("bot_in_voice_group", True)))
     size = tuple(cfg.get("bot_window", (854, 480)))
     cmd = build_command(cfg, server, size=size)
     (bot / "logs").mkdir(exist_ok=True)
@@ -394,7 +396,7 @@ HOST_OPTIONS["soundCategory_master"] = "0.3"
 def launch_host(cfg, world, name="MJreggich", log=print, live=False):
     """Host client for demos and tests: opens (or creates) `world` and shares it with the bot.
     live: the commander plays in it himself — a normal window and frame rate, his real microphone on (voice activation)."""
-    options = dict(HOST_OPTIONS, maxFps="60", renderDistance="8", soundCategory_master="1.0") if live else HOST_OPTIONS
+    options = dict(HOST_OPTIONS, maxFps="60", renderDistance="6", soundCategory_master="1.0") if live else HOST_OPTIONS
     host = prepare_bot_dir(cfg, log, game_dir=cfg.get("host_dir", "../host"), voice=True, options=options)
     # a bigger jitter buffer: Altron's voice stays smooth even when the PC is busy
     voice = {"output_buffer_size": "12", "audio_packet_threshold": "6"}

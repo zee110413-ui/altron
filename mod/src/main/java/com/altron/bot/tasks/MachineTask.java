@@ -60,6 +60,7 @@ public class MachineTask extends Task {
     private boolean finishOk;
     private boolean baselined;
     private boolean inspect;   // only look inside: what it holds and its gauges, then close
+    private boolean keepOpen;  // ...or leave the window open (to take things out or put them in next)
     private String finishMsg = "";
 
     public MachineTask(Set<Block> machines, Item product, int count, ResourceLocation recipe, List<Input> inputs) {
@@ -72,6 +73,12 @@ public class MachineTask extends Task {
     }
 
     /** Open one machine or store, read what is inside and its gauges (energy, heat, recipe), close it. */
+    public static MachineTask open(BlockPos pos) {
+        MachineTask t = inspect(pos);
+        t.keepOpen = true;
+        return t;
+    }
+
     public static MachineTask inspect(BlockPos pos) {
         Block b = Bot.level().getBlockState(pos).getBlock();
         MachineTask t = new MachineTask(Set.of(b), Items.AIR, 1, null, List.of());
@@ -140,7 +147,7 @@ public class MachineTask extends Task {
             if (age - mark < 6) return Status.RUNNING;   // let the server fill the slots
             if (inspect) {
                 String what = Info.container() + "\nПоказатели: " + diagnose(menu);
-                Bot.closeContainer();
+                if (!keepOpen) Bot.closeContainer();
                 return done(what);
             }
             dropCarried(menu);
