@@ -138,6 +138,9 @@ class Hub:
         self.busy = False
         self.last_talk = time.time()   # last word between Altron and anyone: long silence invites small talk
         self.reminders = set()         # the commander's reminders waiting for their time
+        self.friends = {n.lower() for n in cfg.get("friends", [])}   # players Altron also obeys
+        self.assist = bool(cfg.get("assist", False))   # help without orders: eat, retreat, feed and defend the commander
+        self.event_talk = 0.0          # when an event last made the AI speak (they must not drown the talk)
 
     # ------------------------------------------------------------------ utils
     def log(self, text):
@@ -1346,6 +1349,71 @@ class Hub:
                     best[item] = (pos, les.get("n", 1))
         return {i: p for i, (p, _) in best.items()}
 
+    def is_friend(self, name):
+        name = (name or "").lower()
+        return bool(name) and (name == (self.owner or "").lower() or name in self.friends)
+
+    def call_name(self, who):
+        """How Altron addresses a player: "командир" for the commander, the nickname for the others."""
+        return phrase("commander", self.lang) if (who or "").lower() == (self.owner or "").lower() else who
+
+    # what happened around the players (the host's world): what the AI hears about each kind of event
+    WORLD_EVENTS = {
+        "player_low_health": "{who}: осталось {hp} здоровья из 20 ({cause}). Помоги по ситуации: враги рядом — guard; "
+                             "есть еда — можешь дать (give). Скажи коротко.",
+        "player_died": "{who} погиб: «{text}», на {pos}. Коротко отреагируй в своём характере. Предложи сходить за его "
+                       "вещами — спроси через ask_player, без спроса не иди.",
+        "player_joined": "В мир зашёл игрок {who}. Коротко поприветствуй его (он слышит тебя в голосовом чате).",
+        "player_left": "Игрок {who} вышел из мира. Можешь коротко отметить это или ignore.",
+        "advancement": "{who} получил достижение «{title}». Коротко поздравь в своём стиле или ignore, если только "
+                       "что поздравлял.",
+        "dimension": "{who} перешёл в измерение {to}. Можешь коротко прокомментировать или ignore.",
+        "night": "Наступает ночь. Можешь коротко предупредить командира или предложить лечь спать (sleep). Необязательно — "
+                 "ignore, если вы заняты делом.",
+        "storm": "Началась гроза. Можешь коротко сказать об этом или ignore.",
+    }
+    QUIET_EVENTS = {"player_left", "advancement", "dimension", "night", "storm"}   # skipped while the AI is busy
+
+    async def on_world_event(self, msg):
+        """React to the world like a companion: danger is said at once (the AI would be too slow for a creeper),
+        the rest goes to the AI to answer in its own words."""
+        if not self.cfg.get("react_events", True) or not self.joined:
+            return
+        kind, who = str(msg.get("kind", "")), str(msg.get("who", ""))
+        if who != "*" and not (self.is_friend(who) or kind in ("player_joined", "player_left")):
+            return   # strangers' troubles are theirs; only their coming and going is news
+        self.log("(событие мира) %s %s" % (kind, {k: v for k, v in msg.items() if k not in ("type", "kind")}))
+        if kind == "danger":
+            what = msg.get("what")
+            if what == "creeper":
+                await self.say(phrase("creeper", self.lang) % self.call_name(who))
+            elif what == "boss":
+                await self.say(phrase("boss", self.lang) % msg.get("name", "босс"))
+            elif what == "crowd":
+                await self.say(phrase("crowd", self.lang) % (self.call_name(who), int(msg.get("count", 4))))
+            if self.assist and self.bot is not None and what in ("creeper", "crowd"):
+                await self.run_tool("guard", {"player": who}, 0)
+            return
+        template = self.WORLD_EVENTS.get(kind)
+        if template is None:
+            return
+        now = time.time()
+        if kind in self.QUIET_EVENTS and (self.busy or not self.requests.empty() or now - self.event_talk < 30):
+            return
+        if kind == "player_low_health" and self.assist and self.bot is not None and self.running is None:
+            await self.run_tool("guard", {"player": who}, 0)   # at once; the AI decides about food meanwhile
+        self.event_talk = now
+        pos = msg.get("pos")
+        role = "командир" if who.lower() == (self.owner or "").lower() else "игрок " + who
+        fields = dict(msg, who=role.capitalize() if who != "*" else "",
+                      pos=" ".join(str(v) for v in pos) if isinstance(pos, list) else "")
+        fields.setdefault("cause", "")
+        try:
+            text = template.format(**fields)
+        except (KeyError, IndexError, ValueError):
+            text = template
+        await self.requests.put(("event", "", "[Событие] " + text))
+
     def on_watch(self, msg):
         """The host saw the commander put things into / take things out of a chest or machine: learn his ways."""
         pos = [int(v) for v in msg.get("pos", [0, 0, 0])]
@@ -1678,6 +1746,8 @@ class Hub:
             self.log("Микрофон демо не смог говорить в голосовой чат: %s" % self.mic_failed)
         elif t == "watch":
             self.on_watch(msg)
+        elif t == "world_event":
+            asyncio.create_task(self.on_world_event(msg))
         elif t == "text":
             who = msg.get("from", "игрок")
             self.owner = self.owner or who

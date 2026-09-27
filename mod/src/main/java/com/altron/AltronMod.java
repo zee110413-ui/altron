@@ -15,6 +15,7 @@ public class AltronMod {
     public AltronMod() {
         // Runs on the integrated server of the host (unlocks recipes for the bot)
         MinecraftForge.EVENT_BUS.register(new com.altron.host.HostServerEvents());
+        MinecraftForge.EVENT_BUS.register(new com.altron.host.HostWorldEvents());
         if (FMLEnvironment.dist == Dist.CLIENT) {
             com.altron.client.AltronClient.init();
         }
