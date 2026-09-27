@@ -138,7 +138,8 @@ class Hub:
         self.busy = False
         self.last_talk = time.time()   # last word between Altron and anyone: long silence invites small talk
         self.reminders = set()         # the commander's reminders waiting for their time
-        self.friends = {n.lower() for n in cfg.get("friends", [])}   # players Altron also obeys
+        self.friends = {n.lower() for n in cfg.get("friends", [])} | set(self.load_friends())   # players he also obeys
+        self.speaker = ""              # who gave the phrase being handled ("" for events: they are his own)
         self.assist = bool(cfg.get("assist", False))   # help without orders: eat, retreat, feed and defend the commander
         self.event_talk = 0.0          # when an event last made the AI speak (they must not drown the talk)
         self.speech_end = 0.0          # when the speech already sent to the game finishes playing
@@ -364,6 +365,11 @@ class Hub:
         return ""
 
     async def run_tool(self, name, args, wait_sec):
+        if self.speaker and not self.is_friend(self.speaker) and name not in self.STRANGER_OK:
+            return ("ОТКАЗ: %s — чужой игрок, его приказы не выполняю (только командира и друзей). Вежливо скажи ему "
+                    "это; командир может сделать его другом." % self.speaker)
+        if name == "friends":
+            return self.friends_tool(args)
         if name in MEMORY_TOOLS:
             return await self.memory_tool(name, args, wait_sec)
         if name == "web_search":
@@ -1364,6 +1370,47 @@ class Hub:
                     best[item] = (pos, les.get("n", 1))
         return {i: p for i, (p, _) in best.items()}
 
+    def friends_file(self):
+        return rel(self.cfg.get("memory_dir", "memory")) / "friends.json"
+
+    def load_friends(self):
+        try:
+            return [n.lower() for n in json.loads(self.friends_file().read_text(encoding="utf-8"))]
+        except Exception:
+            return []
+
+    def friends_tool(self, args):
+        """«Вася — мой друг, слушайся его» / «больше не слушайся Васю» / «кто твои друзья?». Only the commander
+        changes the list."""
+        action = str(args.get("action", "list")).lower()
+        player = str(args.get("player", "")).strip()
+        if action == "list":
+            return "Друзья (их приказы выполняю): " + (", ".join(sorted(self.friends)) or "пока никого")
+        if self.speaker and self.speaker.lower() != (self.owner or "").lower():
+            return "ОТКАЗ: список друзей меняет только командир"
+        if not player:
+            return "ОШИБКА: назови ник игрока (player)"
+        if action == "add":
+            self.friends.add(player.lower())
+        else:
+            self.friends.discard(player.lower())
+        try:
+            path = self.friends_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(sorted(self.friends), ensure_ascii=False), encoding="utf-8")
+        except OSError as e:
+            self.log("не сохранил список друзей: %s" % e)
+        return ("Теперь %s — друг: выполняю и его приказы" if action == "add" else "%s больше не друг") % player
+
+    # what a stranger may ask: talk, gestures, looking around; not moving, taking, giving or changing anything
+    STRANGER_OK = {"reply", "ignore", "ask_player", "emote", "turn", "look", "look_at", "nearby", "status", "inventory",
+                   "wiki", "web_search", "recipe", "plan", "find_item", "item_info", "recall", "friends"}
+
+    def role_of(self, name):
+        if (name or "").lower() == (self.owner or "").lower():
+            return "командир"
+        return "друг" if self.is_friend(name) else "чужой игрок"
+
     def is_friend(self, name):
         name = (name or "").lower()
         return bool(name) and (name == (self.owner or "").lower() or name in self.friends)
@@ -2067,9 +2114,10 @@ class Hub:
             item = await self.requests.get()
             kind, speaker, text = item[:3]
             acked = len(item) > 3 and item[3]
+            self.speaker = speaker if kind == "user" else ""
             if kind == "user":
                 targets = []
-                prompt ="[%s говорит]: %s\n[Состояние] %s" % (speaker, text, self.state_text())
+                prompt = "[%s (%s) говорит]: %s\n[Состояние] %s" % (speaker, self.role_of(speaker), text, self.state_text())
                 if self.bot is not None:
                     # what is around him right now (players, mobs, vehicles, turrets with their ids): no guessing
                     near = await self.bot_call("nearby", {"radius": 16})
@@ -2098,7 +2146,8 @@ class Hub:
                                    "obtain сам сделает всю цепочку с нуля." % ", ".join(
                                        "item=%s (%s)" % (i, n) for i, n in targets))
                 # the last half hour of this session is still in the model's history; recall only what is older
-                mem = self.memory.context_for(text, session_start=max(self.memory.started, time.time() - 1800),
+                # what is known about the speaker comes up too ("Вася любит строить")
+                mem = self.memory.context_for("%s %s" % (speaker, text), session_start=max(self.memory.started, time.time() - 1800),
                                               ids=[i for i, _ in targets])
                 if not self.resumed:
                     self.resumed = True
@@ -2128,6 +2177,7 @@ class Hub:
                 self.log("Ошибка агента: %r" % e)
             finally:
                 self.busy = False
+                self.speaker = ""   # his own actions afterwards (events, help) are not the stranger's orders
             if speaker:
                 self.windows[speaker] = time.time() + self.cfg.get("conversation_window_sec", 20)
 
