@@ -150,12 +150,6 @@
     padding: 12px 16px; border-bottom: 1px solid var(--line);
   }
   .log-head .title { font: 600 0.78rem var(--mono); color: var(--ink-soft); }
-  .langs { display: flex; gap: 4px; }
-  .langs button {
-    font: 600 0.72rem var(--mono); padding: 4px 8px; border: 1px solid var(--line); background: transparent;
-    color: var(--ink-soft); cursor: pointer;
-  }
-  .langs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
   canvas.wave { display: block; width: 100%; height: 64px; border-bottom: 1px solid var(--line); }
   .lines { list-style: none; margin: 0; padding: 14px 16px 18px; display: grid; gap: 10px; font: 400 0.86rem/1.5 var(--mono); }
   .lines li { display: grid; grid-template-columns: 64px 1fr; gap: 10px; }
@@ -276,10 +270,6 @@
       <figure class="log" style="margin:0" aria-label="Пример разговора с Альтроном">
         <div class="log-head">
           <span class="title" data-i18n="log.title">мозг Альтрона · голосовой чат</span>
-          <div class="langs" role="group" aria-label="Язык примера">
-            <button type="button" id="lang-ru" aria-pressed="true" data-lang="ru">RU</button>
-            <button type="button" id="lang-en" aria-pressed="false" data-lang="en">EN</button>
-          </div>
         </div>
         <canvas class="wave" id="wave" aria-hidden="true"></canvas>
         <ol class="lines" data-lang="ru">
@@ -505,14 +495,11 @@
   const baseTitle = document.title;
   let siteLang = 'ru';
 
-  // the example conversation has its own RU/EN switch too
+  // the example conversation follows the page's language
   const logs = document.querySelectorAll('.lines');
-  const langBtns = document.querySelectorAll('.langs button');
   function setDemo(lang) {
     logs.forEach(l => { l.hidden = l.dataset.lang !== lang; });
-    langBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
   }
-  langBtns.forEach(b => b.addEventListener('click', () => setDemo(b.dataset.lang)));
 
   const switchBtn = document.getElementById('site-lang');
   const copyBtn = document.getElementById('copy-btn');
