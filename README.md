@@ -36,7 +36,16 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
   - `models/piper/*.onnx` — [Piper voices](https://huggingface.co/rhasspy/piper-voices), one per language;
   - `mod/libs/baritone-api-forge-1.10.1.jar` — Baritone for Forge 1.20.1.
 
-## Setup
+## Quick install (Windows)
+
+Download **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)** and double-click it.
+It installs Altron into `%USERPROFILE%\Altron` and downloads everything by itself: Python and packages, the llama.cpp
+server (CUDA, Vulkan or CPU build for your PC), the AI model, Whisper models, Piper voices, Baritone, Java 17 and
+Simple Voice Chat for your modpack; then it builds the mod and puts an "Altron" shortcut on the desktop.
+It is safe to run again: what is there is skipped, broken downloads continue. Run it from an existing Altron folder
+to update it — your `config.json` is kept.
+
+## Manual setup
 
 ```
 git clone https://github.com/zee110413-ui/altron
@@ -95,7 +104,15 @@ Apache License 2.0 — see [LICENSE](LICENSE).
   вещи после смерти.
 - **Помнить** места, сундуки и их содержимое, твои слова — и после перезапуска.
 
-## Установка
+## Установка в один клик (Windows)
+
+Скачай **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)** и запусти двойным
+кликом. Он поставит Альтрона в `%USERPROFILE%\Altron` и сам скачает всё нужное: Python и пакеты, сервер llama.cpp
+(под твою видеокарту), модель ИИ, Whisper, голоса Piper, Baritone, Java 17 и Simple Voice Chat в твою сборку, соберёт
+мод и сделает ярлык «Altron» на рабочем столе. Можно запускать повторно — готовое пропускается, оборванные загрузки
+докачиваются. Запуск из существующей папки Альтрона обновляет её, твой `config.json` сохраняется.
+
+## Установка вручную
 
 1. Скачай нужные файлы (llama-server, модель GGUF, модели Whisper, голоса Piper, Baritone) в `tools/`, `models/`,
    `mod/libs/` — список выше, в разделе *Requirements*. Проверь пути в `brain/config.json`.
