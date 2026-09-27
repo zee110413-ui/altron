@@ -409,13 +409,24 @@ def _parse_inline_tool_calls(content):
 
 class LLM:
     def __init__(self, cfg):
-        # the AI server: on this PC, or on a second PC (LAN / Radmin VPN address) that runs a bigger model
-        self.url = "http://%s:%d/v1/chat/completions" % (cfg.get("llm_host", "127.0.0.1"), cfg["llm_port"])
+        # the AI server: on this PC, on a second PC (LAN / Radmin VPN address) that runs a bigger model, or any
+        # OpenAI-compatible online service ("llm_url") for a PC without a strong video card
+        self.cloud = bool(cfg.get("llm_url"))
+        base = cfg["llm_url"].rstrip("/") if self.cloud else "http://%s:%d/v1" % (cfg.get("llm_host", "127.0.0.1"),
+                                                                                  cfg["llm_port"])
+        self.url = base + "/chat/completions"
+        self.model = cfg.get("llm_model_name") or "local"
         self.cfg = cfg
         headers = {"Authorization": "Bearer " + cfg["llm_api_key"]} if cfg.get("llm_api_key") else {}
-        # never through a proxy set up in Windows (a proxy there broke the link once); a bigger model thinks longer
-        self.client = httpx.AsyncClient(timeout=240, trust_env=False, headers=headers)
+        # never through a proxy set up in Windows for a server of our own (a proxy there broke the link once);
+        # an online service is reached like any website. A bigger model thinks longer
+        self.client = httpx.AsyncClient(timeout=240, trust_env=self.cloud, headers=headers)
         self.last_prompt_tokens = "?"
+
+    def _local_only(self, body, think):
+        """llama.cpp's own switch for the model's thinking; online services refuse parameters they do not know."""
+        if not self.cloud:
+            body["chat_template_kwargs"] = {"enable_thinking": think}
 
     async def _post(self, body):
         """POST to the AI server; a refused or dropped connection is retried a few times before giving up."""
@@ -438,15 +449,15 @@ class LLM:
                   "Если спрашивают, куда нажать — сначала ищи кнопку в данных окна (widget и номер), иначе назови x,y в пикселях снимка."
                   % (width, height, question, screen_text))
         body = {
-            "model": "local",
+            "model": self.model,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": prompt},
                 {"type": "image_url", "image_url": {"url": "data:image/png;base64," + image_b64}},
             ]}],
             "temperature": 0.2,
             "max_tokens": 400,
-            "chat_template_kwargs": {"enable_thinking": False},
         }
+        self._local_only(body, False)
         data = await self._post(body)
         return re.sub(r"<think>.*?</think>", "", data["choices"][0]["message"].get("content") or "", flags=re.S).strip()
 
@@ -457,15 +468,15 @@ class LLM:
         the rest is still being written (the reply's "spoken" says how much of its text went out that way)."""
         think = think or bool(self.cfg.get("llm_thinking", False))
         body = {
-            "model": "local",
+            "model": self.model,
             "messages": messages,
             "tools": TOOLS,
             # small models sometimes promise an action without calling a tool: force a choice on the first step
             "tool_choice": "required" if force_tool and not think else "auto",
             "temperature": self.cfg.get("llm_temperature", 0.4),
             "max_tokens": 2500 if think else 600,
-            "chat_template_kwargs": {"enable_thinking": think},
         }
+        self._local_only(body, think)
         if on_sentence is not None and self.cfg.get("llm_stream", True):
             spoken = []
             try:

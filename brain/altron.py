@@ -174,7 +174,13 @@ class Hub:
         except Exception:
             return False
 
-    async def say(self, text):
+    def mood_of(self, text):
+        """How to say it: fast and high in a fight, brighter for an exclamation; plain otherwise."""
+        if self.running is not None and self.running[1] in ("attack", "guard"):
+            return "alert"
+        return "excited" if text.rstrip().endswith("!") else None
+
+    async def say(self, text, mood=None):
         text = text.strip()
         if not text:
             return
@@ -209,7 +215,7 @@ class Hub:
             spoken = spoken[:cut + 1] if cut > 40 else spoken[:limit]
         # sentence by sentence: the first one sounds while the next ones are still being synthesized
         self.cut_speech = False
-        gen = self.tts.synth(spoken, self.lang)
+        gen = self.tts.synth(spoken, self.lang, mood or self.mood_of(spoken))
         chunks, at = [], None
         while True:
             pcm = await asyncio.to_thread(next, gen, None)
@@ -1478,11 +1484,11 @@ class Hub:
         if kind == "danger":
             what = msg.get("what")
             if what == "creeper":
-                await self.say(phrase("creeper", self.lang) % self.call_name(who))
+                await self.say(phrase("creeper", self.lang) % self.call_name(who), "alert")
             elif what == "boss":
-                await self.say(phrase("boss", self.lang) % msg.get("name", "босс"))
+                await self.say(phrase("boss", self.lang) % msg.get("name", "босс"), "alert")
             elif what == "crowd":
-                await self.say(phrase("crowd", self.lang) % (self.call_name(who), int(msg.get("count", 4))))
+                await self.say(phrase("crowd", self.lang) % (self.call_name(who), int(msg.get("count", 4))), "alert")
             if self.assist and self.bot is not None and what in ("creeper", "crowd"):
                 await self.run_tool("guard", {"player": who}, 0)
             return
@@ -1987,11 +1993,11 @@ class Hub:
             pos = self.state.get("pos")
             dim = self.state.get("dim", "")
             self.memory.log("событие", "Альтрон погиб" + (" в %d %d %d" % tuple(int(v) for v in pos) if pos else ""))
-            await self.say(phrase("died", self.lang))
+            await self.say(phrase("died", self.lang), "sad")
             if pos:
                 asyncio.create_task(self.recover_death_drop([round(v) for v in pos], dim))
         elif ev == "low_health":
-            await self.say(phrase("low_health", self.lang))
+            await self.say(phrase("low_health", self.lang), "alert")
             if self.assist and self.running is not None and self.running[1] in ("attack", "guard") and self.owner:
                 # losing a fight: back to the commander instead of dying where the loot is hard to reach
                 await self.run_tool("stop", {}, 0)
@@ -2278,7 +2284,7 @@ class Hub:
 
 
 def llm_is_remote(cfg):
-    return cfg.get("llm_host", "127.0.0.1") not in ("127.0.0.1", "localhost", "")
+    return bool(cfg.get("llm_url")) or cfg.get("llm_host", "127.0.0.1") not in ("127.0.0.1", "localhost", "")
 
 
 def llm_headers(cfg):
@@ -2286,6 +2292,9 @@ def llm_headers(cfg):
 
 
 def start_llm(cfg, log):
+    if cfg.get("llm_url"):
+        log("Нейросеть в интернете: %s (модель %s)." % (cfg["llm_url"], cfg.get("llm_model_name") or "по умолчанию"))
+        return None
     if llm_is_remote(cfg):
         # the neural network runs on the second PC (ai_server kit): nothing to start here
         log("Нейросеть на другом ПК: %s:%d" % (cfg["llm_host"], cfg["llm_port"]))
@@ -2323,6 +2332,19 @@ def start_llm(cfg, log):
 
 
 async def wait_llm(cfg, log):
+    if cfg.get("llm_url"):
+        # an online service: one check that the address and the key work
+        async with httpx.AsyncClient(headers=llm_headers(cfg)) as c:
+            try:
+                r = await c.get(cfg["llm_url"].rstrip("/") + "/models", timeout=20)
+            except Exception as e:
+                log("Нейросеть в интернете не отвечает (%s): проверь llm_url и интернет." % e)
+                return False
+        if r.status_code in (401, 403):
+            log("Нейросеть в интернете не пустила: проверь llm_api_key в config.json.")
+            return False
+        log("ИИ готов (в интернете).")
+        return True
     url = "http://%s:%d/health" % (cfg.get("llm_host", "127.0.0.1"), cfg["llm_port"])
     remote = llm_is_remote(cfg)
     # the AI server (here or on the second PC): never through a Windows proxy
@@ -2461,7 +2483,9 @@ async def main():
     hub.loop = asyncio.get_running_loop()
     print("=" * 60)
     print(" АЛЬТРОН — ИИ-напарник для Minecraft. Режим: %s" % PROFILES[profile]["title"])
-    if llm_is_remote(cfg):
+    if cfg.get("llm_url"):
+        print(" Нейросеть в интернете: %s" % cfg["llm_url"])
+    elif llm_is_remote(cfg):
         print(" Нейросеть на втором ПК: %s:%d" % (cfg["llm_host"], cfg["llm_port"]))
     if cfg.get("game_pc"):
         print(" Альтрон работает на этом ПК, игра — на %s." % cfg["game_pc"])

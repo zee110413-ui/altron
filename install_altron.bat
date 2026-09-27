@@ -172,6 +172,7 @@ Step 'llama.cpp' {
 # ------------------------------------------------------------------------------------------------ the AI model
 Step 'model' {
     Say 'Модель ИИ (несколько ГБ, это долго)' 'AI model (several GB, takes a while)'
+    if ($Cfg.llm_url) { Ok "нейросеть в интернете, модель не нужна / online AI: $($Cfg.llm_url)"; return }
     if (Exists-FromBrain $Cfg.llm_model) { Ok "есть / present: $($Cfg.llm_model)"; return }
     foreach ($repo in $LlmRepos) {
         $files = Get-HfFiles $repo
