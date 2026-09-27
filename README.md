@@ -64,6 +64,13 @@ python -m venv .venv
 On someone else's server: the host opens the world with `/altron lan` (or the server has `online-mode=false`), and
 you enter its address when the brain asks.
 
+## A second PC for the AI
+
+If one PC cannot run the game, Altron's body and the AI at once, put the AI and the body on a second PC:
+run `brain\.venv\Scripts\python.exe brain\build_pc2_kit.py` — it builds the `ai_server` folder (portable Python,
+the brain, models, llama.cpp, the body's Minecraft files). Copy that folder to the second PC and start it there;
+on your gaming PC just play and type `/altron`.
+
 ## Settings (`brain/config.json`)
 
 | key | meaning |
@@ -122,6 +129,10 @@ Apache License 2.0 — see [LICENSE](LICENSE).
    Forge 1.20.1 из `.minecraft/versions`. Дождись строки «ИИ готов».
 5. Запусти эту же сборку, зайди в мир и напиши в чате `/altron`. Через 1-2 минуты Альтрон зайдёт.
 6. Говори в голосовом чате: «Альтрон, иди за мной».
+
+**Второй ПК.** Если твой компьютер не тянет две игры и нейросеть сразу: запусти
+`brain\.venv\Scripts\python.exe brain\build_pc2_kit.py` — он соберёт папку `ai_server` (портативный Python, мозг,
+модели, llama.cpp, файлы игры для тела Альтрона). Скопируй её на второй ПК и запускай там, а на своём просто играй.
 
 Настройки — в таблице выше (`language`, `languages`, `tts_voices`, `tts_style`, `chatter_minutes`...).
 Подробная инструкция для игры — в `КАК ИГРАТЬ.txt`.

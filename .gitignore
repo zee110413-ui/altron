@@ -6,12 +6,7 @@
 !/*.md
 !/mod/
 !/brain/
-!/ai_server/
-
-# Inside ai_server, only keep brain (python source) and mod (java source)
-ai_server/*
-!ai_server/brain/
-!ai_server/mod/
+# ai_server/ (the kit for a second PC) is built by brain/build_pc2_kit.py and copied over, not kept in git
 
 # Per-PC state and caches made at run time (the encyclopedia cache is rebuilt from the pack's files)
 brain/last_launch.json
