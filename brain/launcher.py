@@ -151,8 +151,77 @@ def install_new_mod(cfg, log=print):
 
 
 def rel(p):
-    p = Path(p)
+    p = Path(os.path.expandvars(os.path.expanduser(str(p))))
     return p if p.is_absolute() else (BRAIN_DIR / p).resolve()
+
+
+# Minecraft's own language codes for the bot's client (item names he reads follow it)
+MC_LANG = {"ru": "ru_ru", "en": "en_us", "uk": "uk_ua", "be": "be_by", "kk": "kk_kz", "de": "de_de", "fr": "fr_fr",
+           "es": "es_es", "it": "it_it", "pl": "pl_pl", "pt": "pt_br", "tr": "tr_tr", "cs": "cs_cz", "nl": "nl_nl",
+           "zh": "zh_cn", "ja": "ja_jp", "ko": "ko_kr"}
+
+
+def primary_language(cfg):
+    """The language Altron starts in: a fixed "language", or the first of "languages" when it is "auto"."""
+    lang = str(cfg.get("language", "auto")).lower()
+    if lang != "auto":
+        return lang
+    return (cfg.get("languages") or ["en"])[0]
+
+
+def default_minecraft_dir():
+    if os.environ.get("APPDATA"):
+        return Path(os.environ["APPDATA"]) / ".minecraft"
+    mac = Path.home() / "Library" / "Application Support" / "minecraft"
+    return mac if mac.exists() else Path.home() / ".minecraft"
+
+
+def modded_versions(mc):
+    """Installed game versions that carry mods: a folder in versions/ with its own json and a mods folder."""
+    vers = mc / "versions"
+    if not vers.is_dir():
+        return []
+    return sorted(d.name for d in vers.iterdir() if (d / (d.name + ".json")).exists() and (d / "mods").is_dir())
+
+
+def find_java(mc):
+    """Java 17 that Minecraft 1.20 ships with (the launcher's runtime), else the one on PATH."""
+    for pattern in ("runtime/java-runtime-gamma/*/java-runtime-gamma/bin/javaw.exe",
+                    "runtime/java-runtime-gamma/*/java-runtime-gamma/bin/java",
+                    "runtime/java-runtime-gamma/*/java-runtime-gamma/jre.bundle/Contents/Home/bin/java"):
+        found = sorted(mc.glob(pattern))
+        if found:
+            return str(found[0])
+    return shutil.which("javaw") or shutil.which("java") or ""
+
+
+def resolve_install(cfg, remembered_pack="", ask=False):
+    """Fill in the Minecraft folder, the modpack and Java when config.json leaves them empty (or they moved):
+    any Forge 1.20.1 pack works, not only the one Altron was first made for. Returns the pack's name."""
+    mc = rel(cfg["minecraft_dir"]) if cfg.get("minecraft_dir") else None
+    if mc is None or not mc.is_dir():
+        mc = default_minecraft_dir()
+    cfg["minecraft_dir"] = str(mc)
+    packs = modded_versions(mc)
+    pack = cfg.get("pack_version") or remembered_pack
+    if pack not in packs:
+        if not packs:
+            raise SystemExit("В %s нет ни одной сборки с модами (versions/<имя>/mods). Укажи minecraft_dir и "
+                             "pack_version в config.json." % mc)
+        pack = packs[0]
+        if len(packs) > 1 and ask:
+            print("\nВ какой сборке играть с Альтроном?")
+            for i, name in enumerate(packs, 1):
+                print("  %d — %s" % (i, name))
+            answer = input("Сборка [1-%d]: " % len(packs)).strip()
+            if answer.isdigit() and 1 <= int(answer) <= len(packs):
+                pack = packs[int(answer) - 1]
+    cfg["pack_version"] = pack
+    if not cfg.get("java") or not rel(cfg["java"]).exists():
+        cfg["java"] = find_java(mc)
+        if not cfg["java"]:
+            raise SystemExit("Не нашёл Java 17. Установи её или укажи путь в config.json (\"java\").")
+    return pack
 
 
 def offline_uuid(name):
@@ -270,6 +339,7 @@ def prepare_bot_dir(cfg, log=print, game_dir=None, voice=False, options=None, li
     if options is None:
         opts["renderDistance"] = str(cfg.get("bot_render_distance", 4))
         opts["simulationDistance"] = str(cfg.get("bot_simulation_distance", 5))
+        opts["lang"] = cfg.get("game_lang") or MC_LANG.get(primary_language(cfg), "en_us")
     _patch_key_values(bot / "options.txt", opts, ":")
     if lite:
         _patch_key_values(bot / "config" / "modernfix-mixins.properties", BOT_MODERNFIX, "=")

@@ -149,6 +149,8 @@ class Knowledge:
         self.disabled = set()      # items the pack switched off with Item Obliterator (exact ids)
         self.disabled_re = []      # ... and by regular expression ("!minecraft:.*_chestplate")
         self._index = None
+        self._generic = None       # recipe type -> blocks of any mod that seem to run it (by name)
+        self._types = None
 
     # ------------------------------------------------------------ items switched off in this pack
     def load_disabled(self, cfg, log=print):
@@ -680,6 +682,29 @@ class Knowledge:
     }
     MACHINE_BLOCKS = sorted({b for m in MACHINES.values() for b in m["blocks"]})
 
+    def generic_machines(self):
+        """Machines of ANY mod, matched to recipe types by their names (thermal:machine_pulverizer -> thermal:pulverizer).
+        Worked like a player does it: open, put the inputs in, wait, take the products. Used only for machines Altron
+        has already seen: an unknown machine is not worth a search that may find nothing."""
+        if self._generic is None:
+            known = {b for m in self.MACHINES.values() for b in m["blocks"]} | set(self.VANILLA_STATIONS)
+            out = defaultdict(list)
+            for bid, e in self.entries.items():
+                if e.get("kind") != "block" or bid in known or bid.startswith("minecraft:"):
+                    continue
+                for t in self.block_recipe_types(bid):
+                    if t not in self.MACHINES and not t.startswith("minecraft:"):
+                        out[t].append(bid)
+            self._generic = {t: {"blocks": sorted(bl)} for t, bl in out.items()}
+        return self._generic
+
+    def machine(self, rtype):
+        """How to work the machine of a recipe type: a known one, or any mod's by name (None: no machine for it)."""
+        return self.MACHINES.get(rtype) or self.generic_machines().get(rtype)
+
+    def all_machine_blocks(self):
+        return sorted(set(self.MACHINE_BLOCKS) | {b for m in self.generic_machines().values() for b in m["blocks"]})
+
     PICKAXES = ["minecraft:wooden_pickaxe", "minecraft:stone_pickaxe", "minecraft:iron_pickaxe",
                 "minecraft:diamond_pickaxe", "minecraft:netherite_pickaxe"]
     # minimal pickaxe tier (index in PICKAXES) to get drops from a block
@@ -721,7 +746,7 @@ class Knowledge:
         missing = []   # machine types he can work but has not seen yet
 
         def machine_here(rtype):
-            m = self.MACHINES.get(rtype)
+            m = self.machine(rtype)
             return bool(m) and any(b in owned for b in m["blocks"])
 
         def ensure(item_id):
@@ -817,7 +842,7 @@ class Knowledge:
 
         def machine_step(ref, n, r, out_n, times, depth, seen):
             """Load a machine standing nearby: its ingredients first, then one "machine" step for the whole batch."""
-            m = self.MACHINES[r["type"]]
+            m = self.machine(r["type"])
             inputs = []
             for inp, k in r["in"]:
                 if self.NOT_INGREDIENT.search(inp):
@@ -880,6 +905,10 @@ class Knowledge:
                         missing.append(r["type"])
                     machine_step(ref, n, r, out_n, times, depth, seen)
                     return
+                if machine_here(r["type"]):
+                    # any other mod's machine he has seen standing around: worked the same way
+                    machine_step(ref, n, r, out_n, times, depth, seen)
+                    return
                 if creative and depth > 0:
                     # a machine he cannot work anyway (an anvil...): in creative a player just takes the part
                     steps.append(("creative_take", {"item": ref, "count": n}))
@@ -926,8 +955,9 @@ class Knowledge:
         core = re.sub(r"^(machine|block|electric|advanced|basic)_|_(machine|block|controller|core|master)$", "", path)
         if len(core) < 4:
             return []
-        types = {r["type"] for r in self.recipes}
-        for t in types:
+        if self._types is None:
+            self._types = {r["type"] for r in self.recipes}
+        for t in self._types:
             tns, _, tpath = t.partition(":")
             if tns != ns:
                 continue

@@ -3,6 +3,7 @@
 !/.gitignore
 !/*.bat
 !/*.txt
+!/*.md
 !/mod/
 !/brain/
 !/ai_server/
@@ -11,6 +12,10 @@
 ai_server/*
 !ai_server/brain/
 !ai_server/mod/
+
+# Per-PC state and caches made at run time (the encyclopedia cache is rebuilt from the pack's files)
+brain/last_launch.json
+brain/knowledge_cache.json
 
 # Python venvs, caches, logs, runtime memory (not source)
 **/venv/
@@ -30,6 +35,7 @@ ai_server/*
 # Binaries, archives, model weights
 *.gguf
 *.jar
+!mod/gradle/wrapper/gradle-wrapper.jar
 *.zip
 *.exe
 

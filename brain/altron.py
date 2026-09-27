@@ -13,26 +13,26 @@ import httpx
 import numpy as np
 
 from agent import ACTION_WORDS, Agent, NOTIFY_DONE, TASK_TOOLS, _said_before, is_question, is_recipe_question, needs_thinking
-from launcher import BRAIN_DIR, PROFILES, apply_profile, install_new_mod, launch_bot, rel, server_address
+from launcher import (BRAIN_DIR, PROFILES, apply_profile, install_new_mod, launch_bot, primary_language, rel,
+                      resolve_install, server_address)
+from lang import NAMES as LANG_NAMES, guess_lang, phrase
 from memory import LongMemory, keywords, stems
 from speech import loud_enough
 
 # "стой", "останови все задачи", "прекрати" must stop him at once (they went to the AI as orders before)
-STOP_RE = re.compile(r"\b(стоп|стой|хватит|останови\w*|прекрати\w*|отмена|отмени\w*|отбой|замри|stop)\b", re.I)
+STOP_RE = re.compile(r"\b(стоп|стой|хватит|останови\w*|прекрати\w*|отмена|отмени\w*|отбой|замри|stop|halt|cancel|freeze)\b", re.I)
 ENDLESS = {"follow", "guard"}  # modes: a new task simply replaces them
 MOVES = {"come", "goto", "goto_place"}   # just walking: a new order replaces it instead of waiting behind it
 MEMORY_TOOLS = {"remember", "forget", "recall", "mark_place", "goto_place"}
 VOICED_RMS = 400        # a 20 ms voice frame louder than this is speech (s16 scale)
 SILENCE_END = 0.6       # this long without speech ends a phrase (shorter would cut phrases at pauses)
-# Said at once to an order (synthesized in advance), so the commander hears an answer without waiting for the AI
-ACKS = ("Есть, командир.", "Принял.", "Сделаю.", "Понял, командир.")
 SPEECH_CHARS = 260               # long answers go to chat; only the start is spoken
 SPEECH_CHARS_VOICE_ONLY = 420    # without chat replies the voice is the only channel: speak more of it
 # work blocks that are not used up: if one stands nearby, the supply chain does not build another
 STATIONS = ["minecraft:crafting_table", "minecraft:furnace"]
 REPEAT_SEC = 25                  # the same words are not said again within this time
 ROUTINES = {"fetch": "принести предмет из сундука", "stash": "сложить вещи в сундук",
-            "study": "изучение производства", "load_machine": "перенос материала в машину"}
+            "study": "изучение производства", "load_machine": "перенос материала в машину", "sleep": "сон в кровати"}
 # "куда это положить?", "что делать с рудой?" — answered from the production map he learned
 WHERE_PUT_RE = re.compile(r"куда\s+(?:мне\s+|нам\s+|его\s+|её\s+|их\s+)?(?:положить|класть|ложить|девать|деть|отнести|сунуть|кинуть|"
                           r"засунуть|отправить)|что\s+(?:мне\s+)?делать\s+с|где\s+(?:переработать|переплавить|сделать)", re.I)
@@ -103,7 +103,8 @@ class Hub:
         self.voice = {}           # speaker uuid -> {"name","chunks","last","dist"}
         self.windows = {}         # speaker name -> time until which no wake word is needed
         self.heard = 0            # voice phrases addressed to Altron so far
-        self.acks = []            # [(text, pcm)] instant acknowledgements, synthesized once
+        self.acks = {}            # language -> [(text, pcm)]: instant acknowledgements, synthesized once
+        self.lang = primary_language(cfg)   # the language the commander speaks now (Altron answers in it)
         self.ack_n = 0
         self.acked = False        # the current order was already acknowledged aloud
         self.said_recently = []   # [(time, text)]: no saying the same thing twice in a row
@@ -121,6 +122,8 @@ class Hub:
         self.agent = Agent(cfg, self)
         self.loop = None
         self.busy = False
+        self.last_talk = time.time()   # last word between Altron and anyone: long silence invites small talk
+        self.reminders = set()         # the commander's reminders waiting for their time
 
     # ------------------------------------------------------------------ utils
     def log(self, text):
@@ -147,6 +150,7 @@ class Hub:
             self.log("(повтор, не говорю) " + text)
             return
         self.said_recently.append((now, text))
+        self.last_talk = now
         self.log("Альтрон: " + text)
         self.memory.log("Альтрон", text)
         if self.owner:
@@ -168,7 +172,7 @@ class Hub:
             cut = max(spoken.rfind(". ", 0, limit), spoken.rfind("! ", 0, limit), spoken.rfind("? ", 0, limit))
             spoken = spoken[:cut + 1] if cut > 40 else spoken[:limit]
         # sentence by sentence: the first one sounds while the next ones are still being synthesized
-        gen = self.tts.synth(spoken)
+        gen = self.tts.synth(spoken, self.lang)
         chunks, at = [], None
         while True:
             pcm = await asyncio.to_thread(next, gen, None)
@@ -192,13 +196,15 @@ class Hub:
 
     async def acknowledge(self):
         """Instant answer to an order, before the AI has even thought: a short phrase synthesized in advance."""
-        if not self.acks and self.tts is not None:
+        lang = self.lang
+        if lang not in self.acks and self.tts is not None:
             def make():
-                return [(t, b"".join(self.tts.synth(t))) for t in ACKS]
-            self.acks = await asyncio.to_thread(make)
-        if not self.acks:
+                return [(t, b"".join(self.tts.synth(t, lang))) for t in phrase("acks", lang)]
+            self.acks[lang] = await asyncio.to_thread(make)
+        acks = self.acks.get(lang)
+        if not acks:
             return
-        text, pcm = self.acks[self.ack_n % len(self.acks)]
+        text, pcm = acks[self.ack_n % len(acks)]
         self.ack_n += 1
         self.log("Альтрон (сразу): " + text)
         if self.recorder is not None:
@@ -342,8 +348,12 @@ class Hub:
                 if res.get("ok"):
                     have = res.get("items") or {}
             return await asyncio.to_thread(self.knowledge.plan, str(args.get("item", "")), args.get("count", 1) or 1, have)
+        if name == "remind":
+            return self.remind(args)
         if self.bot is None:
             return "Альтрон ещё не в игре. Попроси игрока ввести команду /altron в своём мире."
+        if name == "emote":
+            return await self.emote(args)
         far = self.too_far(name, args)
         if far:
             return far
@@ -470,7 +480,8 @@ class Hub:
         res = await self.bot_call("stations", {"blocks": STATIONS, "radius": 96})
         found = set((res.get("found") or {}).keys()) if res.get("ok") else set()
         if self.knowledge is not None:
-            res = await self.bot_call("stations", {"blocks": self.knowledge.MACHINE_BLOCKS, "radius": 320})
+            blocks = await asyncio.to_thread(self.knowledge.all_machine_blocks)
+            res = await self.bot_call("stations", {"blocks": blocks, "radius": 320})
             found |= set((res.get("found") or {}).keys()) if res.get("ok") else set()
         return found
 
@@ -592,7 +603,8 @@ class Hub:
     # ------------------------------------------------------------------ ready-made routines (done by code, not by the AI)
     async def routine(self, name, args):
         """A common job done step by step by the code: the small model only has to choose it, not to carry it out."""
-        handlers = {"fetch": self.fetch, "study": self.study, "stash": self.stash, "load_machine": self.load_machine}
+        handlers = {"fetch": self.fetch, "study": self.study, "stash": self.stash, "load_machine": self.load_machine,
+                    "sleep": self.sleep}
         try:
             result = await handlers[name](args)
         except asyncio.CancelledError:
@@ -657,7 +669,7 @@ class Hub:
             if "Я ЗАПЕРТ" in res or (far >= 3 and "дойти" in res):
                 # shut in (a door only the owner opens) or no way further: say so instead of "25 did not open"
                 where = "в %s" % " ".join(str(int(v)) for v in self.state.get("pos", [])) if self.state.get("pos") else ""
-                await self.say("Командир, я застрял %s: выход закрыт, а ломать твоё я не буду. Открой мне, пожалуйста." % where)
+                await self.say(phrase("stuck", self.lang) % where)
                 self.log("  [study] застрял: " + res[:200])
                 return ("изучение прервано: застрял — %s. Успел осмотреть: %s"
                         % (res[:160], "; ".join(lines) or "ничего"))
@@ -800,6 +812,91 @@ class Hub:
         put = await self.bot_call("container_put", {"item": item_id or "all"})   # без count — весь предмет разом
         await self.bot_call("close_container", {})
         return "%s в машину %d %d %d" % (put.get("msg", "положил"), mx, my, mz)
+
+    async def sleep(self, args):
+        """«Иди спать»: the nearest bed he has seen; a sleeping player helps the server skip the night."""
+        await self.bot_call("look_around", {})
+        found = (await self.bot_call("find_block", {"block": "#minecraft:beds", "radius": 48})).get("msg", "")
+        spots = re.findall(r"(-?\d+) (-?\d+) (-?\d+) \(", found)
+        if not spots:
+            return "рядом не видел ни одной кровати — поставь её или покажи, где спать"
+        res = ""
+        for x, y, z in spots[:3]:
+            res = await self.start_task("use_block", {"x": int(x), "y": int(y), "z": int(z)}, 40)
+            if res.startswith("ГОТОВО"):
+                return "лёг в кровать %s %s %s: %s" % (x, y, z, res)
+        return "не получилось лечь: %s" % res
+
+    # gestures from head turns and short key presses (no tasks: following or guarding goes on meanwhile)
+    EMOTES = {
+        "nod": [("turn", {"direction": "down", "seconds": 1}), ("turn", {"direction": "forward", "seconds": 1})] * 2,
+        "shake": [("turn", {"direction": "left", "degrees": 30, "seconds": 1}),
+                  ("turn", {"direction": "right", "degrees": 60, "seconds": 1}),
+                  ("turn", {"direction": "left", "degrees": 60, "seconds": 1}),
+                  ("turn", {"direction": "right", "degrees": 30, "seconds": 1})],
+        "wave": [("press_key", {"key": "sneak", "ticks": 4})] * 3,
+        "jump": [("press_key", {"key": "jump", "ticks": 2})] * 2,
+        "bow": [("turn", {"direction": "down", "seconds": 2}), ("press_key", {"key": "sneak", "ticks": 20})],
+        "dance": [("press_key", {"key": "sneak", "ticks": 3}), ("turn", {"direction": "left", "degrees": 45, "seconds": 1}),
+                  ("press_key", {"key": "jump", "ticks": 2}), ("turn", {"direction": "right", "degrees": 90, "seconds": 1}),
+                  ("press_key", {"key": "sneak", "ticks": 3}), ("turn", {"direction": "left", "degrees": 45, "seconds": 1}),
+                  ("press_key", {"key": "jump", "ticks": 2})],
+        "look_around": [("turn", {"direction": "left", "degrees": 70, "seconds": 1}),
+                        ("turn", {"direction": "right", "degrees": 140, "seconds": 1}),
+                        ("turn", {"direction": "left", "degrees": 70, "seconds": 1})],
+    }
+
+    async def emote(self, args):
+        kind = str(args.get("kind", "nod")).lower()
+        steps = self.EMOTES.get(kind)
+        if not steps:
+            return "ОШИБКА: нет жеста %s (есть: %s)" % (kind, ", ".join(self.EMOTES))
+        for name, a in steps:
+            await self.bot_call(name, a)
+            await asyncio.sleep(0.45)
+        if self.owner and kind != "look_around":
+            await self.bot_call("turn", {"direction": "player", "player": self.owner, "seconds": 3})
+        return "сделал жест: %s" % kind
+
+    def remind(self, args):
+        """«Напомни через 10 минут ...»: the AI says it in its own words when the time comes."""
+        try:
+            minutes = max(0.1, float(args.get("minutes", 1)))
+        except (TypeError, ValueError):
+            return "ОШИБКА: minutes — число минут"
+        text = str(args.get("text", "")).strip()
+
+        async def later():
+            await asyncio.sleep(minutes * 60)
+            self.reminders.discard(task)
+            await self.requests.put(("event", "", "[Событие] Пора напомнить командиру то, что он просил %s мин назад: «%s». "
+                                     "Скажи это ему коротко, своими словами." % (round(minutes, 1), text)))
+
+        task = asyncio.create_task(later())
+        self.reminders.add(task)
+        return "Поставил напоминание через %s мин." % round(minutes, 1)
+
+    async def chatter_loop(self):
+        """Long silence, the commander near, nothing to do: the AI may say something by itself — or keep quiet."""
+        minutes = float(self.cfg.get("chatter_minutes", 6))
+        if minutes <= 0:
+            return
+        while True:
+            await asyncio.sleep(30)
+            s = self.state
+            working = (self.running is not None and self.running[1] not in ENDLESS) or \
+                (self.macro_task is not None and not self.macro_task.done())
+            if not self.joined or self.busy or working or not self.requests.empty() or not s.get("pos") \
+                    or not s.get("owner_pos") or time.time() - self.last_talk < minutes * 60:
+                continue
+            dist = sum((a - b) ** 2 for a, b in zip(s["pos"], s["owner_pos"])) ** 0.5
+            if dist > 24:
+                continue
+            self.last_talk = time.time()
+            await self.requests.put(("event", "", "[Событие] Тишина уже %d мин, командир рядом (%d бл.), ты свободен. Можешь "
+                                     "сам коротко заговорить с ним: одно наблюдение об обстановке, шутка, вопрос о его делах "
+                                     "или предложение, чем заняться. Не повторяй то, что уже говорил. Сказать нечего — ignore."
+                                     % (minutes, dist)))
 
     async def run_queue(self):
         """Start queued tasks one after another; returns when one is running in the background or the queue is empty."""
@@ -1031,16 +1128,16 @@ class Hub:
             self.joined = True
             self.memory.world = msg.get("world", "")
             self.log(msg.get("msg", ""))
-            await self.say("Альтрон на связи. Жду приказов.")
+            await self.say(phrase("online", self.lang))
         elif ev == "death":
             pos = self.state.get("pos")
             dim = self.state.get("dim", "")
             self.memory.log("событие", "Альтрон погиб" + (" в %d %d %d" % tuple(int(v) for v in pos) if pos else ""))
-            await self.say("Меня уничтожили. Перезагружаюсь.")
+            await self.say(phrase("died", self.lang))
             if pos:
                 asyncio.create_task(self.recover_death_drop([round(v) for v in pos], dim))
         elif ev == "low_health":
-            await self.say("Внимание, мои системы повреждены, здоровья мало.")
+            await self.say(phrase("low_health", self.lang))
 
     async def recover_death_drop(self, pos, dim):
         """After dying, go back for the dropped items myself, like a player, before they despawn."""
@@ -1098,7 +1195,7 @@ class Hub:
                             continue
                         if self.addressed(v["name"], text):
                             self.heard += 1
-                        await self.handle_phrase(v["name"], text)
+                        await self.handle_phrase(v["name"], text, self.stt.last_lang)
 
     def name_required(self, speaker):
         """The commander is heard without "Альтрон" (config wake_word_required=false); other players say his name,
@@ -1116,7 +1213,7 @@ class Hub:
         if conf < STT_MIN_CONF:
             return False
         low = text.lower().replace("ё", "е")
-        words = re.findall(r"[а-яa-z0-9]+", low)
+        words = re.findall(r"[^\W_]+", low)   # words of any alphabet
         if not words:
             return False
         if STOP_RE.search(low):
@@ -1157,6 +1254,13 @@ class Hub:
         except Exception as e:
             self.log("не сохранил запись голоса: %s" % e)
 
+    def set_lang(self, lang):
+        """Answer in the language the commander speaks (a fixed "language" in config.json keeps it)."""
+        if str(self.cfg.get("language", "auto")).lower() != "auto" or not lang or lang == self.lang:
+            return
+        self.lang = lang
+        self.log("Язык разговора: %s" % LANG_NAMES.get(lang, lang))
+
     def note_question(self, question):
         """Allow a question to the player only if none is pending (asked < 2 min ago and not answered)."""
         now = time.time()
@@ -1173,11 +1277,14 @@ class Hub:
             return True   # the commander does not have to call him by name
         return time.time() < self.windows.get(speaker, 0)
 
-    async def handle_phrase(self, speaker, text):
+    async def handle_phrase(self, speaker, text, lang=None):
         if not self.addressed(speaker, text):
             return
         if not self.owner:
             self.owner = speaker
+        if speaker == self.owner:
+            self.set_lang(lang or guess_lang(text, self.cfg.get("languages") or [self.lang], self.lang))
+        self.last_talk = time.time()
         if self.bot is not None:
             # like a person who hears his name: turn to the one speaking (when not busy with a job)
             self.send(self.bot, {"type": "cmd", "id": 0, "name": "attention", "args": {"player": speaker}})
@@ -1195,7 +1302,7 @@ class Hub:
             # the AI must not pick the cancelled job up again from the conversation history
             self.agent.note("[Командир сказал: «%s». Всё остановлено. Прежнее задание ОТМЕНЕНО — не продолжай его, "
                             "пока командир снова не попросит.]" % text)
-            await self.say("Остановился.")
+            await self.say(phrase("stopped", self.lang))
             return
         # really talking to him: his name, or a conversation with him going on. The commander's microphone also carries
         # what he says to others in the room ("сюда мы берём") — no instant "Принял" and no rules from that
@@ -1267,7 +1374,7 @@ class Hub:
             # he thinks before every answer to the commander (a few seconds); on real "how/why" questions he says so
             think = kind == "user" and self.cfg.get("llm_think_user", True)
             if think and needs_thinking(text) and not acked:
-                await self.say("Секунду, подумаю.")
+                await self.say(phrase("thinking", self.lang))
             try:
                 order = kind == "user" and bool(ACTION_WORDS.search(text)) and not is_question(text)
                 await self.agent.run(prompt, kind, question=(kind == "user" and is_question(text)), acked=acked,
@@ -1389,19 +1496,23 @@ def choose_launch(cfg, argv):
     ap.add_argument("--ai", help="адрес второго ПК с нейросетью (ai_server); пусто — на этом ПК")
     ap.add_argument("--pack", help="другая сборка (имя папки в .minecraft\\versions): Альтрон берёт её моды")
     args = ap.parse_args(argv)
-    if args.pack:
-        # another modpack of the same Minecraft/Forge: his body takes that pack's mods (plus Altron's own and Baritone)
-        # from its own folder, so the Total War setup is not touched; the encyclopedia is read from that pack
-        if not (rel(cfg["minecraft_dir"]) / "versions" / args.pack / (args.pack + ".json")).exists():
-            raise SystemExit("Нет такой сборки: %s" % args.pack)
-        cfg["pack_version"] = args.pack
-        cfg["bot_dir"] = "../bot_" + (re.sub(r"[^A-Za-z0-9]+", "_", args.pack).strip("_")[:24] or "other")
-        cfg["other_pack"] = True
     try:
         last = json.loads(LAST_LAUNCH.read_text(encoding="utf-8"))
     except Exception:
         last = {}
     ask = sys.stdin is not None and sys.stdin.isatty()
+    if args.pack:
+        cfg["pack_version"] = args.pack
+    if not cfg.get("game_pc_mode"):
+        # any Forge 1.20.1 modpack: the Minecraft folder, the pack and Java are found when config.json leaves them empty
+        resolve_install(cfg, "" if args.pack else last.get("pack", ""), ask and not args.pack)
+    if args.pack:
+        # another modpack of the same Minecraft/Forge: his body takes that pack's mods (plus Altron's own and Baritone)
+        # from its own folder, so the usual pack is not touched; the encyclopedia is read from that pack
+        if cfg["pack_version"] != args.pack:
+            raise SystemExit("Нет такой сборки: %s" % args.pack)
+        cfg["bot_dir"] = "../bot_" + (re.sub(r"[^A-Za-z0-9]+", "_", args.pack).strip("_")[:24] or "other")
+        cfg["other_pack"] = True
 
     if cfg.get("game_pc_mode"):
         # Altron runs on the second PC (the ai_server kit): the only question is where the commander's game is
@@ -1464,7 +1575,8 @@ def choose_launch(cfg, argv):
         cfg["history_chars"] = max(int(cfg.get("history_chars", 0)), 54000)
     try:
         LAST_LAUNCH.write_text(json.dumps({"profile": profile, "server": server or last.get("server", ""),
-                                           "owner": owner, "ai": ai or last.get("ai", "")},
+                                           "owner": owner, "ai": ai or last.get("ai", ""),
+                                           "pack": last.get("pack", "") if args.pack else cfg["pack_version"]},
                                           ensure_ascii=False, indent=1), encoding="utf-8")
     except Exception:
         pass
@@ -1487,7 +1599,7 @@ async def main():
         print(" Альтрон заходит на сервер %s сам (1-2 минуты)." % server)
         print(" Командир: %s. Говори в Voice Chat рядом с ним: «Альтрон, иди за мной»" % (owner or "первый, кто позовёт"))
     else:
-        print(" 1) Запусти сборку в TLauncher и зайди в свой мир")
+        print(" 1) Запусти сборку «%s» в своём лаунчере и зайди в свой мир" % cfg["pack_version"])
         print(" 2) Напиши в чате игры: /altron")
         print(" 3) Говори в Voice Chat: «Альтрон, иди за мной»")
     print(" Здесь можно печатать команды текстом. /quit — выход.")
@@ -1535,7 +1647,7 @@ async def main():
         hub.log("Проверка ИИ не прошла: %s" % e)
     try:
         async with listener:
-            await asyncio.gather(listener.serve_forever(), hub.voice_loop(), hub.agent_loop())
+            await asyncio.gather(listener.serve_forever(), hub.voice_loop(), hub.agent_loop(), hub.chatter_loop())
     finally:
         hub.stop_bot()
         if llm_proc is not None:

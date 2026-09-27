@@ -27,6 +27,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -82,8 +83,17 @@ public final class Actions {
     }
 
     private static JsonObject start(Task t) {
+        leaveBed();
         int id = BotClient.setTask(t);
         return J.obj("ok", true, "msg", "начал: " + t.name(), "task_id", id);
+    }
+
+    /** A sleeping player can neither walk, mine nor fight: out of bed first. */
+    private static void leaveBed() {
+        LocalPlayer p = Bot.player();
+        if (p != null && p.isSleeping()) {
+            p.connection.send(new ServerboundPlayerCommandPacket(p, ServerboundPlayerCommandPacket.Action.STOP_SLEEPING));
+        }
     }
 
     private static BlockPos pos(JsonObject a) {
@@ -394,6 +404,7 @@ public final class Actions {
 
             // ---------- movement ----------
             case "stop":
+                leaveBed();
                 BotClient.setTask(null);
                 Baritone.cancel();
                 Input.releaseAll();
