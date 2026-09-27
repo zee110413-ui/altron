@@ -1,0 +1,4 @@
+# Windows scripts are kept byte for byte with CRLF line endings: cmd.exe misreads labels (goto/call) in files with
+# bare LF, and install_altron.bat is downloaded straight from the repository (the raw link), with no conversion
+*.bat -text
+*.cmd -text

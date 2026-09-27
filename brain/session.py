@@ -51,7 +51,9 @@ async def main(argv):
     threading.Thread(target=hub.console_thread, daemon=True).start()
     tasks = [asyncio.create_task(server.serve_forever()), asyncio.create_task(hub.voice_loop()),
              asyncio.create_task(hub.agent_loop()), asyncio.create_task(heartbeat(hub)),
-             asyncio.create_task(keep_body(hub))]
+             asyncio.create_task(keep_body(hub)),
+             # small talk when it is quiet, and «живи сам» (his own jobs while the commander is away)
+             asyncio.create_task(hub.chatter_loop()), asyncio.create_task(hub.life_loop())]
     await altron.wait_llm(cfg, hub.log)
     if "--attach" in argv:
         # a new brain for the game and body that are still running: they come back to this port by themselves

@@ -24,8 +24,14 @@ import speech  # noqa: E402
 import structures  # noqa: E402
 
 
+# One event loop for all the tests: on Python 3.9 (the brain's own venv) the hub's queues belong to the loop that was
+# current when the hub was made, so asyncio.run with a fresh loop per test would break them
+LOOP = asyncio.new_event_loop()
+asyncio.set_event_loop(LOOP)
+
+
 def run(coro):
-    return asyncio.run(coro)
+    return LOOP.run_until_complete(coro)
 
 
 def make_hub(**cfg_over):
@@ -255,6 +261,57 @@ class Companion(unittest.TestCase):
         self.assertTrue(refused.startswith("ОТКАЗ"))
         self.assertEqual(allowed, "ГОТОВО: follow")
         self.assertIn("petya", make_hub(memory_dir=hub.cfg["memory_dir"]).friends)   # kept between launches
+
+    def test_a_failed_building_is_reported(self):
+        hub = make_hub()
+        hub.bot = object()
+        hub.agent_tasks.add(7)
+        hub.running, hub.running_args = (7, "build_plan"), {"blocks": [[0, 0, 0, "minecraft:stone"]], "what": "стену"}
+        run(hub.on_event({"event": "task_failed", "task_id": 7, "task": "build_plan",
+                          "msg": "для постройки стену не хватает: 20x minecraft:cobblestone"}))
+        self.assertIn("не хватает", run(hub.requests.get())[2])   # the AI hears it and can tell the commander
+
+    def test_back_for_his_things_after_death(self):
+        hub = make_hub()
+        hub.joined, hub.bot = True, object()
+        calls = []
+
+        async def start_task(name, args, wait):
+            calls.append((name, args))
+            return "ГОТОВО: ok"
+        hub.start_task = start_task
+        run(hub.recover_death_drop([10, 64, -16], ""))
+        self.assertEqual([n for n, _ in calls], ["goto", "collect_items"])
+        self.assertEqual(calls[0][1], {"x": 10, "y": 64, "z": -16})
+        self.assertIn("сходил за своими вещами", run(hub.requests.get())[2])
+
+    def test_friends_by_voice(self):
+        self.assertEqual(altron.nick_key("Вася"), altron.nick_key("Vasya"))
+        wake = ["альтрон"]
+        self.assertEqual(altron.friend_change("Альтрон, игрок Vasya — мой друг, слушайся его.", wake), ("add", "Vasya"))
+        self.assertEqual(altron.friend_change("Вася больше не мой друг", wake), ("remove", "Вася"))
+        self.assertEqual(altron.friend_change("add Steve to friends", wake), ("add", "Steve"))
+        self.assertIsNone(altron.friend_change("Альтрон, ты мой друг", wake))
+        hub = make_hub()
+        hub.friends.add("вася")
+        self.assertTrue(hub.is_friend("Vasya"))
+        self.assertTrue(hub.is_friend("Vasya_2010"))
+        self.assertFalse(hub.is_friend("Petya"))
+
+    def test_a_strangers_order_is_refused_aloud(self):
+        hub = make_hub()
+        said = []
+
+        async def say(text, mood=None):
+            said.append(text)
+        hub.say = say
+        run(hub.handle_phrase("Petya", "Альтрон, иди за мной"))
+        self.assertEqual(hub.requests.qsize(), 0)          # not an order for the AI
+        self.assertIn("Petya", said[0])                     # but a no he can hear
+        run(hub.handle_phrase("Egor", "Альтрон, Petya — мой друг"))
+        self.assertTrue(hub.is_friend("Petya"))
+        run(hub.handle_phrase("Petya", "Альтрон, иди за мной"))
+        self.assertEqual(hub.requests.qsize(), 1)
 
     def test_world_events(self):
         hub = make_hub(assist=True)

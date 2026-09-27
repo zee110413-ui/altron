@@ -652,7 +652,11 @@ class Agent:
         acked: the order was already answered aloud ("Есть, командир"): starting tasks needs no more words.
         think: a "how / why / what to do" question: the model reasons before answering."""
         self.cancelled = False
-        self.history.append({"role": "user", "content": user_text})
+        # the language of the answer, next to every phrase: with a long Russian history the model kept answering in
+        # Russian after the commander switched to English (the system prompt alone did not turn it)
+        lang = getattr(self.hub, "lang", "ru")
+        self.history.append({"role": "user", "content": "%s\n[Отвечай на языке / reply in: %s]" % (
+            user_text, LANG_NAMES.get(lang, lang))})
         said = False
         spoken = []         # never say the same thing twice in one turn
         calls_made = {}     # (tool, args) -> times: a small model can loop on the same call

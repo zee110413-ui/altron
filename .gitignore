@@ -1,6 +1,7 @@
 # Whitelist approach: ignore everything at root, then re-include source dirs
 /*
 !/.gitignore
+!/.gitattributes
 !/.github/
 !/docs/
 !/*.bat

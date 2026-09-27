@@ -207,6 +207,38 @@ public final class HostSetup {
                 p.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.WATER_BREATHING, 20 * 120, 0, false, false));
             }
         }
+        if (msg.has("commands")) {
+            // test course: what a player would do by hand (night, a storm, a creeper, an advancement, dying...),
+            // as server commands; the output of each goes back so a typo shows in the report
+            JsonArray outs = new JsonArray();
+            for (JsonElement e : msg.getAsJsonArray("commands")) {
+                StringBuilder said = new StringBuilder();
+                var src = server.createCommandSourceStack().withSource(new net.minecraft.commands.CommandSource() {
+                    @Override
+                    public void sendSystemMessage(net.minecraft.network.chat.Component c) {
+                        said.append(c.getString()).append(' ');
+                    }
+
+                    @Override
+                    public boolean acceptsSuccess() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean acceptsFailure() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean shouldInformAdmins() {
+                        return false;
+                    }
+                });
+                int n = server.getCommands().performPrefixedCommand(src, e.getAsString());
+                outs.add(n + " " + said.toString().trim());
+            }
+            r.add("commands", outs);
+        }
         if (msg.has("hurt") && bot != null) bot.setHealth(Math.max(1, J.num(msg, "hurt", 10)));
         if (msg.has("regen")) {
             // off while items are tried: natural healing must not pass for a medkit's effect
@@ -470,6 +502,10 @@ public final class HostSetup {
         o.addProperty("cooldowns", p.getCooldowns().getCooldownPercent(p.getMainHandItem().getItem(), 0) > 0);
         o.addProperty("riding", p.getVehicle() == null ? "" : String.valueOf(BuiltInRegistries.ENTITY_TYPE.getKey(p.getVehicle().getType())));
         o.addProperty("screen_open", p.containerMenu != p.inventoryMenu);
+        o.addProperty("sleeping", p.isSleeping());
+        o.addProperty("dim", p.level().dimension().location().toString());
+        o.addProperty("yaw", p.getYRot());
+        o.addProperty("pitch", p.getXRot());
         return o;
     }
 
