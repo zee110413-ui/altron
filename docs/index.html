@@ -11,7 +11,8 @@
 <meta property="og:url" content="https://zee110413-ui.github.io/altron/">
 <meta property="og:image" content="https://zee110413-ui.github.io/altron/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231f2226'/%3E%3Crect x='5' y='5' width='6' height='6' fill='%23b3312a'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -98,6 +99,7 @@
     padding-block: 22px;
   }
   .brand { display: flex; align-items: center; gap: 12px; font: 800 1rem var(--display); letter-spacing: 0.02em; }
+  .brand-icon { display: block; image-rendering: pixelated; }
   .eye {
     width: 22px; height: 22px; background: var(--ink);
     display: grid; place-items: center;
@@ -241,7 +243,7 @@
 
 <div class="wrap">
   <header class="top">
-    <div class="brand"><span class="eye" aria-hidden="true"></span>ALTRON</div>
+    <div class="brand"><img class="brand-icon" src="icon.png" width="28" height="28" alt="">ALTRON</div>
     <div class="top-right">
     <nav aria-label="Разделы">
       <a href="#abilities" data-i18n="nav.abilities">Умения</a>
