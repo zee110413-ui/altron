@@ -996,10 +996,29 @@ class Hub:
             await self.say("Альтрон на связи. Жду приказов.")
         elif ev == "death":
             pos = self.state.get("pos")
+            dim = self.state.get("dim", "")
             self.memory.log("событие", "Альтрон погиб" + (" в %d %d %d" % tuple(int(v) for v in pos) if pos else ""))
             await self.say("Меня уничтожили. Перезагружаюсь.")
+            if pos:
+                asyncio.create_task(self.recover_death_drop([round(v) for v in pos], dim))
         elif ev == "low_health":
             await self.say("Внимание, мои системы повреждены, здоровья мало.")
+
+    async def recover_death_drop(self, pos, dim):
+        """After dying, go back for the dropped items myself, like a player, before they despawn."""
+        await asyncio.sleep(3)   # the client waits ~30 ticks before it closes the death screen and respawns
+        if not self.joined:
+            return
+        if dim and self.state.get("dim") and self.state.get("dim") != dim:
+            await self.requests.put(("event", "", "[Событие] Погиб в измерении %s на %d %d %d, а возродился в другом "
+                                     "измерении — сам туда не дойти. Сообщи командиру, что вещи остались там."
+                                     % (dim, *pos)))
+            return
+        await self.requests.put(("event", "", "[Событие] Только что погиб и возродился. Вещи выпали на месте смерти "
+                                 "%d %d %d. Молча дойди туда (goto) и подбери их (collect_items, radius 4-6), пока они "
+                                 "не пропали — обычно 5 минут с момента смерти, часть времени уже прошла. Если по пути "
+                                 "явно опасно (лава, враги) или на месте вещей уже нет — сообщи командиру и не рискуй."
+                                 % tuple(pos)))
 
     # ------------------------------------------------------------------ voice
     def on_voice(self, msg):
