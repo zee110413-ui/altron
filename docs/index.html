@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Альтрон — голосовой ИИ-напарник для Minecraft</title>
+<meta name="description" content="Второй игрок в твоём мире, с которым говоришь голосом. Работает офлайн, понимает моды твоей сборки, отвечает на твоём языке.">
+<meta property="og:title" content="Альтрон — голосовой ИИ-напарник для Minecraft">
+<meta property="og:description" content="Второй игрок, с которым говоришь голосом. Офлайн, любые моды Forge 1.20.1, отвечает на твоём языке.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://zee110413-ui.github.io/altron/">
+<meta property="og:image" content="https://zee110413-ui.github.io/altron/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231f2226'/%3E%3Crect x='5' y='5' width='6' height='6' fill='%23b3312a'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --bg: #eef0ec;          /* calcite */
+    --surface: #e2e6e1;
+    --surface-2: #f7f8f5;
+    --ink: #1f2226;         /* deepslate */
+    --ink-soft: #4d545b;
+    --line: #c7cdc6;
+    --copper: #2a7a69;      /* oxidized copper */
+    --copper-soft: #d3e6df;
+    --redstone: #b3312a;
+    --gold: #a57812;
+    --grid: rgba(31, 34, 38, 0.05);
+    --display: "Unbounded", "Segoe UI", system-ui, sans-serif;
+    --body: "Onest", "Segoe UI", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #17191c;
+      --surface: #202328;
+      --surface-2: #1b1e22;
+      --ink: #e7eae5;
+      --ink-soft: #a3aaa4;
+      --line: #33383e;
+      --copper: #5fbca6;
+      --copper-soft: #1f3a34;
+      --redstone: #e0554c;
+      --gold: #d6a634;
+      --grid: rgba(231, 234, 229, 0.04);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #17191c;
+    --surface: #202328;
+    --surface-2: #1b1e22;
+    --ink: #e7eae5;
+    --ink-soft: #a3aaa4;
+    --line: #33383e;
+    --copper: #5fbca6;
+    --copper-soft: #1f3a34;
+    --redstone: #e0554c;
+    --gold: #d6a634;
+    --grid: rgba(231, 234, 229, 0.04);
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light; }
+  [hidden] { display: none !important; }
+  body {
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 32px 32px,
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 32px 32px,
+      var(--bg);
+    color: var(--ink);
+    font: 400 16px/1.6 var(--body);
+    margin: 0;
+    padding-inline: 20px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  a { color: var(--copper); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--copper); outline-offset: 3px; border-radius: 4px; }
+  h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+  h2 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); font-weight: 700; letter-spacing: -0.01em; }
+  h3 { font-size: 1.02rem; font-weight: 700; }
+  p { margin: 0; }
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  .eyebrow {
+    font: 600 0.72rem/1 var(--mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--copper);
+  }
+
+  /* ---------------- top bar */
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding-block: 22px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; font: 800 1rem var(--display); letter-spacing: 0.02em; }
+  .eye {
+    width: 22px; height: 22px; background: var(--ink);
+    display: grid; place-items: center;
+  }
+  .eye::after { content: ""; width: 8px; height: 8px; background: var(--redstone); box-shadow: 0 0 10px var(--redstone); }
+  .top nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 0.92rem; }
+  .top nav a { color: var(--ink-soft); text-decoration: none; }
+  .top nav a:hover { color: var(--ink); }
+
+  /* ---------------- hero */
+  .hero {
+    display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: start;
+    padding-block: 36px 64px;
+  }
+  .hero h1 {
+    font-size: clamp(3rem, 9vw, 6.4rem); font-weight: 800; line-height: 0.92; letter-spacing: -0.03em;
+  }
+  .hero h1 span { color: var(--copper); }
+  .lede { margin-top: 22px; font-size: 1.16rem; color: var(--ink-soft); max-width: 34ch; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+  .fact {
+    font: 500 0.8rem var(--mono); padding: 6px 10px; border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--ink-soft);
+  }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    font: 600 0.95rem var(--body); padding: 12px 18px; border: 2px solid var(--ink); text-decoration: none;
+    color: var(--ink); background: transparent; cursor: pointer;
+  }
+  .btn.primary { background: var(--ink); color: var(--bg); }
+  .btn.primary:hover { background: var(--copper); border-color: var(--copper); }
+  .btn:not(.primary):hover { border-color: var(--copper); color: var(--copper); }
+
+  /* the voice log */
+  .log {
+    background: var(--surface-2); border: 1px solid var(--line);
+    box-shadow: 8px 8px 0 var(--surface);
+  }
+  .log-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+  }
+  .log-head .title { font: 600 0.78rem var(--mono); color: var(--ink-soft); }
+  .langs { display: flex; gap: 4px; }
+  .langs button {
+    font: 600 0.72rem var(--mono); padding: 4px 8px; border: 1px solid var(--line); background: transparent;
+    color: var(--ink-soft); cursor: pointer;
+  }
+  .langs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  canvas.wave { display: block; width: 100%; height: 64px; border-bottom: 1px solid var(--line); }
+  .lines { list-style: none; margin: 0; padding: 14px 16px 18px; display: grid; gap: 10px; font: 400 0.86rem/1.5 var(--mono); }
+  .lines li { display: grid; grid-template-columns: 64px 1fr; gap: 10px; }
+  .lines time { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .who { font-weight: 600; }
+  .who.cmd { color: var(--gold); }
+  .who.alt { color: var(--copper); }
+  .lines .sys { color: var(--ink-soft); }
+
+  /* ---------------- sections */
+  section { padding-block: 56px; border-top: 1px solid var(--line); }
+  .sec-head { display: grid; gap: 10px; margin-bottom: 30px; max-width: 64ch; }
+  .sec-head p { color: var(--ink-soft); }
+
+  .abilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .ability { background: var(--surface-2); padding: 24px; display: grid; gap: 12px; align-content: start; }
+  .ability p { color: var(--ink-soft); }
+  .say { display: flex; flex-wrap: wrap; gap: 6px; }
+  .say span {
+    font: 400 0.8rem var(--mono); padding: 4px 8px; background: var(--copper-soft); color: var(--ink);
+  }
+
+  /* pipeline */
+  .pipe { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; }
+  .stage {
+    flex: 1 1 150px; min-width: 0; padding: 18px 16px; border: 1px solid var(--line); background: var(--surface-2);
+    display: grid; gap: 6px; align-content: start; position: relative;
+  }
+  .stage + .stage { border-left: none; }
+  .stage .k { font: 600 0.7rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
+  .stage b { font: 700 0.95rem var(--display); }
+  .stage span { font-size: 0.86rem; color: var(--ink-soft); }
+  .stage.voice b { color: var(--redstone); }
+  .pipe-note { margin-top: 14px; font-size: 0.9rem; color: var(--ink-soft); max-width: 70ch; }
+
+  /* install */
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; counter-reset: s; }
+  .steps li { counter-increment: s; border-top: 3px solid var(--ink); padding-top: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; min-width: 0; }
+  .steps li::before { content: counter(s); font: 800 2rem/1 var(--display); color: var(--copper); }
+  .steps p { color: var(--ink-soft); }
+  .copy {
+    display: flex; align-items: center; gap: 8px; margin-top: 4px;
+    border: 1px solid var(--line); background: var(--surface-2); padding: 6px 6px 6px 10px; max-width: 100%; min-width: 0;
+  }
+  .copy code { overflow-x: auto; white-space: nowrap; flex: 1; min-width: 0; }
+  .copy button {
+    font: 600 0.75rem var(--mono); padding: 6px 10px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg);
+    cursor: pointer; flex: none;
+  }
+  .gets { margin-top: 26px; font-size: 0.92rem; color: var(--ink-soft); max-width: 72ch; }
+
+  /* tables */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--surface-2); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font: 600 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); background: var(--surface); }
+  tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.85rem; white-space: nowrap; }
+  td code { color: var(--copper); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .two h3 { margin-bottom: 12px; }
+
+  .req { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .req div { padding: 18px; border: 1px solid var(--line); background: var(--surface-2); display: grid; gap: 6px; }
+  .req b { font: 700 0.9rem var(--display); }
+  .req span { font-size: 0.9rem; color: var(--ink-soft); }
+
+  footer { border-top: 1px solid var(--line); padding-block: 28px 44px; display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: space-between; font-size: 0.86rem; color: var(--ink-soft); }
+  footer p { max-width: 62ch; }
+
+  @media (max-width: 860px) {
+    .hero, .two { grid-template-columns: 1fr; }
+    .abilities { grid-template-columns: 1fr; }
+    .steps, .req { grid-template-columns: 1fr; }
+    .stage + .stage { border-left: 1px solid var(--line); border-top: none; }
+    .stage { flex-basis: 100%; }
+    .top nav { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><span class="eye" aria-hidden="true"></span>ALTRON</div>
+    <nav aria-label="Разделы">
+      <a href="#abilities">Умения</a>
+      <a href="#how">Как устроен</a>
+      <a href="#install">Установка</a>
+      <a href="#settings">Настройки</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <p class="eyebrow">Голосовой ИИ-напарник · Forge 1.20.1</p>
+        <h1 style="margin-top:16px">Альт<span>рон</span></h1>
+        <p class="lede">Второй игрок в твоём мире. Ты говоришь в голосовой чат — он идёт, копает, крафтит, воюет, возится с машинами любых модов и болтает с тобой.</p>
+        <div class="facts">
+          <span class="fact">офлайн на твоём ПК</span>
+          <span class="fact">любые моды</span>
+          <span class="fact">отвечает на твоём языке</span>
+          <span class="fact">без рентгена</span>
+        </div>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/zee110413-ui/altron/raw/main/install_altron.bat">Скачать установщик</a>
+          <a class="btn" href="https://github.com/zee110413-ui/altron">Исходники на GitHub</a>
+        </div>
+      </div>
+
+      <figure class="log" style="margin:0" aria-label="Пример разговора с Альтроном">
+        <div class="log-head">
+          <span class="title">мозг Альтрона · голосовой чат</span>
+          <div class="langs" role="group" aria-label="Язык примера">
+            <button type="button" id="lang-ru" aria-pressed="true" data-lang="ru">RU</button>
+            <button type="button" id="lang-en" aria-pressed="false" data-lang="en">EN</button>
+          </div>
+        </div>
+        <canvas class="wave" id="wave" aria-hidden="true"></canvas>
+        <ol class="lines" data-lang="ru">
+          <li><time>21:04:12</time><span><span class="who cmd">Командир:</span> Альтрон, загрузи всю сталь в пресс</span></li>
+          <li><time>21:04:12</time><span><span class="who alt">Альтрон:</span> Есть, командир.</span></li>
+          <li><time>21:04:13</time><span class="sys">load_machine(item: сталь, machine: пресс) · взял 320 шт. из 3 сундуков</span></li>
+          <li><time>21:05:40</time><span><span class="who alt">Альтрон:</span> Сталь в прессе, все пять стаков, одним заходом.</span></li>
+          <li><time>21:11:02</time><span class="sys">[тишина 6 мин · командир рядом]</span></li>
+          <li><time>21:11:04</time><span><span class="who alt">Альтрон:</span> Солнце садится. Люди боятся темноты, а я просто включаю ночное зрение. Кровать поставить, командир?</span></li>
+        </ol>
+        <ol class="lines" data-lang="en" hidden>
+          <li><time>21:04:12</time><span><span class="who cmd">Commander:</span> Altron, load all the steel into the press</span></li>
+          <li><time>21:04:12</time><span><span class="who alt">Altron:</span> On it, commander.</span></li>
+          <li><time>21:04:13</time><span class="sys">load_machine(item: steel, machine: press) · took 320 from 3 chests</span></li>
+          <li><time>21:05:40</time><span><span class="who alt">Altron:</span> The steel is in the press. All five stacks, one trip.</span></li>
+          <li><time>21:11:02</time><span class="sys">[quiet for 6 min · commander nearby]</span></li>
+          <li><time>21:11:04</time><span><span class="who alt">Altron:</span> The sun is going down. Humans fear the dark; I simply switch to night vision. Shall I place a bed, commander?</span></li>
+        </ol>
+      </figure>
+    </div>
+
+    <section id="abilities">
+      <div class="sec-head">
+        <p class="eyebrow">Умения</p>
+        <h2>Что он делает, когда ты говоришь</h2>
+        <p>Около 70 инструментов: от «иди за мной» до цепочки крафта через машины модов. Всё — как обычный игрок: видит только то, что в прямой видимости, руду ищет шахтой.</p>
+      </div>
+      <div class="abilities">
+        <div class="ability">
+          <h3>Разговаривает</h3>
+          <p>Отвечает на языке, на котором ты говоришь. Шутит, помнит, что ты о себе рассказывал, сам заговаривает после долгой тишины, кивает и машет.</p>
+          <div class="say"><span>как дела?</span><span>кивни</span><span>напомни через 10 минут проверить печь</span></div>
+        </div>
+        <div class="ability">
+          <h3>Понимает любые моды</h3>
+          <p>Читает предметы, рецепты и руководства всех модов твоей сборки, жмёт кнопки в окнах любого мода, пользуется машинами, которые уже видел. Чего не знает — ищет в интернете.</p>
+          <div class="say"><span>сделай 16 патронов</span><span>загрузи сталь в пресс</span><span>что в той машине?</span></div>
+        </div>
+        <div class="ability">
+          <h3>Играет вместе с тобой</h3>
+          <p>Следует и охраняет, стреляет из оружия модов, копает, плавит, строит многоблочные машины, водит технику, ложится спать ночью, подбирает свои вещи после смерти.</p>
+          <div class="say"><span>охраняй меня</span><span>накопай 10 железа</span><span>иди спать</span></div>
+        </div>
+        <div class="ability">
+          <h3>Помнит базу</h3>
+          <p>Места, сундуки и что в них лежит, машины и что они делают, твои слова и правила. Память не стирается при перезапуске.</p>
+          <div class="say"><span>запомни, это склад</span><span>где лежат алмазы?</span><span>изучи производство</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="sec-head">
+        <p class="eyebrow">Как устроен</p>
+        <h2>От твоего голоса до его рук</h2>
+        <p>Всё работает на твоём компьютере, без облака и подписок. Мозг на Python управляет вторым клиентом Minecraft с модом Альтрона.</p>
+      </div>
+      <div class="pipe">
+        <div class="stage voice"><span class="k">слух</span><b>Simple Voice Chat</b><span>твой голос из игры, 48 кГц</span></div>
+        <div class="stage"><span class="k">речь → текст</span><b>Whisper</b><span>сам определяет язык фразы</span></div>
+        <div class="stage"><span class="k">мысль</span><b>llama.cpp</b><span>локальная модель ИИ с инструментами</span></div>
+        <div class="stage"><span class="k">тело</span><b>Мод + Baritone</b><span>второй игрок: ходит, копает, жмёт GUI</span></div>
+        <div class="stage voice"><span class="k">голос</span><b>Piper · ultron</b><span>низкий двойной металл, своя модель на каждый язык</span></div>
+      </div>
+      <p class="pipe-note">Стиль голоса «ultron» — звуковой эффект поверх любого голоса Piper: понижение тона, второй «плывущий» голос, металлический резонанс и короткий зал. Это не копия голоса какого-либо актёра.</p>
+    </section>
+
+    <section id="install">
+      <div class="sec-head">
+        <p class="eyebrow">Установка</p>
+        <h2>Один файл — и он в игре</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <h3>Скачай и запусти установщик</h3>
+          <p>Двойной клик по <code>install_altron.bat</code>. Он спросит, в какой сборке играть, и сам всё скачает.</p>
+          <div class="copy">
+            <code id="dl-url">github.com/zee110413-ui/altron/raw/main/install_altron.bat</code>
+            <button type="button" id="copy-btn">Копировать</button>
+          </div>
+        </li>
+        <li>
+          <h3>Запусти мозг и сборку</h3>
+          <p>Ярлык «Altron» на рабочем столе. Дождись строки «ИИ готов», зайди в свой мир и напиши в чате <code>/altron</code>.</p>
+        </li>
+        <li>
+          <h3>Говори</h3>
+          <p>Через минуту-две зайдёт игрок altron. Скажи в голосовой чат: «Альтрон, иди за мной». Сработает и «Altron, follow me».</p>
+        </li>
+      </ol>
+      <p class="gets">Установщик ставит Python и пакеты, сервер llama.cpp под твою видеокарту (CUDA, Vulkan или процессор), модель ИИ, Whisper, голоса Piper, Baritone, Java 17 и Simple Voice Chat в сборку. Потом собирает мод и делает ярлык. Запускать можно повторно: готовое пропускается, оборванные загрузки докачиваются.</p>
+    </section>
+
+    <section id="settings">
+      <div class="sec-head">
+        <p class="eyebrow">Настройки</p>
+        <h2>Под твой компьютер и твой язык</h2>
+        <p>Режим выбирается при запуске. Меняется только клиент Альтрона и ИИ, твоя игра не трогается.</p>
+      </div>
+      <div class="two">
+        <div>
+          <h3>Режимы запуска</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Режим</th><th>Дальность</th><th>Java</th><th>Окно</th></tr></thead>
+              <tbody>
+                <tr><td>Экономный</td><td class="num">3 чанка</td><td class="num">2 ГБ</td><td>по надобности</td></tr>
+                <tr><td>Сбалансированный</td><td class="num">4 чанка</td><td class="num">2,5 ГБ</td><td>по надобности</td></tr>
+                <tr><td>Максимальный</td><td class="num">8 чанков</td><td class="num">3,5 ГБ</td><td>всегда, можно смотреть его глазами</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h3>brain/config.json</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Ключ</th><th>Что делает</th></tr></thead>
+              <tbody>
+                <tr><td><code>language</code></td><td><code>auto</code> — на языке командира, или код: <code>en</code>, <code>de</code>…</td></tr>
+                <tr><td><code>languages</code></td><td>какие языки слушать при <code>auto</code></td></tr>
+                <tr><td><code>tts_voices</code></td><td>голос Piper на каждый язык</td></tr>
+                <tr><td><code>tts_style</code></td><td><code>ultron</code>, <code>robot</code> или <code>plain</code></td></tr>
+                <tr><td><code>chatter_minutes</code></td><td>через сколько минут тишины заговорит сам; <code>0</code> — никогда</td></tr>
+                <tr><td><code>wake_words</code></td><td>на какое имя откликается</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="req">
+      <div class="sec-head">
+        <p class="eyebrow">Что нужно</p>
+        <h2>Требования</h2>
+      </div>
+      <div class="req">
+        <div><b>Сборка</b><span>Любая на Forge 1.20.1. Simple Voice Chat установщик добавит сам.</span></div>
+        <div><b>Компьютер</b><span>Windows 10/11, видеокарта NVIDIA от 8 ГБ. Без неё работает, но медленнее.</span></div>
+        <div><b>Слабый ПК?</b><span>Нейросеть и тело Альтрона можно вынести на второй компьютер: <code>build_pc2_kit.py</code>.</span></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Альтрон — фанатский проект, не связан с Marvel и Disney. Лицензия Apache 2.0.</p>
+    <a href="https://github.com/zee110413-ui/altron">github.com/zee110413-ui/altron</a>
+  </footer>
+</div>
+
+<script>
+  // language switch for the example conversation
+  const logs = document.querySelectorAll('.lines');
+  const langBtns = document.querySelectorAll('.langs button');
+  function setLang(lang) {
+    logs.forEach(l => { l.hidden = l.dataset.lang !== lang; });
+    langBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+    try { localStorage.setItem('altron-demo-lang', lang); } catch (e) {}
+  }
+  langBtns.forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
+  try { const saved = localStorage.getItem('altron-demo-lang'); if (saved) setLang(saved); } catch (e) {}
+
+  // copy the installer link
+  const copyBtn = document.getElementById('copy-btn');
+  copyBtn.addEventListener('click', () => {
+    const text = 'https://' + document.getElementById('dl-url').textContent.trim();
+    const done = () => { copyBtn.textContent = 'Скопировано'; setTimeout(() => { copyBtn.textContent = 'Копировать'; }, 1600); };
+    const fallback = () => {
+      const r = document.createRange(); r.selectNodeContents(document.getElementById('dl-url'));
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      copyBtn.textContent = 'Выделено — Ctrl+C';
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  });
+
+  // the voice meter: a blocky waveform, as if Altron were speaking
+  const cv = document.getElementById('wave');
+  const ctx = cv.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function color(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function draw(t) {
+    const w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const cell = 6, gap = 2, cols = Math.floor(w / (cell + gap));
+    const copper = color('--copper'), red = color('--redstone');
+    for (let i = 0; i < cols; i++) {
+      const x = i / cols;
+      const env = Math.sin(Math.PI * x) ** 0.8;
+      const v = env * (0.35 + 0.65 * Math.abs(Math.sin(x * 23 + t / 260) * Math.cos(x * 9 - t / 410)));
+      const blocks = Math.max(1, Math.round(v * (h / (cell + gap)) * 0.9));
+      for (let b = 0; b < blocks; b++) {
+        const y = h / 2 + (b % 2 ? 1 : -1) * Math.ceil(b / 2) * (cell + gap) - cell / 2;
+        ctx.fillStyle = b >= blocks - 1 && blocks > 5 ? red : copper;
+        ctx.globalAlpha = 1 - b / (blocks + 4);
+        ctx.fillRect(i * (cell + gap), y, cell, cell);
+      }
+    }
+    ctx.globalAlpha = 1;
+    if (!reduce) requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>
+
+</body>
+</html>

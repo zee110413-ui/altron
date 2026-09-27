@@ -2,6 +2,7 @@
 /*
 !/.gitignore
 !/.github/
+!/docs/
 !/*.bat
 !/*.txt
 !/*.md
