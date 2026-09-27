@@ -27,7 +27,7 @@ import java.util.Map;
 /**
  * What happens around the players in the host's world, for Altron to notice like a companion would: a player badly hurt
  * or killed, friends coming and going, advancements, a trip to another dimension, nightfall and storms, a creeper
- * hissing next to someone, a boss nearby. Each kind is sent at most once in a while per player.
+ * hissing next to someone, a boss nearby, someone going hungry. Each kind is sent at most once in a while per player.
  */
 public class HostWorldEvents {
     private final Map<String, Long> lastSent = new HashMap<>();
@@ -113,6 +113,8 @@ public class HostWorldEvents {
         for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
             if (isBot(sp) || sp.isSpectator() || sp.isCreative()) continue;
             danger(sp);
+            int food = sp.getFoodData().getFoodLevel();
+            if (food <= 6) send("player_hungry", name(sp), 300_000, "food", food);
         }
     }
 
