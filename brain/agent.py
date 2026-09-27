@@ -68,6 +68,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - «кивни / помаши / поклонись / попрыгай / станцуй / покачай головой» → emote. Можешь и сам кивнуть или помахать к месту в разговоре.
 - «напомни через N минут ...» → remind(minutes, text).
 - «помогай сам / присматривай за мной» → assist(on=true); «только по приказам» → assist(on=false).
+- «построй дом / укрытие / стену / башню / площадку / мост» → build_structure (размеры и материал — из слов командира, иначе по умолчанию). Не хватает материала — obtain, потом build_structure снова.
 - «живи сам / займись чем-нибудь, пока меня нет / занимайся фермой» → autonomy(on=true, goal); «хватит, жди приказов» → autonomy(on=false).
 - «собирай урожай / займись фермой» → baritone 'farm'. «посмотри на точку x y z» → look_at.
 - «стой/стоп/хватит» → stop.
@@ -292,6 +293,15 @@ TOOLS = [
     _tool("friends", "Друзья командира — игроки, чьи приказы ты тоже выполняешь. action: add («Вася — мой друг, слушайся "
                      "его»), remove («больше не слушайся Васю»), list («кто твои друзья?»). Менять список может только командир.",
           {"action": {"type": "string", "enum": ["add", "remove", "list"]}, "player": _S}, ["action"]),
+    _tool("build_structure", "Построить по описанию: kind — house (дом с дверью, окнами и крышей), shelter (маленькое укрытие "
+                             "на ночь), wall (стена), tower (башня), platform (площадка), bridge (мост с перилами). "
+                             "width/length/height — размеры в блоках (для моста width — длина, length — ширина). material — "
+                             "из чего (id или название: булыжник, доски...), roof_material — крыша, если другая. Без x,y,z "
+                             "сам найдёт ровное свободное место рядом. Материал должен быть в инвентаре: не хватит — "
+                             "скажет сколько, тогда obtain и снова строй.",
+          {"kind": {"type": "string", "enum": ["house", "shelter", "wall", "tower", "platform", "bridge"]},
+           "width": _I, "length": _I, "height": _I, "material": _S, "roof_material": _S, "x": _N, "y": _N, "z": _N},
+          ["kind"]),
     _tool("assist", "Помощь без приказа: on=true — сам защищаю командира и друзей, когда им плохо или рядом опасность, "
                     "кормлю голодных, отступаю к командиру, когда мне плохо в бою; on=false — только по приказам.",
           {"on": {"type": "boolean"}}, ["on"]),
@@ -310,7 +320,7 @@ TOOLS = [
 TASK_TOOLS = {"mine", "collect_items", "attack", "smelt", "transport_block", "goto", "come", "drive", "climb",
               "build_multiblock", "revive", "craft", "give", "drop", "eat", "use_item", "use_block", "break_block",
               "place_block", "use_entity", "follow", "guard", "obtain", "goto_place", "fetch", "stash", "explore",
-              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy"}
+              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy", "build_structure", "build_plan"}
 # Tools that only look something up: calling one of them over and over in a turn means the model is looping
 INFO_TOOLS = {"recall", "status", "inventory", "nearby", "find_block", "find_item", "recipe", "wiki", "plan", "item_info",
               "web_search"}
@@ -321,7 +331,7 @@ TOOL_RESULT_CHARS = 2500
 WAIT = {"inspect": 60, "use_block": 40, "craft": 90, "break_block": 60, "place_block": 60, "give": 60, "drop": 15,
         "eat": 15, "use_item": 15, "use_entity": 30}
 # Background tasks whose successful completion is reported to the player
-NOTIFY_DONE = {"mine", "collect_items", "transport_block", "smelt", "attack", "craft", "revive",
+NOTIFY_DONE = {"build_plan", "mine", "collect_items", "transport_block", "smelt", "attack", "craft", "revive",
                "build_multiblock", "drive", "explore", "goto", "use_block", "place_block", "climb"}
 
 

@@ -551,6 +551,22 @@ public final class Actions {
             }
             case "multiblocks":
                 return ok("Многоблочные постройки: " + MultiblockCompat.list());
+            case "build_plan": {
+                // a plan the brain drew up: [[dx, dy, dz, "block id"], ...] from the building's corner
+                JsonElement plan = a.get("blocks");
+                if (plan == null || !plan.isJsonArray()) return err("нет плана (blocks)");
+                List<net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo> list = new ArrayList<>();
+                for (JsonElement e : plan.getAsJsonArray()) {
+                    var row = e.getAsJsonArray();
+                    ResourceLocation id = ResourceLocation.tryParse(row.get(3).getAsString());
+                    if (id == null || !BuiltInRegistries.BLOCK.containsKey(id)) return err("не знаю блок " + row.get(3).getAsString());
+                    list.add(new net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo(
+                            new BlockPos(row.get(0).getAsInt(), row.get(1).getAsInt(), row.get(2).getAsInt()),
+                            BuiltInRegistries.BLOCK.get(id).defaultBlockState(), null));
+                    if (list.size() > 3000) return err("слишком большая постройка (больше 3000 блоков)");
+                }
+                return start(new com.altron.bot.tasks.BuildPlanTask(list, J.has(a, "x") ? pos(a) : null, J.str(a, "what", "постройку")));
+            }
             case "drive":
                 return start(new DriveTask(J.dbl(a, "x", 0), J.dbl(a, "z", 0)));
             case "item_info": {

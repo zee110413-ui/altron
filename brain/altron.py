@@ -425,6 +425,15 @@ class Hub:
             return "Альтрон ещё не в игре. Попроси игрока ввести команду /altron в своём мире."
         if name == "emote":
             return await self.emote(args)
+        if name == "build_structure":
+            # a building from a description: the plan of blocks is drawn up here, the body builds it
+            import structures
+            try:
+                args = structures.plan_args(args, self.item_id)
+            except ValueError as e:
+                return "ОШИБКА: %s" % e
+            self.log("  (план: %s, %d блоков)" % (args["what"], len(args["blocks"])))
+            name = "build_plan"
         far = self.too_far(name, args)
         if far:
             return far
