@@ -434,9 +434,11 @@ class LLM:
         data = await self._post(body)
         return re.sub(r"<think>.*?</think>", "", data["choices"][0]["message"].get("content") or "", flags=re.S).strip()
 
-    async def chat(self, messages, force_tool=False, think=False):
+    async def chat(self, messages, force_tool=False, think=False, on_sentence=None):
         """think: the model reasons first (in reasoning_content, not spoken) — slower, but much better on
-        "how / why / what to do" questions."""
+        "how / why / what to do" questions.
+        on_sentence: an async callback; the answer is then streamed and its finished sentences are handed over while
+        the rest is still being written (the reply's "spoken" says how much of its text went out that way)."""
         think = think or bool(self.cfg.get("llm_thinking", False))
         body = {
             "model": "local",
@@ -448,6 +450,13 @@ class LLM:
             "max_tokens": 2500 if think else 600,
             "chat_template_kwargs": {"enable_thinking": think},
         }
+        if on_sentence is not None and self.cfg.get("llm_stream", True):
+            spoken = []
+            try:
+                return await self._chat_stream(body, on_sentence, spoken)
+            except Exception:
+                if spoken:
+                    raise   # part of it was already said: a second answer would repeat it
         data = await self._post(body)
         usage = data.get("usage") or {}
         timings = data.get("timings") or {}
@@ -462,6 +471,67 @@ class LLM:
         out = {"role": "assistant", "content": content}
         if calls:
             out["tool_calls"] = calls
+        return out
+
+    async def _chat_stream(self, body, on_sentence, spoken):
+        """The same answer, streamed. A sentence is handed to on_sentence once the next one has begun (a lone first
+        sentence is often the preamble of a tool call, and words that come with actions are never spoken), and never
+        after a tool call has started."""
+        content, calls, usage, timings = "", {}, {}, {}
+        said, speaking = "", True
+        async with self.client.stream("POST", self.url, json=dict(body, stream=True)) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except ValueError:
+                    continue
+                usage = chunk.get("usage") or usage
+                timings = chunk.get("timings") or timings
+                delta = ((chunk.get("choices") or [{}])[0]).get("delta") or {}
+                for tc in delta.get("tool_calls") or []:
+                    speaking = False
+                    slot = calls.setdefault(tc.get("index", len(calls)),
+                                            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                    slot["id"] = tc.get("id") or slot["id"]
+                    fn = tc.get("function") or {}
+                    slot["function"]["name"] += fn.get("name") or ""
+                    slot["function"]["arguments"] += fn.get("arguments") or ""
+                piece = delta.get("content") or ""
+                if not piece:
+                    continue
+                content += piece
+                if not speaking:
+                    continue
+                visible = re.sub(r"<think>.*?(</think>|$)", "", content, flags=re.S)
+                if "<tool_call>" in visible or visible.lstrip()[:1] in ("{", "<"):
+                    speaking = False
+                    continue
+                while True:
+                    rest = visible[len(said):]
+                    m = re.match(r"\s*(.+?[.!?…])\s+\S", rest, re.S)
+                    if not m or len(m.group(1)) < 12:
+                        break
+                    sentence = m.group(1).strip()
+                    said = visible[:len(said) + m.end(1)]
+                    spoken.append(sentence)
+                    await on_sentence(sentence)
+        self.last_prompt_tokens = "%s (новых %s)" % (usage.get("prompt_tokens", "?"), timings.get("prompt_n", "?"))
+        text = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
+        found = [dict(c, id=c["id"] or "call_%d" % i) for i, c in sorted(calls.items())]
+        if not found and "<tool_call>" in text:
+            found = _parse_inline_tool_calls(text)
+            text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.S).strip()
+        out = {"role": "assistant", "content": text}
+        if found:
+            out["tool_calls"] = found
+        if said:
+            out["spoken"] = said.strip()
         return out
 
 
@@ -537,7 +607,16 @@ class Agent:
                 t0 = time.time()
                 # No forced tool call any more: forcing one made him answer "Спасибо" with "иду за тобой" + follow.
                 # He reasons first on the commander's phrase (think), then acts or just answers.
-                reply = await self.llm.chat(messages, think=think and step == 0)
+                # a spoken answer is expected (not an order, whose words alone are a failure): say it while it is written
+                stream = kind == "user" and not order and hasattr(self.hub, "say")
+
+                async def say_now(sentence):
+                    if not getattr(self.hub, "cut_speech", False) or not stream_started:
+                        stream_started.append(1)
+                        await self.hub.say(sentence)
+
+                stream_started = []
+                reply = await self.llm.chat(messages, think=think and step == 0, on_sentence=say_now if stream else None)
                 if step == 0:
                     self.hub.log("  (ИИ ответил за %.1f с, промпт %s ток.)" % (time.time() - t0, self.llm.last_prompt_tokens))
                 if time.time() - t0 > 150 and hasattr(self.hub, "note_llm_failure"):
@@ -566,9 +645,16 @@ class Agent:
                     return
             if self.cancelled:
                 break   # "stop" came while the AI was thinking: this answer is not carried out
+            already = reply.pop("spoken", "")   # said while the answer was being written
             self.history.append(reply)
             calls = reply.get("tool_calls")
             text = reply["content"]
+            if already:
+                said = True
+                spoken.append(already)
+                text = text[len(already):].strip() if text.startswith(already) else ""
+                if getattr(self.hub, "cut_speech", False):
+                    text = ""   # the commander talked over him: the rest is not said
             starts_task = any(c.get("function", {}).get("name") in TASK_TOOLS for c in (calls or []))
             if text:
                 last_text = text
