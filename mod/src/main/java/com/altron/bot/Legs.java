@@ -113,6 +113,14 @@ public final class Legs {
     }
 
     private static void start(Goal g, String player, int range) {
+        // the same place again, or one a step away (Combat asks every second while chasing a mob): walk on,
+        // a new search each time would stop him every second
+        if (state == State.WALKING && follow == null && player == null && goal instanceof Near old && g instanceof Near n
+                && old.range() == n.range() && old.pos().distSqr(n.pos()) <= 4 && !path.isEmpty()
+                && path.get(path.size() - 1).distSqr(n.pos()) <= (n.range() + 2) * (n.range() + 2)) {
+            goal = g;
+            return;
+        }
         if (state == State.BACKUP) Baritone.rawCancel();
         goal = g;
         follow = player;
@@ -415,16 +423,20 @@ public final class Legs {
         return (free(c) || (low(c) && !harmful(Bot.level().getBlockState(c)))) && free(c.above());
     }
 
-    /** Something to stand on (or hold on to, or swim in) at this cell. */
+    /** Something to stand on (or hold on to, or swim at the surface of) at this cell. Under the surface is no
+     *  place to walk: he would float up off the way (and drown on a long one). */
     private static boolean support(BlockPos c) {
-        if (low(c) || climbable(c) || water(c)) return true;
+        if (low(c) || climbable(c) || (water(c) && !water(c.above()))) return true;
         BlockPos below = c.below();
         BlockState st = Bot.level().getBlockState(below);
         if (harmful(st)) return false;
-        VoxelShape s = st.getCollisionShape(Bot.level(), below);
-        if (s.isEmpty()) return false;
-        double top = s.max(Direction.Axis.Y);
-        return top >= 0.8 && top <= 1.0;   // not the top of a fence or a wall: nobody stands there
+        // what is under the middle of the cell, where his feet are: the top edge of a ladder or of an open trapdoor at
+        // the side is nothing to stand on, the top of a fence or a wall (1.5 high) is out of reach
+        double top = -1;
+        for (AABB box : st.getCollisionShape(Bot.level(), below).toAabbs()) {
+            if (box.intersects(BODY.minX, 0, BODY.minZ, BODY.maxX, 2, BODY.maxZ)) top = Math.max(top, box.maxY);
+        }
+        return top >= 0.8 && top <= 1.0;
     }
 
     private static boolean standable(BlockPos c) {
@@ -500,7 +512,8 @@ public final class Legs {
             this.goal = goal;
             // standing in the air for a moment (a jump, a ledge): search from the ground below
             BlockPos s = from;
-            for (int i = 0; i < 3 && !standable(s) && Bot.level().getBlockState(s.below()).getCollisionShape(Bot.level(), s.below()).isEmpty(); i++) {
+            for (int i = 0; i < 3 && !standable(s) && !water(s)
+                    && Bot.level().getBlockState(s.below()).getCollisionShape(Bot.level(), s.below()).isEmpty(); i++) {
                 s = s.below();
             }
             start = new Node(s);
@@ -581,10 +594,10 @@ public final class Legs {
                     }
                 }
             }
-            // up and down ladders and vines, and swimming up and down
-            if ((climbable(c) || inWater) && body(c.above())) add(n, c.above(), 1.5);
+            // up and down ladders and vines; under water, up to the surface
+            if ((climbable(c) || (inWater && water(c.above()))) && body(c.above())) add(n, c.above(), 1.5);
             BlockPos down = c.below();
-            if ((climbable(down) || water(down)) && body(down)) add(n, down, 1.5);
+            if (climbable(down) && body(down)) add(n, down, 1.5);
         }
 
         /** The way found: to the goal, or (out of budget) to the cell nearest to it — if that is any nearer. */

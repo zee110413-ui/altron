@@ -184,7 +184,20 @@ class Hub:
 
     # ------------------------------------------------------------------ utils
     def log(self, text):
-        print(time.strftime("%H:%M:%S"), text, flush=True)
+        line = "%s %s" % (time.strftime("%H:%M:%S"), text)
+        print(line, flush=True)
+        # the same into brain/logs/brain.log: the field test (field_test.py) and a person reading afterwards see it all
+        path = self.cfg.get("brain_log", "logs/brain.log")
+        if not path:
+            return
+        try:
+            f = BRAIN_DIR / path
+            if f.exists() and f.stat().st_size > 20 * 1024 * 1024:
+                os.replace(f, f.with_suffix(".old.log"))
+            with open(f, "a", encoding="utf-8") as out:
+                out.write(time.strftime("%Y-%m-%d ") + line + "\n")
+        except OSError:
+            pass
 
     def send(self, writer, obj):
         if writer is None:
@@ -310,6 +323,24 @@ class Hub:
             # "вот этот", "вот сюда", "вот тот сундук" — this is what he means
             text += "; командир СМОТРИТ на: %s" % s["owner_look"]
         return text
+
+    def console_state(self):
+        """What the brain is doing now, for brain/console.py and the field test."""
+        return {"state": self.state, "running": self.running, "macro": self.macro_task is not None and not self.macro_task.done(),
+                "busy": self.busy, "requests": self.requests.qsize(), "queue": len(self.queue), "joined": self.joined,
+                "owner": self.owner, "lang": self.lang, "persona": self.persona, "mood": self.feelings.current(),
+                "goals": [g["text"] for g in self.goals], "legs": self.cfg.get("legs", "own"),
+                "speaking": time.time() < self.speech_end, "world": self.memory.world}
+
+    def set_setting(self, key, value):
+        if not key:
+            return "ОШИБКА: key"
+        if key == "persona":
+            return self.set_persona(str(value))
+        self.cfg[key] = value
+        if key == "legs" and self.bot is not None:
+            self.send(self.bot, self.body_config())   # the body walks with the other legs from now on
+        return "%s = %s" % (key, json.dumps(value, ensure_ascii=False))
 
     def body_config(self):
         """What the body needs to know: who the commander is, which world, and which legs to walk with ("legs": "own"
@@ -1846,8 +1877,10 @@ class Hub:
                         res = await self.start_task(str(msg.get("name", "")), msg.get("args") or {}, int(msg.get("wait", 120)))
                         self.send(writer, {"type": "reply", "result": res})
                     elif t == "state":
-                        self.send(writer, {"type": "reply", "result": {"state": self.state, "running": self.running,
-                                                                       "macro": self.macro_task is not None}})
+                        self.send(writer, {"type": "reply", "result": self.console_state()})
+                    elif t == "set":   # change a setting while he runs (the field test: legs, idle thinking...)
+                        self.send(writer, {"type": "reply", "result": self.set_setting(str(msg.get("key", "")),
+                                                                                         msg.get("value"))})
         except (ConnectionError, asyncio.IncompleteReadError):
             pass
         finally:
@@ -2169,11 +2202,10 @@ class Hub:
           ("idle_think_minutes") — with how long they have been silent, a question left unanswered, and sometimes a
           memory that came to mind. Nothing makes him talk: it is a chance to, like a pause in a real conversation."""
         seen, last = {}, 0.0
-        tick = float(self.cfg.get("observe_tick_sec", 5))
-        every = float(self.cfg.get("observe_every_sec", 45))
-        idle = float(self.cfg.get("idle_think_minutes", self.cfg.get("chatter_minutes", 4))) * 60
         while True:
-            await asyncio.sleep(tick)
+            await asyncio.sleep(float(self.cfg.get("observe_tick_sec", 5)))
+            every = float(self.cfg.get("observe_every_sec", 45))
+            idle = float(self.cfg.get("idle_think_minutes", self.cfg.get("chatter_minutes", 4))) * 60
             if not self.joined or self.bot is None:
                 seen.clear()
                 continue
@@ -2486,6 +2518,7 @@ class Hub:
                 if mem.strip():
                     prompt += "\n[Память]\n" + mem.strip()
             else:
+                self.log("(%s) %s" % (ui("думает о", "thinks about"), text.splitlines()[0][:200]))
                 self.memory.log("событие", text.replace("[Событие]", "").split("\nЕсли цель")[0].split("\nСообщи")[0][:500])
                 if self.goals and self.owner_away:
                     done = done_line(text)

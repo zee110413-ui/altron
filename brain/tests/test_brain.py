@@ -20,6 +20,7 @@ import agent_en  # noqa: E402
 import altron  # noqa: E402
 import dataset  # noqa: E402
 import feelings  # noqa: E402
+import field_test  # noqa: E402
 import knowledge  # noqa: E402
 import lang  # noqa: E402
 import launcher  # noqa: E402
@@ -42,6 +43,7 @@ def run(coro):
 def make_hub(**cfg_over):
     cfg = json.loads((BRAIN / "config.json").read_text(encoding="utf-8"))
     cfg["memory_dir"] = tempfile.mkdtemp()
+    cfg["brain_log"] = ""   # tests do not write into brain/logs/brain.log
     cfg.update(cfg_over)
     hub = altron.Hub(cfg)
     hub.owner = "Egor"
@@ -592,6 +594,103 @@ class Learning(unittest.TestCase):
         turns, _ = dataset.load(Hub.dataset.dir)
         self.assertEqual(len(turns), 1)
         self.assertEqual([m["role"] for m in list(turns.values())[0]["turn"]], ["user", "assistant", "tool", "tool", "assistant"])
+
+
+class FieldTestDryRun(unittest.TestCase):
+    """The field test itself, run against a pretend brain: every part and the report, without the game."""
+
+    def test_every_part_and_the_report(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        log_path = tmp / "brain.log"
+
+        class Clock:
+            now = 1000.0
+
+            def time(self):
+                return self.now
+
+            def sleep(self, s):
+                self.now += max(s, 0.05)
+
+            def strftime(self, *a):
+                return time.strftime(*a)
+        clock = Clock()
+
+        class FakeBrain(field_test.Brain):
+            def __init__(self):
+                self.bot_pos, self.host_pos = [0.0, 64.0, 0.0], [3.0, 64.0, 0.0]
+                self.persona, self.goals, self.running = "altron", [], None
+
+            def write(self, *lines):
+                with open(log_path, "a", encoding="utf-8") as f:
+                    for ln in lines:
+                        f.write("2026-01-01 12:00:00 " + ln + "\n")
+
+            def call(self, msg, timeout=300):
+                t = msg["type"]
+                if t == "state":
+                    return {"busy": False, "requests": 0, "speaking": False, "macro": False, "running": self.running,
+                            "joined": True, "state": {"pos": self.bot_pos}, "persona": self.persona,
+                            "goals": self.goals, "legs": "own"}
+                if t == "say":
+                    text = msg["text"]
+                    if "тиммейт" in text:
+                        self.persona = "teammate"
+                        self.write("  -> persona {}: ok")
+                    elif "обычный голос" in text:
+                        self.persona = "altron"
+                    elif "охраняй" in text:
+                        self.goals = ["охранять командира"]
+                        self.write("  -> goal {}: ok")
+                    elif "не охранять" in text:
+                        self.goals = []
+                    elif "ко мне" in text:
+                        self.bot_pos = list(self.host_pos)
+                        self.write("  -> come {}: ok")
+                    elif "Молодец" in text:
+                        self.write("  -> feedback {}: ok")
+                    self.write("Альтрон: " + ("Fine, thanks." if text.startswith("Altron") else "Хм, ладно."))
+                    return "сказано"
+                if t == "task":
+                    a = msg["args"]
+                    if msg["name"] == "goto":
+                        self.bot_pos = [a["x"] + 0.5, a["y"], a["z"] + 0.5]
+                    elif msg["name"] == "come":
+                        self.bot_pos = list(self.host_pos)
+                    self.running = None
+                    return "ГОТОВО: пришёл"
+                if t == "probe":
+                    a = msg["args"]
+                    if "tp_host" in a:
+                        self.host_pos = list(a["tp_host"])
+                        self.bot_pos = [self.host_pos[0] - 2, self.host_pos[1], self.host_pos[2]]
+                    if "tp_bot" in a:
+                        self.bot_pos = list(a["tp_bot"])
+                    if "commands" in a and any("time set 13000" in c for c in a["commands"]):
+                        self.write("(событие мира) night {}")
+                    return {"bot": {"pos": self.bot_pos}, "host": {"pos": self.host_pos}, "entities": []}
+                return "ok"
+
+        old = field_test.time, field_test.REPORT_DIR
+        field_test.time, field_test.REPORT_DIR = clock, tmp
+        try:
+            args = type("A", (), {"keep_course": False})()
+            t = field_test.FieldTest(FakeBrain(), {"brain_port": 1, "bot_dir": str(tmp), "host_dir": str(tmp)}, args)
+            t.log = field_test.BrainLog(log_path)
+            t.build_course()
+            for part in ("legs", "talk", "goals", "events"):
+                getattr(t, "part_" + part)()
+            t.take_down()
+            report = t.write().read_text(encoding="utf-8")
+        finally:
+            field_test.time, field_test.REPORT_DIR = old
+        marks = {r[1]: r[2] for r in t.results}
+        self.assertEqual(marks["flat"], "✅")
+        self.assertEqual(marks["тиммейт: включился?"], "✅")
+        self.assertEqual(marks["английский"], "✅")
+        self.assertEqual(marks["ночь"], "✅")
+        self.assertIn("| ноги | ladder | ✅ |", report)
+        self.assertIn("## config.json", report)
 
 
 if __name__ == "__main__":
