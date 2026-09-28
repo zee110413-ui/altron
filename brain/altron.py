@@ -311,6 +311,11 @@ class Hub:
             text += "; командир СМОТРИТ на: %s" % s["owner_look"]
         return text
 
+    def body_config(self):
+        """What the body needs to know: who the commander is, which world, and which legs to walk with ("legs": "own"
+        — his own pathfinding with Baritone as a backup, "own_only", or "baritone")."""
+        return {"type": "config", "owner": self.owner, "world": self.world_name, "legs": self.cfg.get("legs", "own")}
+
     # ------------------------------------------------------------------ bot commands
     async def bot_call(self, name, args):
         """Send one command to the bot and return its raw result dict."""
@@ -1820,7 +1825,7 @@ class Hub:
                     elif role == "bot":
                         self.bot = writer
                         self.log("Тело Альтрона подключено.")
-                        self.send(writer, {"type": "config", "owner": self.owner, "world": self.world_name})
+                        self.send(writer, self.body_config())
                     continue
                 if role == "host":
                     await self.on_host(msg)
@@ -1891,7 +1896,7 @@ class Hub:
             self.owner = msg.get("owner", self.owner)
             self.world_name = msg.get("world", self.world_name)
             if self.bot is not None:
-                self.send(self.bot, {"type": "config", "owner": self.owner, "world": self.world_name})
+                self.send(self.bot, self.body_config())
             if (self.bot_proc is not None and self.bot_proc.poll() is None) or self.bot is not None:
                 # his body is already there (also after the brain was restarted with the game still running)
                 self.send(self.host, {"type": "notify", "text": "Альтрон уже запущен."})

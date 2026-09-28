@@ -204,6 +204,7 @@ public class BotClient {
                     "msg", "Альтрон в мире: " + Bot.pos(p.blockPosition()) + ". " + Memory.summary()));
         }
         Input.tick();
+        Legs.tick();   // his own walking: before the look, which must not steer against it
         Bot.tickLook();
         Memory.tick();
         // in a vehicle: mods like SuperbWarfare read the controls only for a window in front

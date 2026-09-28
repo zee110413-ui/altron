@@ -2,6 +2,7 @@ package com.altron.bot.tasks;
 
 import com.altron.bot.Baritone;
 import com.altron.bot.Bot;
+import com.altron.bot.Legs;
 import com.altron.bot.Task;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -18,7 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Walk to a position with Baritone (it digs and swims as needed), or to a player who may keep moving.
+ * Walk to a position (his own legs, or Baritone), or to a player who may keep moving.
  * What Baritone cannot do, it does like a player: climbs mod ladders, and opens an iron door with the button or
  * lever next to it and walks through at once. If it makes no progress it tries a new path, then gives up with the
  * reason instead of standing forever.
@@ -197,7 +198,9 @@ public class GotoTask extends Task {
         if (startPos == null) startPos = p.position();
         if (!started) {
             if (d <= range + 0.8) return done("уже на месте");
-            if (!Baritone.gotoNear(target, range)) return fail("Baritone не установлен, не могу ходить");
+            // getting out of a pit needs digging a step or putting a block down: Baritone's job, his own legs never do it
+            boolean going = escaping && Baritone.installed() ? Baritone.rawGotoNear(target, range) : Baritone.gotoNear(target, range);
+            if (!going) return fail("не могу ходить: нет ни своих ног, ни Baritone");
             started = true;
             lastPos = p.position();
             return Status.RUNNING;
@@ -244,6 +247,7 @@ public class GotoTask extends Task {
                 }
                 return fail("не смог дойти до " + Bot.pos(target) + ", осталось " + Math.round(d) + " бл."
                         + (blockedBy.isEmpty() ? "" : " — " + blockedBy)
+                        + (Legs.lastFailure().isEmpty() ? "" : " (" + Legs.lastFailure() + ")")
                         + (room < 30 ? " — Я ЗАПЕРТ: вокруг всего " + room + " свободных клеток, выход закрыт (дверь, которую мне"
                         + " не открыть, или стены — ломать чужое не буду)" : ""));
             }

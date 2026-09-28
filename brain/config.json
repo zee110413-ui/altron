@@ -56,5 +56,6 @@
   "bot_low_priority": true,
   "bot_render_always": false,
   "stt_keep_audio": true,
+  "legs": "own",
   "extra_bot_mods": ["../mod/libs/baritone-api-forge-1.10.1.jar"]
 }

@@ -55,6 +55,7 @@ public final class Actions {
         if (type.equals("config")) {
             BotClient.owner = J.str(msg, "owner", BotClient.owner);
             BotClient.worldName = J.str(msg, "world", BotClient.worldName);
+            Legs.mode = J.str(msg, "legs", Legs.mode);   // own legs, or Baritone as before
             return;
         }
         if (!type.equals("cmd")) return;
