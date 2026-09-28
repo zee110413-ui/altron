@@ -78,7 +78,8 @@ PROFILES = {
                  "меньше лучей зрения, низкий приоритет, короче память разговора ИИ",
         "bot_lite": True, "bot_memory_mb": 2048, "bot_render_distance": 3, "bot_simulation_distance": 4,
         "bot_rays": 25, "bot_render_always": False, "bot_low_priority": True,
-        "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 9000,
+        # the instructions and 80 tools alone take ~15k tokens: with 16k the talk had no room and every answer failed
+        "llm_context": 24576, "llm_cache_ram_mb": 512, "history_chars": 9000,
     },
     "balanced": {
         "title_en": "Balanced (normal)",

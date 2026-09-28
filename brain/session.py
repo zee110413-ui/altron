@@ -57,6 +57,7 @@ async def main(argv):
              # moments): he looks around and the AI decides
              asyncio.create_task(hub.life_loop()), asyncio.create_task(hub.observe_loop())]
     await altron.wait_llm(cfg, hub.log)
+    await altron.warm_up(hub, cfg)   # the model reads its instructions once; the log says how much room is left
     if "--attach" in argv:
         # a new brain for the game and body that are still running: they come back to this port by themselves
         await attach(hub)

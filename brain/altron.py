@@ -175,6 +175,7 @@ class Hub:
         self.autonomy_log = []         # what he did on his own, told to the commander when he comes back
         self.autonomy_last = 0.0
         self.owner_away = False
+        self.away_since = 0.0          # when the commander went away (or out of sight)
         self.assist = bool(cfg.get("assist", False))   # help without orders: eat, retreat, feed and defend the commander
         self.goals = []                # long orders and his own plans the AI keeps pursuing (per world, see goal_tool)
         self.observe_now = False       # something new to think about: the next observation comes at once
@@ -216,7 +217,8 @@ class Hub:
         return self.feelings.voice_mood() or ("excited" if text.rstrip().endswith("!") else None)
 
     async def say(self, text, mood=None):
-        text = text.strip()
+        # the AI copies the tags of what it reads ("[Наблюдение] ...", "[Событие]"): they are not words to say
+        text = re.sub(r"^(\s*\[[^\]\n]{1,40}\]\s*)+", "", text or "").strip()
         if not text:
             return
         now = time.time()
@@ -1804,19 +1806,22 @@ class Hub:
                 dist = sum((a - b) ** 2 for a, b in zip(s["pos"], s["owner_pos"])) ** 0.5
                 # back = within ~40 blocks, not right next to him: busy with his own job, he is often 20-30 blocks off
                 if dist > 64:
-                    self.owner_away = True
+                    if not self.owner_away:
+                        self.owner_away, self.away_since = True, time.time()
                 elif dist < 40 and self.owner_away:
                     self.owner_away = False
-                    # what he finished, and what he is still busy with (a long job — 64 logs — is often not done yet)
+                    # what he finished, and what he is still busy with (a long job — 64 logs — is often not done yet).
+                    # Only after a real parting with something really done: walking off on his own errand and back
+                    # every few minutes told the commander "while you were away" again and again
                     doing = ("%s %s" % (s.get("task"), s.get("progress", ""))).strip() if s.get("task") else ""
-                    if self.goals and (self.autonomy_log or doing):
+                    if self.goals and self.autonomy_log and time.time() - getattr(self, "away_since", 0) >= 180:
                         done = "; ".join(self.autonomy_log[-8:]) or "пока ничего не закончил"
                         self.autonomy_log.clear()
                         await self.requests.put(("event", "", "[Событие] Командир вернулся. Коротко расскажи ему, что ты "
                                                  "сделал сам, пока его не было: %s%s" % (
                                                      done, "; сейчас занят: %s" % doing if doing else "")))
-            elif s.get("pos"):
-                self.owner_away = True   # the commander is out of sight
+            elif s.get("pos") and not self.owner_away:
+                self.owner_away, self.away_since = True, time.time()   # the commander is out of sight
 
     async def run_queue(self):
         """Start queued tasks one after another; returns when one is running in the background or the queue is empty."""
@@ -1967,6 +1972,7 @@ class Hub:
             asyncio.create_task(self.on_world_event(msg))
         elif t == "text":
             who = msg.get("from", "игрок")
+            self.log(ui("%s написал: %s", "%s wrote: %s") % (who, msg.get("text", "")))
             self.owner = self.owner or who
             self.windows[who] = time.time() + self.cfg.get("conversation_window_sec", 20)
             asyncio.create_task(self.handle_phrase(who, msg.get("text", "")))
@@ -2236,7 +2242,8 @@ class Hub:
             last, self.observe_now = now, False
             s = self.state
             doing = ("%s %s" % (s.get("task"), s.get("progress", ""))).strip() if s.get("task") else "ничего"
-            lines = ["[Наблюдение] " + ("Новое: " + "; ".join(news[:6]) if news else "Ничего нового не появилось."),
+            lines = ["[Наблюдение] (никто ничего не говорил — это то, что ты сам видишь) "
+                     + ("Новое: " + "; ".join(news[:6]) if news else "Ничего нового не появилось."),
                      "Ты сейчас делаешь: %s." % doing]
             if dist is not None:
                 lines.append("Командир в %d бл. от тебя." % dist)
@@ -2562,6 +2569,29 @@ class Hub:
             asyncio.run_coroutine_threadsafe(self.handle_phrase(who, line), self.loop)
 
 
+async def warm_up(hub, cfg):
+    """A first question to the AI with the whole instructions and tools: the model loads them (the first real answer is
+    fast then), and the brain sees how much of the model's memory they take — with too little left for the talk every
+    answer fails with "400 Bad Request"."""
+    try:
+        await hub.agent.llm.chat([{"role": "system", "content": hub.agent._system()},
+                                  {"role": "user", "content": "[Проверка связи] Ответь одним словом: готов."}],
+                                 tools=hub.agent._tools())
+    except Exception as e:
+        hub.log("Проверка ИИ не прошла: %s" % e)
+        return
+    used = str(hub.agent.llm.last_prompt_tokens).split(" ")[0]
+    ctx = int(cfg.get("llm_context", 24576))
+    if used.isdigit():
+        hub.log(ui("Инструкции и инструменты занимают %s из %d токенов памяти ИИ.",
+                   "The instructions and tools take %s of the AI's %d tokens of memory.") % (used, ctx))
+        if int(used) > ctx * 0.7 and not llm_is_remote(cfg):
+            hub.log(ui("ВНИМАНИЕ: на разговор почти не остаётся места — ответы будут падать. Увеличь \"llm_context\" "
+                       "в config.json или выбери режим «Сбалансированный».",
+                       "WARNING: almost no room is left for the talk — answers will fail. Raise \"llm_context\" in "
+                       "config.json or choose the Balanced mode."))
+
+
 def llm_is_remote(cfg):
     return bool(cfg.get("llm_url")) or cfg.get("llm_host", "127.0.0.1") not in ("127.0.0.1", "localhost", "")
 
@@ -2826,12 +2856,7 @@ async def main():
         except Exception as e:
             hub.log("Не удалось запустить клиент Альтрона: %s" % e)
     await wait_llm(cfg, hub.log)
-    try:
-        # warm up the model so the first command is fast
-        await hub.agent.llm.chat([{"role": "system", "content": hub.agent._system()},
-                                  {"role": "user", "content": "[Проверка связи] Ответь одним словом: готов."}])
-    except Exception as e:
-        hub.log("Проверка ИИ не прошла: %s" % e)
+    await warm_up(hub, cfg)
     try:
         async with listener:
             await asyncio.gather(listener.serve_forever(), hub.voice_loop(), hub.agent_loop(), hub.life_loop(),

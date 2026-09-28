@@ -273,6 +273,22 @@ class Streaming(unittest.TestCase):
         self.assertEqual(reply["spoken_calls"], ["r1"])
         self.assertEqual([c["function"]["name"] for c in reply["tool_calls"]], ["reply", "follow"])
 
+    def test_calls_the_server_did_not_parse(self):
+        xml = ('Хорошо, <tool_call>\n<function=explore>\n<parameter=radius>\n50\n</parameter>\n'
+               '<parameter=blocks>\nminecraft:oak_log\n</parameter>\n</function>\n</tool_call>')
+        calls = agent._parse_inline_tool_calls(xml)
+        self.assertEqual(calls[0]["function"]["name"], "explore")
+        self.assertEqual(json.loads(calls[0]["function"]["arguments"]), {"radius": 50, "blocks": "minecraft:oak_log"})
+        js = '<tool_call>{"name": "follow", "arguments": {}}</tool_call>'
+        self.assertEqual(agent._parse_inline_tool_calls(js)[0]["function"]["name"], "follow")
+        self.assertEqual(agent._strip_inline_calls("Пока ты отсутствовал, <tool_call><function=exp"), "Пока ты отсутствовал,")
+
+        def handler(req):
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Хорошо, <tool_call><function=exp"}}]})
+        llm = agent.LLM({"llm_port": 1})
+        llm.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.assertEqual(run(llm.chat([{"role": "user", "content": "x"}]))["content"], "")   # an unfinished call is not said
+
     def test_online_service_gets_no_llama_fields(self):
         seen = {}
 
@@ -369,6 +385,18 @@ class Companion(unittest.TestCase):
         run(hub.handle_phrase("Egor", "Альтрон, иди за мной"))
         self.assertEqual(acks, [])                         # no canned "Есть, командир": the AI answers itself
         self.assertEqual(hub.requests.qsize(), 1)
+
+    def test_tags_and_half_phrases_are_not_said(self):
+        hub = make_hub()
+        spoken = []
+
+        class Tts:
+            def synth(self, text, lang=None, mood=None):
+                spoken.append(text)
+                yield b"\x00\x00"
+        hub.tts, hub.host = Tts(), type("W", (), {"write": lambda self, b: None, "drain": lambda self: asyncio.sleep(0)})()
+        run(hub.say("[Наблюдение] Командир смотрит на снег."))
+        self.assertEqual(spoken, ["Командир смотрит на снег."])
 
     def test_stop_is_a_reflex_and_the_words_are_his(self):
         hub = make_hub()
