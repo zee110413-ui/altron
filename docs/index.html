@@ -295,12 +295,12 @@
       <div class="sec-head">
         <p class="eyebrow" data-i18n="abilities.eyebrow">Умения</p>
         <h2 data-i18n="abilities.h2">Что он делает, когда ты говоришь</h2>
-        <p data-i18n="abilities.intro">Около 70 инструментов: от «иди за мной» до цепочки крафта через машины модов. Всё — как обычный игрок: видит только то, что в прямой видимости, руду ищет шахтой.</p>
+        <p data-i18n="abilities.intro">Около 80 инструментов: от «иди за мной» до цепочки крафта через машины модов. Всё — как обычный игрок: видит только то, что в прямой видимости, руду ищет шахтой.</p>
       </div>
       <div class="abilities">
         <div class="ability">
           <h3 data-i18n="ab.h1">Разговаривает</h3>
-          <p data-i18n="ab.p1">Отвечает на языке, на котором ты говоришь. Шутит, помнит, что ты о себе рассказывал, сам заговаривает после долгой тишины, кивает и машет.</p>
+          <p data-i18n="ab.p1">Отвечает на языке, на котором ты говоришь, — своими словами, без заготовок. Шутит, помнит, что ты о себе рассказывал, в тишине сам решает, заговорить или промолчать.</p>
           <div class="say" data-i18n="ab.say1"><span>как дела?</span><span>кивни</span><span>напомни через 10 минут проверить печь</span></div>
         </div>
         <div class="ability">
@@ -310,7 +310,7 @@
         </div>
         <div class="ability">
           <h3 data-i18n="ab.h3">Играет вместе с тобой</h3>
-          <p data-i18n="ab.p3">Следует и охраняет, стреляет из оружия модов, копает, плавит, строит многоблочные машины, водит технику, ложится спать ночью, подбирает свои вещи после смерти.</p>
+          <p data-i18n="ab.p3">Ходит своими ногами — свой поиск пути, Baritone нужен только для копания и стройки по чертежу. Следует и охраняет, стреляет из оружия модов и из техники, копает, плавит, строит многоблочные машины, поднимает раненых, ложится спать ночью.</p>
           <div class="say" data-i18n="ab.say3"><span>охраняй меня</span><span>накопай 10 железа</span><span>иди спать</span></div>
         </div>
         <div class="ability">
@@ -320,13 +320,23 @@
         </div>
         <div class="ability">
           <h3 data-i18n="ab.h5">Замечает, что происходит</h3>
-          <p data-i18n="ab.p5">Крикнет о крипере за спиной, прибежит, если ты ранен, посочувствует, если погиб, поздравит с достижением, поздоровается с зашедшим другом. Его можно перебить — он замолчит и выслушает.</p>
+          <p data-i18n="ab.p5">Опасность, раненые, смерти, достижения, зашедшие игроки — всё приходит нейросети как факты, а что делать, решает она сама. Долгие приказы становятся его целями. Его можно перебить — он замолчит и выслушает.</p>
           <div class="say" data-i18n="ab.say5"><span>присматривай за мной</span><span>помогай сам</span><span>стоп, слушай</span></div>
         </div>
         <div class="ability">
           <h3 data-i18n="ab.h6">Работает в команде</h3>
           <p data-i18n="ab.p6">Слушается тебя и твоих друзей, с чужими вежлив, но их приказы не выполняет. Пока тебя нет, сам находит дела и потом рассказывает, что сделал. Строит дома, стены, башни и мосты по описанию.</p>
           <div class="say" data-i18n="ab.say6"><span>Вася — мой друг</span><span>живи сам, пока меня нет</span><span>построй дом 7 на 7</span></div>
+        </div>
+        <div class="ability">
+          <h3 data-i18n="ab.h7">Живой</h3>
+          <p data-i18n="ab.p7">Своё настроение — его слышно в голосе. Своё отношение к каждому игроку, которое копится от поступков. Свои вкусы и общие с тобой воспоминания. Два голоса: холодная машина и невозмутимый тиммейт с голосом синтезатора речи.</p>
+          <div class="say" data-i18n="ab.say7"><span>что ты любишь?</span><span>помнишь наш первый дом?</span><span>говори как тиммейт</span></div>
+        </div>
+        <div class="ability">
+          <h3 data-i18n="ab.h8">Учится</h3>
+          <p data-i18n="ab.p8">Каждый его ход записывается, а твоя похвала или недовольство — оценка. На хороших ходах ту же нейросеть можно дообучить, и он будет решать лучше именно в твоей игре.</p>
+          <div class="say" data-i18n="ab.say8"><span>молодец</span><span>не так</span><span>зачем ты это сделал?</span></div>
         </div>
       </div>
     </section>
@@ -341,7 +351,7 @@
         <div class="stage voice" data-i18n="how.stage1"><span class="k">слух</span><b>Simple Voice Chat</b><span>твой голос из игры, 48 кГц</span></div>
         <div class="stage" data-i18n="how.stage2"><span class="k">речь → текст</span><b>Whisper</b><span>сам определяет язык фразы</span></div>
         <div class="stage" data-i18n="how.stage3"><span class="k">мысль</span><b>llama.cpp</b><span>локальная модель ИИ с инструментами</span></div>
-        <div class="stage" data-i18n="how.stage4"><span class="k">тело</span><b>Мод + Baritone</b><span>второй игрок: ходит, копает, жмёт GUI</span></div>
+        <div class="stage" data-i18n="how.stage4"><span class="k">тело</span><b>Мод Альтрона</b><span>второй игрок: ходит своими ногами, копает, жмёт GUI</span></div>
         <div class="stage voice" data-i18n="how.stage5"><span class="k">голос</span><b>Piper · ultron</b><span>низкий двойной металл, своя модель на каждый язык</span></div>
       </div>
       <p class="pipe-note" data-i18n="how.1">Стиль голоса «ultron» — звуковой эффект поверх любого голоса Piper: понижение тона, второй «плывущий» голос, металлический резонанс и короткий зал. Это не копия голоса какого-либо актёра.</p>
@@ -403,7 +413,9 @@
                 <tr><td><code>languages</code></td><td>какие языки слушать при <code>auto</code></td></tr>
                 <tr><td><code>tts_voices</code></td><td>голос Piper на каждый язык</td></tr>
                 <tr><td><code>tts_style</code></td><td><code>ultron</code>, <code>robot</code> или <code>plain</code></td></tr>
-                <tr><td><code>chatter_minutes</code></td><td>через сколько минут тишины заговорит сам; <code>0</code> — никогда</td></tr>
+                <tr><td><code>persona</code></td><td><code>altron</code> или <code>teammate</code> — манера речи и голос</td></tr>
+                <tr><td><code>idle_think_minutes</code></td><td>как часто в тишине он думает, не сказать ли что-то; <code>0</code> — только когда к нему обращаются</td></tr>
+                <tr><td><code>legs</code></td><td><code>own</code> — свои ноги (Baritone подстрахует), <code>own_only</code>, <code>baritone</code></td></tr>
                 <tr><td><code>wake_words</code></td><td>на какое имя откликается</td></tr>
               </tbody>
             </table>
@@ -443,24 +455,30 @@
     'log.title': "Altron's brain · voice chat",
     'abilities.eyebrow': 'Abilities',
     'abilities.h2': 'What he does when you talk',
-    'abilities.intro': 'About 70 tools, from “follow me” to a crafting chain through mod machines. He plays fair: he sees only what is in his line of sight and finds ore by digging a mine.',
+    'abilities.intro': 'About 80 tools, from “follow me” to a crafting chain through mod machines. He plays fair: he sees only what is in his line of sight and finds ore by digging a mine.',
     'ab.h1': 'Talks',
-    'ab.p1': 'Answers in the language you speak. Jokes, remembers what you told him about yourself, starts small talk after a long silence, nods and waves.',
+    'ab.p1': 'Answers in the language you speak, in his own words, nothing canned. Jokes, remembers what you told him about yourself, and in a quiet moment decides himself whether to speak up.',
     'ab.say1': '<span>how are you?</span><span>nod</span><span>remind me in 10 minutes to check the furnace</span>',
     'ab.h2': 'Understands any mod',
     'ab.p2': 'Reads the items, recipes and manuals of every mod in your pack, clicks the buttons in any mod’s windows, uses the machines he has seen. What he does not know, he looks up on the web.',
     'ab.say2': '<span>make 16 bullets</span><span>load the steel into the press</span><span>what is in that machine?</span>',
     'ab.h3': 'Plays alongside you',
-    'ab.p3': 'Follows and guards you, shoots mod guns, mines, smelts, builds multiblock machines, drives vehicles, sleeps in a bed at night, picks his things up after he dies.',
+    'ab.p3': 'Walks on his own legs with his own pathfinding; Baritone is needed only for mining and building by blueprint. Follows and guards you, shoots mod guns and vehicle guns, mines, smelts, builds multiblock machines, gets downed players up, sleeps in a bed at night.',
     'ab.say3': '<span>guard me</span><span>mine 10 iron</span><span>go to sleep</span>',
     'ab.h4': 'Remembers your base',
     'ab.p4': 'Places, chests and what is in them, machines and what they make, your words and your rules. His memory survives restarts.',
     'ab.h5': 'Notices what happens',
-    'ab.p5': 'Shouts about a creeper behind you, runs over when you are hurt, sympathises when you die, congratulates on an advancement, greets a friend who joins. You can talk over him — he stops and listens.',
+    'ab.p5': 'Danger, the wounded, deaths, advancements, players joining — all of it reaches the AI as facts, and it decides what to do. Long orders become his goals. You can talk over him — he stops and listens.',
     'ab.say5': '<span>look after me</span><span>help on your own</span><span>stop, listen</span>',
     'ab.h6': 'Works in a team',
     'ab.p6': 'Obeys you and your friends, is polite to strangers but does not take their orders. While you are away he finds work himself and tells you what he did. Builds houses, walls, towers and bridges from a description.',
     'ab.say6': '<span>Vasya is my friend</span><span>live on your own while I am away</span><span>build a 7 by 7 house</span>',
+    'ab.h7': 'Alive',
+    'ab.p7': 'A mood of his own that you hear in his voice. An attitude to every player, built up by what they do. Tastes of his own and memories you share. Two voices: a cold machine and a deadpan teammate with a speech-synthesizer voice.',
+    'ab.say7': '<span>what do you like?</span><span>remember our first house?</span><span>talk like the teammate</span>',
+    'ab.h8': 'Learns',
+    'ab.p8': 'Every turn he takes is logged, and your praise or complaint is its rating. The good turns fine-tune the same AI, so he decides better in your own game.',
+    'ab.say8': '<span>well done</span><span>not like that</span><span>why did you do that?</span>',
     'ab.say4': '<span>remember, this is the storage</span><span>where are the diamonds?</span><span>study the production</span>',
     'how.eyebrow': 'How it works',
     'how.h2': 'From your voice to his hands',
@@ -468,7 +486,7 @@
     'how.stage1': '<span class="k">hearing</span><b>Simple Voice Chat</b><span>your voice from the game, 48 kHz</span>',
     'how.stage2': '<span class="k">speech → text</span><b>Whisper</b><span>detects the language of each phrase</span>',
     'how.stage3': '<span class="k">thinking</span><b>llama.cpp</b><span>a local AI model with tools</span>',
-    'how.stage4': '<span class="k">body</span><b>Mod + Baritone</b><span>a second player: walks, mines, clicks GUIs</span>',
+    'how.stage4': '<span class="k">body</span><b>The Altron mod</b><span>a second player: walks on his own legs, mines, clicks GUIs</span>',
     'how.stage5': '<span class="k">voice</span><b>Piper · ultron</b><span>low, doubled, metallic; a voice model per language</span>',
     'how.1': 'The “ultron” voice style is an audio effect on top of any Piper voice: a lower pitch, a second drifting voice, a metallic resonance and a short hall. It is not a copy of any actor’s voice.',
     'install.eyebrow': 'Install',
@@ -494,7 +512,9 @@
       '<tr><td><code>languages</code></td><td>languages to listen for with <code>auto</code></td></tr>' +
       '<tr><td><code>tts_voices</code></td><td>a Piper voice for each language</td></tr>' +
       '<tr><td><code>tts_style</code></td><td><code>ultron</code>, <code>robot</code> or <code>plain</code></td></tr>' +
-      '<tr><td><code>chatter_minutes</code></td><td>minutes of silence before he starts talking; <code>0</code> means never</td></tr>' +
+      '<tr><td><code>persona</code></td><td><code>altron</code> or <code>teammate</code>: the manner of speaking and the voice</td></tr>' +
+      '<tr><td><code>idle_think_minutes</code></td><td>how often in a quiet moment he thinks whether to say something; <code>0</code> — only when spoken to</td></tr>' +
+      '<tr><td><code>legs</code></td><td><code>own</code> — his own legs (Baritone as a backup), <code>own_only</code>, <code>baritone</code></td></tr>' +
       '<tr><td><code>wake_words</code></td><td>the names he answers to</td></tr></tbody>',
     'req.eyebrow': 'What you need',
     'req.h2': 'Requirements',
