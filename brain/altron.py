@@ -22,8 +22,8 @@ from speech import loud_enough
 
 # "стой", "останови все задачи", "прекрати" must stop him at once (they went to the AI as orders before)
 STOP_RE = re.compile(r"\b(стоп|стой|хватит|останови\w*|прекрати\w*|отмена|отмени\w*|отбой|замри|stop|halt|cancel|freeze)\b", re.I)
-ENDLESS = {"follow", "guard"}  # modes: a new task simply replaces them
-MOVES = {"come", "goto", "goto_place"}   # just walking: a new order replaces it instead of waiting behind it
+ENDLESS = {"follow", "guard", "vehicle_gunner"}  # modes: a new task simply replaces them
+MOVES = {"come", "goto", "goto_place", "drive"}   # just going somewhere: a new order replaces it instead of waiting
 MEMORY_TOOLS = {"remember", "forget", "recall", "mark_place", "goto_place"}
 VOICED_RMS = 400        # a 20 ms voice frame louder than this is speech (s16 scale)
 SILENCE_END = 0.6       # this long without speech ends a phrase (shorter would cut phrases at pauses)
@@ -92,32 +92,6 @@ def nick_key(name):
     same player; case, spaces and underscores do not count."""
     low = (name or "").lower()
     return re.sub(r"[^a-z0-9]", "", "".join(_TRANSLIT.get(ch, ch) for ch in low))
-
-
-# «Вася — мой друг», «добавь Васю в друзья», «Vasya is my friend» / «Вася больше не друг», «убери Васю из друзей»:
-# understood here, not left to the AI (it used to carry out the stranger's old order instead of adding him)
-_NAME = r"([\w.-]{2,24})"
-FRIEND_DEL_RE = re.compile(_NAME + r"\s*(?:[—–-]\s*)?(?:больше\s+|уже\s+)?не\s+(?:мой\s+|наш\s+)?друг|убери\s+(?:игрока\s+)?" + _NAME +
-                           r"\s+из\s+друзей|не\s+слушайся\s+(?:игрока\s+)?" + _NAME + r"|remove\s+" + _NAME +
-                           r"\s+from\s+(?:my\s+)?friends|" + _NAME + r"\s+is\s+(?:not|no\s+longer)\s+(?:my\s+|a\s+)?friend", re.I)
-FRIEND_ADD_RE = re.compile(_NAME + r"\s*(?:[—–-]|это)?\s*(?:мой|наш|тоже)\s+друг|добавь\s+(?:игрока\s+)?" + _NAME +
-                           r"\s+в\s+друзья|" + _NAME + r"\s+is\s+(?:my|a|our)\s+friend|add\s+" + _NAME +
-                           r"\s+(?:to|as)\s+(?:my\s+|a\s+)?friends?", re.I)
-NOT_A_NAME = {"ты", "он", "она", "оно", "они", "это", "он же", "не", "больше", "уже", "тоже", "вот", "мой", "наш", "игрок",
-              "you", "he", "she", "it", "they", "this", "that", "not", "player"}
-
-
-def friend_change(text, wake_words):
-    """("add" | "remove", player) when the commander makes someone a friend or takes it back, else None."""
-    for action, rx in (("remove", FRIEND_DEL_RE), ("add", FRIEND_ADD_RE)):
-        m = rx.search(text or "")
-        if not m:
-            continue
-        name = next(g for g in m.groups() if g)
-        if name.lower() in NOT_A_NAME or has_wake_word(name, wake_words):
-            return None
-        return action, name
-    return None
 
 
 def near_text(msg, creatures=8):
@@ -194,6 +168,8 @@ class Hub:
         self.autonomy_last = 0.0
         self.owner_away = False
         self.assist = bool(cfg.get("assist", False))   # help without orders: eat, retreat, feed and defend the commander
+        self.goals = []                # long orders and his own plans the AI keeps pursuing (per world, see goal_tool)
+        self.observe_now = False       # something new to think about: the next observation comes at once
         self.event_talk = 0.0          # when an event last made the AI speak (they must not drown the talk)
         self.speech_end = 0.0          # when the speech already sent to the game finishes playing
         self.cut_speech = False        # the commander started talking: stop saying the rest
@@ -433,17 +409,26 @@ class Hub:
                     "это; командир может сделать его другом." % self.speaker)
         if name == "friends":
             return self.friends_tool(args)
+        if name == "goal":
+            return self.goal_tool(args)
         if name == "assist":
+            # a standing wish of the commander's: it becomes one of his goals, what to do each time is up to the AI
             self.assist = bool(args.get("on", True))
+            if self.assist:
+                self.add_goal(self.ASSIST_GOAL)
+            else:
+                self.drop_goals("помогать командиру")
             self.save_modes()
             return ("Помощь без приказа включена: защищаю командира и друзей, кормлю, отступаю к командиру, когда мне "
                     "плохо в бою" if self.assist else "Помощь без приказа выключена: только по приказам")
         if name == "autonomy":
             self.autonomy = bool(args.get("on", True))
             self.autonomy_goal = str(args.get("goal", "")).strip() if self.autonomy else ""
-            self.autonomy_last = 0.0
+            self.drop_goals("живи сам")
+            if self.autonomy:
+                self.add_goal(self.AUTONOMY_GOAL + (". Командир просил: %s" % self.autonomy_goal if self.autonomy_goal else ""))
             self.save_modes()
-            return ("Режим «живи сам» включён%s: сам нахожу полезные дела, когда свободен" %
+            return ("Режим «живи сам» включён%s: это теперь моя цель, дела выбираю сам, когда свободен" %
                     (" (цель: %s)" % self.autonomy_goal if self.autonomy_goal else "") if self.autonomy
                     else "Режим «живи сам» выключен")
         if name in MEMORY_TOOLS:
@@ -1533,6 +1518,14 @@ class Hub:
         "night": "Наступает ночь. Можешь коротко предупредить командира или предложить лечь спать (sleep). Необязательно — "
                  "ignore, если вы заняты делом.",
         "storm": "Началась гроза. Можешь коротко сказать об этом или ignore.",
+        "danger_boss": "Рядом с {who} босс: {name}. Коротко предупреди и реши сам, что делать дальше.",
+        "danger_crowd": "Вокруг: {who} — {count} враждебных мобов. Коротко предупреди и реши сам, что делать: защищать, "
+                        "отступать или только предупредить.",
+        "downed": "{who} упал раненым (мод Incapacitated) на {pos} и истечёт кровью примерно через {seconds} с, если его "
+                  "не поднять. Поднять можно так: подойти вплотную и присесть рядом (revive: player и координаты x y z). "
+                  "Реши сам.",
+        "downed_self": "Ты сам упал раненым (мод Incapacitated): двигаться и что-то делать не можешь, истечёшь кровью "
+                       "примерно через {seconds} с. Поднять тебя может игрок, присев вплотную рядом. Скажи командиру.",
     }
     QUIET_EVENTS = {"player_left", "advancement", "dimension", "night", "storm", "player_hungry"}   # skipped while busy
     HUNGRY = {True: "{who}: голод {food} из 20. Сразу дай немного еды из своего инвентаря (give) и коротко скажи; нет еды "
@@ -1540,11 +1533,13 @@ class Hub:
               False: "{who}: голод {food} из 20. Если у тебя есть еда — коротко предложи её; нет — ignore."}
 
     async def on_world_event(self, msg):
-        """React to the world like a companion: danger is said at once (the AI would be too slow for a creeper),
-        the rest goes to the AI to answer in its own words."""
+        """What happens around: the AI hears it and decides what to do, in its own words. The only reflex is the
+        creeper's hiss — it blows up in 1.5 s, faster than any AI can think."""
         if not self.cfg.get("react_events", True) or not self.joined:
             return
         kind, who = str(msg.get("kind", "")), str(msg.get("who", ""))
+        if kind == "downed" and (msg.get("bot") or nick_key(who) == nick_key(self.cfg.get("bot_name", "altron"))):
+            kind, who = "downed_self", "*"
         if who != "*" and not (self.is_friend(who) or kind in ("player_joined", "player_left")):
             return   # strangers' troubles are theirs; only their coming and going is news
         self.log(ui("(событие мира) %s %s", "(world event) %s %s") % (kind, {k: v for k, v in msg.items() if k not in ("type", "kind")}))
@@ -1552,21 +1547,14 @@ class Hub:
             what = msg.get("what")
             if what == "creeper":
                 await self.say(phrase("creeper", self.lang) % self.call_name(who), "alert")
-            elif what == "boss":
-                await self.say(phrase("boss", self.lang) % msg.get("name", "босс"), "alert")
-            elif what == "crowd":
-                await self.say(phrase("crowd", self.lang) % (self.call_name(who), int(msg.get("count", 4))), "alert")
-            if self.assist and self.bot is not None and what in ("creeper", "crowd"):
-                await self.run_tool("guard", {"player": who}, 0)
-            return
+                return
+            kind = "danger_boss" if what == "boss" else "danger_crowd"
         template = self.HUNGRY[self.assist] if kind == "player_hungry" else self.WORLD_EVENTS.get(kind)
         if template is None:
             return
         now = time.time()
         if kind in self.QUIET_EVENTS and (self.busy or not self.requests.empty() or now - self.event_talk < 30):
             return
-        if kind == "player_low_health" and self.assist and self.bot is not None and self.running is None:
-            await self.run_tool("guard", {"player": who}, 0)   # at once; the AI decides about food meanwhile
         self.event_talk = now
         pos = msg.get("pos")
         role = "командир" if who.lower() == (self.owner or "").lower() else "игрок " + who
@@ -1750,14 +1738,10 @@ class Hub:
         self.reminders.add(task)
         return "Поставил напоминание через %s мин." % round(minutes, 1)
 
-    AUTONOMY = ("[Событие] Режим «живи сам»%s. Командир ничего конкретного не приказывал: выбери сам ОДНО полезное дело "
-                "и начни его молча, без вопросов — например, запасти дерево, уголь или железо (mine), сделать нужное "
-                "по цели (obtain), собрать урожай (baritone farm), сложить лишнее в сундук (stash), разложить сырьё по "
-                "линиям (supply). Держись не дальше ~100 блоков от командира или базы, не ломай постройки, не лезь в "
-                "опасные места. Всё полезное уже сделано — ignore.")
-
     async def life_loop(self):
-        """«Живи сам»: a useful job now and then while he is free; when the commander comes back, what he did."""
+        """Notices the commander going away and coming back; when he is back after Altron worked on his own goals,
+        the AI hears what was done and tells him in its own words. (What to do meanwhile is observe_loop's and the
+        AI's business.)"""
         while True:
             await asyncio.sleep(20)
             if not self.joined:
@@ -1772,7 +1756,7 @@ class Hub:
                     self.owner_away = False
                     # what he finished, and what he is still busy with (a long job — 64 logs — is often not done yet)
                     doing = ("%s %s" % (s.get("task"), s.get("progress", ""))).strip() if s.get("task") else ""
-                    if self.autonomy and (self.autonomy_log or doing):
+                    if self.goals and (self.autonomy_log or doing):
                         done = "; ".join(self.autonomy_log[-8:]) or "пока ничего не закончил"
                         self.autonomy_log.clear()
                         await self.requests.put(("event", "", "[Событие] Командир вернулся. Коротко расскажи ему, что ты "
@@ -1780,17 +1764,6 @@ class Hub:
                                                      done, "; сейчас занят: %s" % doing if doing else "")))
             elif s.get("pos"):
                 self.owner_away = True   # the commander is out of sight
-            if not self.autonomy:
-                continue
-            working = (self.running is not None and self.running[1] not in ENDLESS) or \
-                (self.macro_task is not None and not self.macro_task.done())
-            if working or self.busy or not self.requests.empty() or time.time() - self.autonomy_last < 180:
-                continue
-            self.autonomy_last = time.time()
-            if self.running is not None:   # following or guarding: his own work comes first now
-                await self.run_tool("stop", {}, 0)
-            goal = " (цель командира: %s)" % self.autonomy_goal if self.autonomy_goal else ""
-            await self.requests.put(("event", "", self.AUTONOMY % goal))
 
     async def chatter_loop(self):
         """Long silence, the commander near, nothing to do: the AI may say something by itself — or keep quiet."""
@@ -2068,6 +2041,7 @@ class Hub:
             except OSError:
                 pass
             self.log(msg.get("msg", ""))
+            self.load_goals()   # the long orders of this world, from the last session
             await self.say(phrase("online", self.lang))
         elif ev == "death":
             pos = self.state.get("pos")
@@ -2075,36 +2049,148 @@ class Hub:
             self.memory.log("событие", "Альтрон погиб" + (" в %d %d %d" % tuple(int(v) for v in pos) if pos else ""))
             await self.say(phrase("died", self.lang), "sad")
             if pos:
-                asyncio.create_task(self.recover_death_drop([round(v) for v in pos], dim))
+                asyncio.create_task(self.after_death([round(v) for v in pos], dim))
         elif ev == "low_health":
-            await self.say(phrase("low_health", self.lang), "alert")
-            if self.assist and self.running is not None and self.running[1] in ("attack", "guard") and self.owner:
-                # losing a fight: back to the commander instead of dying where the loot is hard to reach
-                await self.run_tool("stop", {}, 0)
-                await self.run_tool("come", {}, 0)
+            s = self.state
+            doing = ("%s %s" % (s.get("task"), s.get("progress", ""))).strip() if s.get("task") else "ничего"
+            await self.requests.put(("event", "", "[Событие] %s. Ты сейчас: %s. Реши сам: отступить к командиру, поесть, "
+                                     "продолжать или позвать на помощь — и коротко скажи." % (msg.get("msg", "Мало здоровья"), doing)))
 
-    async def recover_death_drop(self, pos, dim):
-        """After dying, go back for the dropped items myself, like a player, before they despawn."""
+    async def after_death(self, pos, dim):
+        """His things lie where he died for about 5 minutes: that becomes his goal, and the AI decides how (and whether
+        it is safe) to get them back. The goal stays in front of it until they are back or the time is up."""
         await asyncio.sleep(3)   # the client waits ~30 ticks before it closes the death screen and respawns
         if not self.joined:
             return
-        if dim and self.state.get("dim") and self.state.get("dim") != dim:
-            await self.requests.put(("event", "", "[Событие] Погиб в измерении %s на %d %d %d, а возродился в другом "
-                                     "измерении — сам туда не дойти. Сообщи командиру, что вещи остались там."
-                                     % (dim, *pos)))
-            return
-        # walked back and picked up here, in code: left to the AI, he walked there (twice) and never picked them up
         x, y, z = pos
-        self.log(ui("(иду за своими вещами на %d %d %d)", "(going back for my things at %d %d %d)") % (x, y, z))
-        went = await self.start_task("goto", {"x": x, "y": y, "z": z}, 180)
-        if went.startswith("ОТМЕНЕНО"):
-            return   # the commander gave another order meanwhile: that comes first
-        got = await self.start_task("collect_items", {"radius": 8}, 90)
-        if got.startswith("ОТМЕНЕНО"):
-            return
-        await self.requests.put(("event", "", "[Событие] Ты погиб на %d %d %d, возродился и сам сходил за своими вещами. "
-                                 "Дорога: %s. Подбор: %s. Скажи командиру одной короткой фразой, вернул ли вещи; если нет "
-                                 "— что помешало." % (x, y, z, went[:160], got[:200])))
+        other = bool(dim and self.state.get("dim") and self.state.get("dim") != dim)
+        until = time.time() + 290
+        self.add_goal("Вернуть свои вещи: выпали, когда ты погиб на %d %d %d%s, пропадут около %s. Когда они снова у "
+                      "тебя (или их уже нет) — goal done." % (x, y, z, " (в измерении %s, ты возродился в другом)" % dim
+                                                               if other else "",
+                                                               time.strftime("%H:%M", time.localtime(until))),
+                      until=until, by="сам")
+        await self.requests.put(("event", "", "[Событие] Ты погиб и возродился. Вещи выпали на месте смерти %d %d %d и "
+                                 "пропадут примерно через 5 минут. Это теперь твоя цель (см. [Твои цели]) — реши сам, как её "
+                                 "выполнить." % (x, y, z)))
+
+    # ------------------------------------------------------------------ goals: long orders he keeps pursuing himself
+    ASSIST_GOAL = ("Помогать командиру и друзьям без приказов: защищать от врагов, кормить голодных, поднимать раненых, "
+                   "отходить к командиру, если сам проигрываю бой")
+    AUTONOMY_GOAL = ("Живи сам, пока командир занят или далеко: находи полезные дела (запасы дерева, угля, железа, урожай, "
+                     "порядок в сундуках, сырьё на линии), держись не дальше ~100 блоков от командира или базы, не ломай "
+                     "постройки и не лезь в опасные места")
+
+    def load_goals(self):
+        try:
+            data = self.memory.load_world_json("goals") or {}
+        except Exception:
+            data = {}
+        self.goals = [g for g in data.get("goals", []) if not g.get("until") or g["until"] > time.time()]
+
+    def save_goals(self):
+        try:
+            self.memory.save_world_json("goals", {"goals": self.goals})
+        except Exception as e:
+            self.log("не сохранил цели: %r" % e)
+
+    def add_goal(self, text, until=0.0, by=""):
+        text = text.strip()
+        for g in self.goals:
+            if g["text"].lower() == text.lower():
+                return g
+        g = {"id": max([g["id"] for g in self.goals] + [0]) + 1, "text": text, "t": time.time(), "until": until,
+             "by": by or (self.speaker or "сам")}
+        self.goals.append(g)
+        self.save_goals()
+        self.observe_now = True   # a new goal: he thinks about it at once, not in a minute
+        return g
+
+    def drop_goals(self, query):
+        q = str(query or "").strip().lower()
+        if q in ("all", "все", "всё", "*"):
+            gone = self.goals
+        elif q.isdigit():
+            gone = [g for g in self.goals if g["id"] == int(q)]
+        else:
+            words = [w for w in re.findall(r"\w+", q) if len(w) > 2]
+            gone = [g for g in self.goals if words and all(w[:5] in g["text"].lower() for w in words)]
+        self.goals = [g for g in self.goals if g not in gone]
+        self.save_goals()
+        return gone
+
+    def goals_text(self):
+        now = time.time()
+        alive = [g for g in self.goals if not g.get("until") or g["until"] > now]
+        if len(alive) != len(self.goals):
+            self.goals = alive
+            self.save_goals()
+        if not alive:
+            return ""
+        lines = ["%d) %s%s (поставил: %s)" % (g["id"], g["text"], " — осталось ~%d мин" % max(1, round((g["until"] - now) / 60))
+                                            if g.get("until") else "", g.get("by") or "сам") for g in alive]
+        return ("[Твои цели — долгие дела, которые ты ведёшь сам между приказами, пока они не выполнены или не отменены]\n"
+                + "\n".join(lines))
+
+    def goal_tool(self, args):
+        """The AI's own list of long orders and plans: «охраняй базу», «живи сам», «поднимай раненых», «вернуть вещи»."""
+        action = str(args.get("action", "add")).lower()
+        text = str(args.get("text", "")).strip()
+        if action == "list":
+            return self.goals_text() or "целей нет"
+        if action in ("done", "remove", "cancel", "clear", "off"):
+            gone = self.drop_goals(text or args.get("id", ""))
+            if gone:
+                return "убрал цель: " + "; ".join(g["text"] for g in gone)
+            return "такой цели нет. " + (self.goals_text() or "Целей нет.")
+        if not text:
+            return "ОШИБКА: text — что за цель, своими словами"
+        try:
+            minutes = float(args.get("minutes") or 0)
+        except (TypeError, ValueError):
+            minutes = 0
+        g = self.add_goal(text, until=time.time() + minutes * 60 if minutes > 0 else 0.0)
+        return ("Цель №%d записана: %s. Она будет перед тобой в каждом ходе, а пока цели есть, приходят [Наблюдение] — "
+                "решай по ним сам." % (g["id"], g["text"]))
+
+    async def observe_loop(self):
+        """His own thinking between orders. While he has goals, he looks around now and then — and at once when
+        someone new shows up (an enemy, a player) — and the AI decides what to do about it, or nothing. This loop only
+        notices; it never decides for him."""
+        seen, last = {}, 0.0
+        every = float(self.cfg.get("observe_every_sec", 45))
+        while True:
+            await asyncio.sleep(5)
+            if not self.joined or self.bot is None or not self.goals_text():
+                seen.clear()
+                continue
+            near = await self.bot_call("nearby", {"radius": 32})
+            text = near.get("msg", "") if near.get("ok") else ""
+            now = time.time()
+            news = []
+            for kind, name, ident, dist in re.findall(r"- (враг|игрок): (.+?) \(([^)]+)\), (\d+) бл\.", text):
+                if nick_key(name) == nick_key(self.cfg.get("bot_name", "altron")):
+                    continue
+                key = ident if kind == "враг" else "player:" + name
+                if now - seen.get(key, 0) > 90:
+                    news.append("%s: %s, %s бл." % (kind, name if kind == "враг" else "%s (%s)" % (name, self.role_of(name)),
+                                                    dist))
+                seen[key] = now
+            working = (self.running is not None and self.running[1] not in ENDLESS) or \
+                (self.macro_task is not None and not self.macro_task.done())
+            due = self.observe_now or (not working and now - last >= every)
+            if not due and not (news and now - last >= 10):
+                continue
+            if self.busy or not self.requests.empty():
+                continue
+            last, self.observe_now = now, False
+            s = self.state
+            doing = ("%s %s" % (s.get("task"), s.get("progress", ""))).strip() if s.get("task") else "ничего"
+            await self.requests.put(("event", "", "[Наблюдение] %s\nТы сейчас делаешь: %s.\nВокруг (32 бл.):\n%s\nРеши сам, "
+                                     "нужно ли прямо сейчас что-то сделать ради твоих целей: одно-два действия, или ignore, "
+                                     "если всё в порядке. Не начинай заново то, что уже делаешь." % (
+                                         "Новое: " + "; ".join(news[:6]) if news else "Ничего нового не появилось.", doing,
+                                         near_text(text) if text and not text.startswith("Рядом никого") else "никого")))
 
     # ------------------------------------------------------------------ voice
     def on_voice(self, msg):
@@ -2248,19 +2334,9 @@ class Hub:
         self.memory.log(speaker, text)
         self.last_phrase = [speaker, text, time.time()]   # a restarted brain answers it if it was cut short
         self.last_question = None  # the player spoke: any pending question is answered
-        if not self.is_friend(speaker) and (ACTION_WORDS.search(text) or STOP_RE.search(text)) and not is_question(text):
-            # a stranger's order: no "Принял" and no work — a plain no, said aloud (the AI used to decide to keep
-            # quiet, so the player heard "Принял" and then nothing). Talk and questions still go to the AI below.
-            await self.say(phrase("stranger_order", self.lang) % speaker)
-            return
-        change = friend_change(text, self.cfg["wake_words"]) if speaker.lower() == (self.owner or "").lower() else None
-        if change:
-            self.friends_tool({"action": change[0], "player": change[1]})
-            self.agent.note("[Командир: «%s». Список друзей обновлён: %s %s.]" % (text, change[0], change[1]))
-            await self.say(phrase("friend_added" if change[0] == "add" else "friend_removed", self.lang) % change[1])
-            return
-        # a plain "стоп / стой / хватит"; "стой тут и охраняй меня" is an order with a stop word in it, not a stop
-        pure_stop = STOP_RE.search(text) and not ACTION_WORDS.search(STOP_RE.sub(" ", text))
+        # a plain "стоп / стой / хватит"; "стой тут и охраняй меня" is an order with a stop word in it, not a stop.
+        # Only from the commander and his friends: a stranger's "стоп" is just words, the AI answers him
+        pure_stop = STOP_RE.search(text) and not ACTION_WORDS.search(STOP_RE.sub(" ", text)) and self.is_friend(speaker)
         if pure_stop and len(re.findall(r"\w+", text)) <= 6:
             self.agent.cancelled = True
             while not self.requests.empty():
@@ -2280,7 +2356,9 @@ class Hub:
         if talking and speaker == self.owner and self.memory.rule_from(text):
             self.log("(запомнил правило командира) " + text)
         acked = False
-        if talking and ACTION_WORDS.search(text) and not is_question(text) and self.tts is not None:
+        # the instant "Принял" is a promise: only to those whose orders he carries out (a stranger heard "Принял"
+        # and then nothing happened); what to answer a stranger is the AI's own decision
+        if talking and self.is_friend(speaker) and ACTION_WORDS.search(text) and not is_question(text) and self.tts is not None:
             await self.acknowledge(speaker)   # an order: answer at once, the AI will act (quietly) right after
             acked = True
         await self.requests.put(("user", speaker, text, acked))
@@ -2294,7 +2372,9 @@ class Hub:
             self.speaker = speaker if kind == "user" else ""
             if kind == "user":
                 targets = []
-                prompt = "[%s (%s) говорит]: %s\n[Состояние] %s" % (speaker, self.role_of(speaker), text, self.state_text())
+                heard = "" if self.is_friend(speaker) else " (он тебя слышит в голосовом чате)"
+                prompt = "[%s (%s) говорит%s]: %s\n[Состояние] %s" % (speaker, self.role_of(speaker), heard, text,
+                                                                   self.state_text())
                 if self.bot is not None:
                     # what is around him right now (players, mobs, vehicles, turrets with their ids): no guessing
                     near = await self.bot_call("nearby", {"radius": 16})
@@ -2340,11 +2420,14 @@ class Hub:
                     prompt += "\n[Память]\n" + mem.strip()
             else:
                 self.memory.log("событие", text.replace("[Событие]", "").split("\nЕсли цель")[0].split("\nСообщи")[0][:500])
-                if self.autonomy and self.owner_away:
+                if self.goals and self.owner_away:
                     done = done_line(text)
                     if done:
                         self.autonomy_log.append(done)
                 prompt = "%s\n[Состояние] %s" % (text, self.state_text())
+            goals = self.goals_text()
+            if goals:
+                prompt += "\n" + goals   # his long orders are in front of him at every turn
             self.busy = True
             # he thinks before every answer to the commander (a few seconds); on real "how/why" questions he says so
             think = kind == "user" and self.cfg.get("llm_think_user", True)
@@ -2655,7 +2738,7 @@ async def main():
     try:
         async with listener:
             await asyncio.gather(listener.serve_forever(), hub.voice_loop(), hub.agent_loop(), hub.chatter_loop(),
-                                 hub.life_loop())
+                                 hub.life_loop(), hub.observe_loop())
     finally:
         hub.stop_bot()
         if llm_proc is not None:

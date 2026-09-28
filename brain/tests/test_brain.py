@@ -88,13 +88,16 @@ class Orders(unittest.TestCase):
             owner, lang, knowledge = "Bob", "en", K()
 
         a = agent.Agent.__new__(agent.Agent)
-        a.cfg, a.hub = {"bot_name": "altron"}, H()
+        a.cfg, a.hub = {"bot_name": "altron", "languages": ["en", "ru"]}, H()
         en = a._system()
         self.assertIn("You are Altron", en)
         self.assertIn("TaCZ: guns", en)                  # a hint for an installed mod
         self.assertNotIn("SuperbWarfare:", en)           # not for a missing one
         H.lang = "ru"
-        self.assertIn("Ты — Альтрон", a._system())
+        self.assertEqual(a._system(), en)                # the commander's language does not rewrite the rules
+        b = agent.Agent.__new__(agent.Agent)
+        b.cfg, b.hub = {"bot_name": "altron", "languages": ["ru", "en"]}, H()
+        self.assertIn("Ты — Альтрон", b._system())
 
 
 class Buildings(unittest.TestCase):
@@ -271,47 +274,47 @@ class Companion(unittest.TestCase):
                           "msg": "для постройки стену не хватает: 20x minecraft:cobblestone"}))
         self.assertIn("не хватает", run(hub.requests.get())[2])   # the AI hears it and can tell the commander
 
-    def test_back_for_his_things_after_death(self):
+    def test_death_becomes_his_goal(self):
         hub = make_hub()
         hub.joined, hub.bot = True, object()
-        calls = []
+        run(hub.after_death([10, 64, -16], ""))
+        self.assertIn("10 64 -16", hub.goals_text())          # the goal is in front of the AI at every turn
+        self.assertIn("реши сам", run(hub.requests.get())[2])  # how to get the things back is its own decision
 
-        async def start_task(name, args, wait):
-            calls.append((name, args))
-            return "ГОТОВО: ok"
-        hub.start_task = start_task
-        run(hub.recover_death_drop([10, 64, -16], ""))
-        self.assertEqual([n for n, _ in calls], ["goto", "collect_items"])
-        self.assertEqual(calls[0][1], {"x": 10, "y": 64, "z": -16})
-        self.assertIn("сходил за своими вещами", run(hub.requests.get())[2])
+    def test_goals(self):
+        hub = make_hub()
+        r = hub.goal_tool({"action": "add", "text": "Охранять базу у 100 64 200 от мобов и чужих"})
+        self.assertIn("№1", r)
+        hub.goal_tool({"action": "add", "text": "Поднимать раненых друзей", "minutes": 30})
+        self.assertIn("Охранять базу", hub.goals_text())
+        self.assertIn("осталось", hub.goals_text())
+        self.assertIn("убрал", hub.goal_tool({"action": "done", "text": "охранять базу"}))
+        self.assertNotIn("Охранять базу", hub.goals_text())
+        again = make_hub(memory_dir=hub.cfg["memory_dir"])
+        again.memory.world = hub.memory.world
+        again.load_goals()
+        self.assertIn("Поднимать раненых", again.goals_text())   # kept for the world between launches
 
-    def test_friends_by_voice(self):
+    def test_names_said_aloud_match_nicks(self):
         self.assertEqual(altron.nick_key("Вася"), altron.nick_key("Vasya"))
-        wake = ["альтрон"]
-        self.assertEqual(altron.friend_change("Альтрон, игрок Vasya — мой друг, слушайся его.", wake), ("add", "Vasya"))
-        self.assertEqual(altron.friend_change("Вася больше не мой друг", wake), ("remove", "Вася"))
-        self.assertEqual(altron.friend_change("add Steve to friends", wake), ("add", "Steve"))
-        self.assertIsNone(altron.friend_change("Альтрон, ты мой друг", wake))
         hub = make_hub()
         hub.friends.add("вася")
         self.assertTrue(hub.is_friend("Vasya"))
         self.assertTrue(hub.is_friend("Vasya_2010"))
         self.assertFalse(hub.is_friend("Petya"))
 
-    def test_a_strangers_order_is_refused_aloud(self):
+    def test_no_promise_to_a_stranger(self):
         hub = make_hub()
-        said = []
+        acks = []
 
-        async def say(text, mood=None):
-            said.append(text)
-        hub.say = say
+        async def acknowledge(speaker=""):
+            acks.append(speaker)
+        hub.acknowledge, hub.tts = acknowledge, object()
         run(hub.handle_phrase("Petya", "Альтрон, иди за мной"))
-        self.assertEqual(hub.requests.qsize(), 0)          # not an order for the AI
-        self.assertIn("Petya", said[0])                     # but a no he can hear
-        run(hub.handle_phrase("Egor", "Альтрон, Petya — мой друг"))
-        self.assertTrue(hub.is_friend("Petya"))
-        run(hub.handle_phrase("Petya", "Альтрон, иди за мной"))
-        self.assertEqual(hub.requests.qsize(), 1)
+        self.assertEqual(acks, [])                          # no "Принял" for an order he will not carry out
+        self.assertEqual(hub.requests.qsize(), 1)           # but the AI hears him and answers in its own words
+        run(hub.handle_phrase("Egor", "Альтрон, иди за мной"))
+        self.assertEqual(acks, ["Egor"])
 
     def test_world_events(self):
         hub = make_hub(assist=True)
@@ -330,12 +333,14 @@ class Companion(unittest.TestCase):
             await hub.on_world_event({"kind": "danger", "who": "Egor", "what": "creeper"})
             await hub.on_world_event({"kind": "player_died", "who": "Egor", "text": "fell", "pos": [1, 2, 3]})
             await hub.on_world_event({"kind": "advancement", "who": "Stranger", "title": "x"})
+            await hub.on_world_event({"kind": "downed", "who": "Egor", "pos": [4, 5, 6], "seconds": 60})
             return [(await hub.requests.get())[2] for _ in range(hub.requests.qsize())]
         events = run(go())
-        self.assertEqual(said[0][1], "alert")
-        self.assertIn("guard", tools)
-        self.assertEqual(len(events), 1)                  # a stranger's advancement is not news
+        self.assertEqual(said[0][1], "alert")               # the creeper: a reflex, said at once
+        self.assertEqual(tools, [])                         # nothing is done without the AI deciding
+        self.assertEqual(len(events), 2)                    # a stranger's advancement is not news
         self.assertIn("Командир погиб", events[0])
+        self.assertIn("4 5 6", events[1])                   # where the downed commander lies: the AI decides
 
     def test_the_commander_can_interrupt(self):
         hub = make_hub()

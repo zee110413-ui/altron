@@ -31,6 +31,7 @@ import java.util.Map;
  */
 public class HostWorldEvents {
     private final Map<String, Long> lastSent = new HashMap<>();
+    private final java.util.Set<String> downed = new java.util.HashSet<>();
     private long lastDayTime = -1;
     private boolean wasThundering;
 
@@ -78,7 +79,8 @@ public class HostWorldEvents {
                 "cause", by != null ? by.getName().getString() : event.getSource().getMsgId());
     }
 
-    @SubscribeEvent
+    // last, and only if nobody cancelled it: the Incapacitated mod cancels a death and lays the player down instead
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
     public void onDeath(LivingDeathEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer sp) || isBot(sp)) return;
         var p = sp.blockPosition();
@@ -124,6 +126,15 @@ public class HostWorldEvents {
         if (thunder && !wasThundering) send("storm", "*", 120_000);
         wasThundering = thunder;
         for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+            // the Incapacitated mod: downed, not dead yet — someone crouching next to him gets him up (Altron too)
+            boolean down = IncapCompat.downed(sp);
+            if (down && !downed.contains(name(sp))) {
+                var p = sp.blockPosition();
+                send("downed", name(sp), 0, "pos", J.arr(p.getX(), p.getY(), p.getZ()), "seconds", IncapCompat.secondsLeft(sp),
+                        "bot", isBot(sp));
+            }
+            if (down) downed.add(name(sp));
+            else downed.remove(name(sp));
             if (isBot(sp) || sp.isSpectator() || sp.isCreative()) continue;
             danger(sp);
             int food = sp.getFoodData().getFoodLevel();

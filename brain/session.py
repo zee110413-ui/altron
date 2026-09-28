@@ -53,7 +53,8 @@ async def main(argv):
              asyncio.create_task(hub.agent_loop()), asyncio.create_task(heartbeat(hub)),
              asyncio.create_task(keep_body(hub)),
              # small talk when it is quiet, and «живи сам» (his own jobs while the commander is away)
-             asyncio.create_task(hub.chatter_loop()), asyncio.create_task(hub.life_loop())]
+             asyncio.create_task(hub.chatter_loop()), asyncio.create_task(hub.life_loop()),
+             asyncio.create_task(hub.observe_loop())]   # his goals: he looks around and the AI decides
     await altron.wait_llm(cfg, hub.log)
     if "--attach" in argv:
         # a new brain for the game and body that are still running: they come back to this port by themselves

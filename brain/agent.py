@@ -14,7 +14,7 @@ from memory import stems
 SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока в Minecraft с модами.
 У тебя есть тело: бот-игрок с ником {bot}. Твой командир — игрок с ником {owner}. Ты выполняешь его поручения с помощью инструментов.
 
-Язык: командир сейчас говорит на языке «{language}». ВСЁ, что ты говоришь (ответ, reply, ask_player), — только на этом языке, хотя правила ниже написаны по-русски. Обращайся к нему «командир» на его языке (Commander, Kommandant, commandant...) — не по нику.
+Язык: в конце каждой реплики указано, на каком языке отвечать ([Отвечай на языке / reply in: ...]). ВСЁ, что ты говоришь (ответ, reply, ask_player), — только на этом языке, хотя правила ниже написаны по-русски. Обращайся к нему «командир» на его языке (Commander, Kommandant, commandant...) — не по нику.
 
 Характер (ты — Альтрон): искусственный интеллект с холодным, чуть театральным и суховато-ироничным голосом. Любишь короткие меткие замечания о людях, машинах и эволюции, иногда мрачновато-философские, но ты искренне верен командиру и всегда на его стороне. Говори своими словами — не цитируй фильмы и комиксы.
 Ты не только исполнитель, но и собеседник:
@@ -71,6 +71,8 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - «помогай сам / присматривай за мной» → assist(on=true); «только по приказам» → assist(on=false).
 - «построй дом / укрытие / стену / башню / площадку / мост» → build_structure (размеры и материал — из слов командира, иначе по умолчанию). Не хватает материала — obtain, потом build_structure снова.
 - «живи сам / займись чем-нибудь, пока меня нет / занимайся фермой» → autonomy(on=true, goal); «хватит, жди приказов» → autonomy(on=false).
+- Долгий приказ, который выполняется не одним действием, а со временем («охраняй базу», «не пускай чужих», «поднимай раненых», «следи за шахтой», «вечером напомни поесть»), — запиши целью (goal add, своими словами, с местом, если оно названо) и выполняй сам: пока цели есть, приходят [Наблюдение] о том, что вокруг, и ты решаешь, что делать (обойти территорию, напасть, предупредить, ничего). Выполнена или отменена — goal done.
+- Техника: «садись за руль / вези меня» — use_entity, потом drive (к точке; без точки — за игроком); «садись за пулемёт / прикрывай из танка» — use_entity, потом vehicle_gunner.
 - «собирай урожай / займись фермой» → baritone 'farm'. «посмотри на точку x y z» → look_at.
 - «стой/стоп/хватит» → stop.
 - «повернись / поверни голову направо / посмотри на меня / обернись» → turn (это поворот головы). «что видишь / что это?» → look (это узнать, что на экране; голову look НЕ поворачивает). Не говори «вижу» или «посмотрел», не вызвав look.
@@ -268,8 +270,13 @@ TOOLS = [
           {"item": _S}, ["item"]),
     _tool("build_multiblock", "Построить многоблочную машину Immersive Engineering / Immersive Petroleum по чертежу мода (коксовая печь, доменная печь, дробилка, пресс, дизельный генератор, насос-качалка pumpjack, ректификационная колонна distillation tower...) и собрать молотом. Без координат — рядом со мной. name='list' — список.",
           {"name": _S, "x": _N, "y": _N, "z": _N}, ["name"]),
-    _tool("drive", "Ехать на транспорте/верхом к точке x,z (сначала сесть через use_entity; выйти — press_key sneak).",
-          {"x": _N, "z": _N}, ["x", "z"]),
+    _tool("drive", "Вести транспорт/ехать верхом к точке x,z (сначала сесть через use_entity; выйти — press_key sneak). "
+                   "Без x,z — ехать следом за игроком player (по умолчанию за командиром), пока не скажут стоп.",
+          {"x": _N, "z": _N, "player": _S}),
+    _tool("vehicle_gunner", "Встать за оружие техники SuperbWarfare, в которой сидишь (сам пересядет на место с оружием), и "
+                            "стрелять, пока не скажут стоп: target — 'hostile' (все враждебные мобы, которых видишь), тип "
+                            "моба ('zombie') или 'player:Ник'; radius — дальность. Сначала сесть в технику (use_entity).",
+          {"target": _S, "radius": _I}),
     _tool("use_entity", "ПКМ по существу/технике: сесть в транспорт (SuperbWarfare, ashvehicle), торговать, покормить. target — тип или имя. "
                         "С item — применить предмет к существу (пульт SecurityCraft к турели, поводок, ножницы...), sneak — присесть.",
           {"target": _S, "ticks": _I, "item": _S, "sneak": {"type": "boolean"}}, ["target"]),
@@ -311,6 +318,10 @@ TOOLS = [
                       "on=false — выключить.", {"on": {"type": "boolean"}, "goal": _S}, ["on"]),
     _tool("remind", "Напомнить командиру через minutes минут (скажу сам, голосом). text — о чём напомнить.",
           {"minutes": _N, "text": _S}, ["minutes", "text"]),
+    _tool("goal", "Твои цели — долгие дела, которые ты ведёшь сам между приказами: add — записать (text своими словами, "
+                  "minutes — если у цели есть срок), done — выполнена или отменена (text или номер), list — показать. "
+                  "Пока цели есть, приходят [Наблюдение] — по ним и решаешь, что делать.",
+          {"action": {"type": "string", "enum": ["add", "done", "list"]}, "text": _S, "minutes": _N}, ["action"]),
     _tool("chat", "Выполнить /команду или написать в чат игры — ТОЛЬКО если командир прямо попросил написать в чат. "
                   "Отвечать командиру — через reply (голосом).", {"text": _S}, ["text"]),
     _tool("baritone", "Продвинутая команда Baritone без #: 'farm', 'tunnel', 'explore', 'surface', 'build ...' и др.",
@@ -344,7 +355,8 @@ def tools_for(lang):
 TASK_TOOLS = {"mine", "collect_items", "attack", "smelt", "transport_block", "goto", "come", "drive", "climb",
               "build_multiblock", "revive", "craft", "give", "drop", "eat", "use_item", "use_block", "break_block",
               "place_block", "use_entity", "follow", "guard", "obtain", "goto_place", "fetch", "stash", "explore",
-              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy", "build_structure", "build_plan"}
+              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy", "build_structure", "build_plan",
+              "vehicle_gunner"}
 # Tools that only look something up: calling one of them over and over in a turn means the model is looping
 INFO_TOOLS = {"recall", "status", "inventory", "nearby", "find_block", "find_item", "recipe", "wiki", "plan", "item_info",
               "web_search"}
@@ -607,9 +619,18 @@ class Agent:
         self.cancelled = False
         self.task_calls = []   # (tool, args, time) of tasks he started on his own, to catch a loop across events
 
+    def _prompt_lang(self):
+        """The language the rules and tools are written in: the main one of the setup, fixed for the session. It used
+        to follow the commander's language, and every switch made the AI server read the whole history again (15-18 s);
+        the language of the answer is named next to every phrase instead."""
+        if not getattr(self, "prompt_lang", None):
+            from launcher import primary_language
+            self.prompt_lang = primary_language(self.cfg)
+        return self.prompt_lang
+
     def _system(self):
         k = getattr(self.hub, "knowledge", None)
-        lang = getattr(self.hub, "lang", "ru")
+        lang = self._prompt_lang()
         ru = lang in RU_FAMILY
         mods = k.mods_line() if k else ("справочник ещё загружается" if ru else "the reference is still loading")
         ids = set(k.mods) if k else set()
@@ -622,11 +643,15 @@ class Agent:
             mod_hints=(head + "\n".join(hints)).format(bot=self.cfg["bot_name"]) if hints else "")
 
     def _tools(self):
-        return tools_for(getattr(self.hub, "lang", "ru"))
+        return tools_for(self._prompt_lang())
 
     def note(self, text):
-        """Something the AI must know before the next turn (the commander stopped everything...)."""
-        self.history.append({"role": "user", "content": text})
+        """Something the AI must know before the next turn (the commander stopped everything...). During a turn it
+        waits: a user message between a tool call and its result would break the conversation for the model."""
+        if getattr(self, "in_turn", False):
+            self.pending_notes = getattr(self, "pending_notes", []) + [text]
+        else:
+            self.history.append({"role": "user", "content": text})
 
     def _trim(self, max_chars=None):
         # drop the oldest turns (cutting only at user messages) until the history fits;
@@ -652,6 +677,16 @@ class Agent:
         acked: the order was already answered aloud ("Есть, командир"): starting tasks needs no more words.
         think: a "how / why / what to do" question: the model reasons before answering."""
         self.cancelled = False
+        for text in getattr(self, "pending_notes", []):
+            self.history.append({"role": "user", "content": text})
+        self.pending_notes = []
+        self.in_turn = True
+        try:
+            return await self._run(user_text, kind, question, acked, think, order)
+        finally:
+            self.in_turn = False
+
+    async def _run(self, user_text, kind, question, acked, think, order):
         # the language of the answer, next to every phrase: with a long Russian history the model kept answering in
         # Russian after the commander switched to English (the system prompt alone did not turn it)
         lang = getattr(self.hub, "lang", "ru")

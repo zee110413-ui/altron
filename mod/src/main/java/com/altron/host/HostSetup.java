@@ -503,6 +503,7 @@ public final class HostSetup {
         o.addProperty("riding", p.getVehicle() == null ? "" : String.valueOf(BuiltInRegistries.ENTITY_TYPE.getKey(p.getVehicle().getType())));
         o.addProperty("screen_open", p.containerMenu != p.inventoryMenu);
         o.addProperty("sleeping", p.isSleeping());
+        o.addProperty("downed", IncapCompat.downed(p));
         o.addProperty("dim", p.level().dimension().location().toString());
         o.addProperty("yaw", p.getYRot());
         o.addProperty("pitch", p.getXRot());
