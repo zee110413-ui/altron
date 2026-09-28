@@ -6,6 +6,7 @@ import os
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 
 import httpx
@@ -17,15 +18,25 @@ sys.path.insert(0, str(BRAIN))
 import agent  # noqa: E402
 import agent_en  # noqa: E402
 import altron  # noqa: E402
+import dataset  # noqa: E402
+import feelings  # noqa: E402
 import knowledge  # noqa: E402
 import lang  # noqa: E402
 import launcher  # noqa: E402
+import memory  # noqa: E402
+import persona  # noqa: E402
 import speech  # noqa: E402
 import structures  # noqa: E402
 
 
+# One event loop for all the tests: on Python 3.9 (the brain's own venv) the hub's queues belong to the loop that was
+# current when the hub was made, so asyncio.run with a fresh loop per test would break them
+LOOP = asyncio.new_event_loop()
+asyncio.set_event_loop(LOOP)
+
+
 def run(coro):
-    return asyncio.run(coro)
+    return LOOP.run_until_complete(coro)
 
 
 def make_hub(**cfg_over):
@@ -45,8 +56,12 @@ class Languages(unittest.TestCase):
         self.assertEqual(lang.guess_lang("123", ["ru", "en"], "ru"), "ru")
 
     def test_phrases_fall_back_to_english(self):
-        self.assertEqual(lang.phrase("online", "de"), "Altron ist online. Ich warte auf Befehle.")
-        self.assertEqual(lang.phrase("stuck", "ja"), lang.PHRASES["stuck"]["en"])
+        self.assertEqual(lang.phrase("commander", "de"), "Kommandant")
+        self.assertEqual(lang.phrase("creeper", "ja"), lang.PHRASES["creeper"]["en"])
+
+    def test_the_code_says_almost_nothing_by_itself(self):
+        # everything he says is the AI's own words; the code keeps only the creeper reflex and the opt-in instant "yes"
+        self.assertEqual(set(lang.PHRASES), {"acks", "creeper", "commander"})
 
     def test_window_language(self):
         lang.set_ui("en")
@@ -82,13 +97,20 @@ class Orders(unittest.TestCase):
             owner, lang, knowledge = "Bob", "en", K()
 
         a = agent.Agent.__new__(agent.Agent)
-        a.cfg, a.hub = {"bot_name": "altron"}, H()
+        a.cfg, a.hub = {"bot_name": "altron", "languages": ["en", "ru"]}, H()
         en = a._system()
         self.assertIn("You are Altron", en)
         self.assertIn("TaCZ: guns", en)                  # a hint for an installed mod
         self.assertNotIn("SuperbWarfare:", en)           # not for a missing one
         H.lang = "ru"
-        self.assertIn("Ты — Альтрон", a._system())
+        self.assertEqual(a._system(), en)                # the commander's language does not rewrite the rules
+        H.persona = "teammate"
+        self.assertIn("teammate", a._system())           # the manner of speaking is the persona's
+        self.assertNotIn("theatrical", a._system())
+        H.persona = "altron"
+        b = agent.Agent.__new__(agent.Agent)
+        b.cfg, b.hub = {"bot_name": "altron", "languages": ["ru", "en"]}, H()
+        self.assertIn("Ты — Альтрон", b._system())
 
 
 class Buildings(unittest.TestCase):
@@ -166,7 +188,7 @@ class Voice(unittest.TestCase):
     def test_styles_and_moods(self):
         t = speech.TTS.__new__(speech.TTS)
         t.pitch, t.comb, t.chorus, t.drive, t.hall = speech.TTS.STYLES["ultron"]
-        t.speed, t.moods = 1.0, True
+        t.speed, t.moods, t.band = 1.0, True, None
         configs = []
         t._config = lambda **k: configs.append(k) or k
 
@@ -185,6 +207,19 @@ class Voice(unittest.TestCase):
         self.assertLess(configs[1]["length_scale"], configs[0]["length_scale"])   # faster when alert
         self.assertGreater(len(calm), 0)
         self.assertGreater(len(alert), 0)
+        t.cfg = {"tts_voice": "none.onnx", "tts_speed": 1.0}
+        t.use(persona.voice_settings({"tts_voices": {"ru": "none.onnx"}}, "teammate"))
+        self.assertEqual((t.style, t.pitch, t.band), ("synth", 1.0, (300, 5000)))   # the plain, narrow synthesizer
+        self.assertEqual(t.paths, {})                     # a voice file that is not there: the common voice is used
+        synth = np.frombuffer(b"".join(t.synth("Test.", None, "cold")), "<i2")
+        self.assertTrue(len(synth) and np.isfinite(synth).all())
+
+    def test_personas(self):
+        self.assertEqual(persona.find("говори как тиммейт"), "teammate")
+        self.assertEqual(persona.find("верни обычный голос"), "altron")
+        cfg = {"tts_style": "robot", "tts_voices": {"ru": "a.onnx"}, "tts_personas": {"teammate": {"voices": {"ru": "b.onnx"}}}}
+        self.assertEqual(persona.voice_settings(cfg, "altron")["style"], "robot")    # config.json's own style stays
+        self.assertEqual(persona.voice_settings(cfg, "teammate")["voices"]["ru"], "b.onnx")
 
 
 class Streaming(unittest.TestCase):
@@ -221,6 +256,21 @@ class Streaming(unittest.TestCase):
         self.assertEqual(said, [])
         self.assertEqual(reply["tool_calls"][0]["function"]["name"], "follow")
 
+    def test_a_reply_is_said_before_the_action_is_written(self):
+        said = []
+
+        async def cb(s):
+            said.append(s)
+        args = '{"text": "Иду, командир."}'
+        chunks = [{"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "r1", "function": {"name": "reply", "arguments": ""}}]}}]}]
+        chunks += [{"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": args[i:i + 4]}}]}}]}
+                   for i in range(0, len(args), 4)]
+        chunks += [{"choices": [{"delta": {"tool_calls": [{"index": 1, "id": "f1", "function": {"name": "follow", "arguments": "{}"}}]}}]}]
+        reply = run(self._llm(chunks).chat([{"role": "user", "content": "x"}], on_sentence=cb))
+        self.assertEqual(said, ["Иду, командир."])
+        self.assertEqual(reply["spoken_calls"], ["r1"])
+        self.assertEqual([c["function"]["name"] for c in reply["tool_calls"]], ["reply", "follow"])
+
     def test_online_service_gets_no_llama_fields(self):
         seen = {}
 
@@ -256,6 +306,85 @@ class Companion(unittest.TestCase):
         self.assertEqual(allowed, "ГОТОВО: follow")
         self.assertIn("petya", make_hub(memory_dir=hub.cfg["memory_dir"]).friends)   # kept between launches
 
+    def test_a_failed_building_is_reported(self):
+        hub = make_hub()
+        hub.bot = object()
+        hub.agent_tasks.add(7)
+        hub.running, hub.running_args = (7, "build_plan"), {"blocks": [[0, 0, 0, "minecraft:stone"]], "what": "стену"}
+        run(hub.on_event({"event": "task_failed", "task_id": 7, "task": "build_plan",
+                          "msg": "для постройки стену не хватает: 20x minecraft:cobblestone"}))
+        self.assertIn("не хватает", run(hub.requests.get())[2])   # the AI hears it and can tell the commander
+
+    def test_death_becomes_his_goal(self):
+        hub = make_hub()
+        hub.joined, hub.bot = True, object()
+        run(hub.after_death([10, 64, -16], ""))
+        self.assertIn("10 64 -16", hub.goals_text())          # the goal is in front of the AI at every turn
+        self.assertIn("реши сам", run(hub.requests.get())[2])  # how to get the things back is its own decision
+
+    def test_goals(self):
+        hub = make_hub()
+        r = hub.goal_tool({"action": "add", "text": "Охранять базу у 100 64 200 от мобов и чужих"})
+        self.assertIn("№1", r)
+        hub.goal_tool({"action": "add", "text": "Поднимать раненых друзей", "minutes": 30})
+        self.assertIn("Охранять базу", hub.goals_text())
+        self.assertIn("осталось", hub.goals_text())
+        self.assertIn("убрал", hub.goal_tool({"action": "done", "text": "охранять базу"}))
+        self.assertNotIn("Охранять базу", hub.goals_text())
+        again = make_hub(memory_dir=hub.cfg["memory_dir"])
+        again.memory.world = hub.memory.world
+        again.load_goals()
+        self.assertIn("Поднимать раненых", again.goals_text())   # kept for the world between launches
+
+    def test_names_said_aloud_match_nicks(self):
+        self.assertEqual(altron.nick_key("Вася"), altron.nick_key("Vasya"))
+        hub = make_hub()
+        hub.friends.add("вася")
+        self.assertTrue(hub.is_friend("Vasya"))
+        self.assertTrue(hub.is_friend("Vasya_2010"))
+        self.assertFalse(hub.is_friend("Petya"))
+
+    def test_no_promise_to_a_stranger(self):
+        hub = make_hub(instant_ack=True)
+        acks = []
+
+        async def acknowledge(speaker=""):
+            acks.append(speaker)
+        hub.acknowledge, hub.tts = acknowledge, object()
+        run(hub.handle_phrase("Petya", "Альтрон, иди за мной"))
+        self.assertEqual(acks, [])                          # no "Принял" for an order he will not carry out
+        self.assertEqual(hub.requests.qsize(), 1)           # but the AI hears him and answers in its own words
+        run(hub.handle_phrase("Egor", "Альтрон, иди за мной"))
+        self.assertEqual(acks, ["Egor"])
+
+    def test_his_own_words_by_default(self):
+        hub = make_hub()
+        acks = []
+
+        async def acknowledge(speaker=""):
+            acks.append(speaker)
+        hub.acknowledge, hub.tts = acknowledge, object()
+        run(hub.handle_phrase("Egor", "Альтрон, иди за мной"))
+        self.assertEqual(acks, [])                         # no canned "Есть, командир": the AI answers itself
+        self.assertEqual(hub.requests.qsize(), 1)
+
+    def test_stop_is_a_reflex_and_the_words_are_his(self):
+        hub = make_hub()
+        hub.bot = object()
+        said, tools = [], []
+
+        async def say(text, mood=None):
+            said.append(text)
+
+        async def run_tool(name, args, wait):
+            tools.append(name)
+            return "ok"
+        hub.say, hub.run_tool, hub.send = say, run_tool, lambda *a: True
+        run(hub.handle_phrase("Egor", "стоп"))
+        self.assertEqual(tools, ["stop"])                  # the body stops at once
+        self.assertEqual(said, [])                         # but no canned "Остановился"
+        self.assertIn("ОТМЕНЕНО", run(hub.requests.get())[2])
+
     def test_world_events(self):
         hub = make_hub(assist=True)
         hub.joined, hub.bot = True, object()
@@ -273,12 +402,16 @@ class Companion(unittest.TestCase):
             await hub.on_world_event({"kind": "danger", "who": "Egor", "what": "creeper"})
             await hub.on_world_event({"kind": "player_died", "who": "Egor", "text": "fell", "pos": [1, 2, 3]})
             await hub.on_world_event({"kind": "advancement", "who": "Stranger", "title": "x"})
+            await hub.on_world_event({"kind": "downed", "who": "Egor", "pos": [4, 5, 6], "seconds": 60})
             return [(await hub.requests.get())[2] for _ in range(hub.requests.qsize())]
         events = run(go())
-        self.assertEqual(said[0][1], "alert")
-        self.assertIn("guard", tools)
-        self.assertEqual(len(events), 1)                  # a stranger's advancement is not news
+        self.assertEqual(said[0][1], "alert")               # the creeper: a reflex, said at once
+        self.assertEqual(tools, [])                         # nothing is done without the AI deciding
+        self.assertEqual(len(events), 2)                    # a stranger's advancement is not news
         self.assertIn("Командир погиб", events[0])
+        self.assertIn("4 5 6", events[1])                   # where the downed commander lies: the AI decides
+        self.assertNotIn("give", events[0] + events[1])     # facts, not orders: no "give him food" written for it
+        self.assertIn("Egor погиб", hub.memory.moments[0]["text"])   # a moment of their life together
 
     def test_the_commander_can_interrupt(self):
         hub = make_hub()
@@ -323,6 +456,142 @@ class Companion(unittest.TestCase):
         self.assertEqual(waiting, 1)
         self.assertEqual(altron.done_line("[Событие] Результаты:\n- mine завершена: добыл 12 угля\nЕсли цель ..."),
                          "mine завершена: добыл 12 угля")
+
+
+class InnerLife(unittest.TestCase):
+    def test_mood_is_his_own_and_fades(self):
+        d = tempfile.mkdtemp()
+        f = feelings.Feelings(d)
+        self.assertIn("ОШИБКА", f.feel("hangry"))
+        f.feel("sad", "погиб в лаве")
+        self.assertEqual(f.voice_mood(), "sad")               # the voice follows the mood
+        self.assertIn("погиб в лаве", f.text(["Egor"]))
+        self.assertEqual(feelings.Feelings(d).current(), "sad")  # kept between launches
+        f.since -= feelings.FADE_SEC + 1
+        self.assertEqual(f.current(), "calm")                  # a mood without a new reason passes
+
+    def test_attitude_builds_up(self):
+        f = feelings.Feelings(tempfile.mkdtemp())
+        f.relate("Vasya", 3, "подарил алмазы")
+        f.relate("Vasya", 2, "спас от крипера")
+        self.assertIn("тепло", f.about("vasya"))
+        self.assertIn("спас от крипера", f.text(["Vasya"]))
+        f.relate("Petya", -9, "ударил")
+        self.assertEqual(f.relations["petya"]["score"], -3)    # one deed moves it by 3 at most
+        self.assertIn("wary", f.about("Petya", ru=False))
+
+    def test_moments_come_back(self):
+        m = memory.LongMemory(tempfile.mkdtemp())
+        m.add_moment("Крипер снёс наш первый дом у озера")
+        self.assertIn("уже есть", m.add_moment("крипер снёс наш первый дом у озера"))
+        self.assertIsNone(m.old_moment(0))                     # nothing is old enough yet
+        self.assertIn("Крипер снёс", m.old_moment(time.time() + 1))
+        self.assertTrue(any("Крипер" in line for line in m.search("помнишь дом у озера?")))
+
+    def test_quiet_moments_are_a_chance_to_talk(self):
+        hub = make_hub(observe_tick_sec=0.01, idle_think_minutes=0.01)
+        hub.joined, hub.bot = True, object()
+        hub.state = {"pos": [0, 64, 0], "owner_pos": [3, 64, 0]}
+        hub.last_talk = time.time() - 600
+        hub.last_question = ("Командир, построить мост?", time.time() - 120)
+
+        async def bot_call(name, args):
+            return {"ok": True, "msg": "- игрок: Vasya (uuid1), 5 бл.\nБлоки рядом: -"}
+        hub.bot_call = bot_call
+
+        async def go():
+            task = asyncio.create_task(hub.observe_loop())
+            item = await asyncio.wait_for(hub.requests.get(), 5)
+            task.cancel()
+            return item[2]
+        text = run(go())
+        self.assertTrue(text.startswith("[Наблюдение]"))
+        self.assertIn("Vasya", text)                           # a player came up: news
+        self.assertIn("построить мост", text)                  # his question nobody answered
+        self.assertIn("ignore", text)                          # talking is a chance, not an order
+
+    def test_persona_switch(self):
+        hub = make_hub()
+
+        class Tts:
+            paths = {}
+
+            def use(self, settings):
+                self.settings = settings
+        hub.tts = Tts()
+        self.assertIn("ОШИБКА", hub.set_persona("клоун"))
+        r = hub.set_persona("teammate")
+        self.assertEqual(hub.persona, "teammate")
+        self.assertEqual(hub.tts.settings["style"], "synth")
+        self.assertIn("нет", r)                                # its voice files are not downloaded here
+        self.assertEqual(make_hub(memory_dir=hub.cfg["memory_dir"]).persona, "teammate")   # remembered
+
+
+class Learning(unittest.TestCase):
+    def test_turns_ratings_and_export(self):
+        d = tempfile.mkdtemp()
+        log = dataset.DatasetLog(d)
+        turn = [{"role": "user", "content": "иди за мной"},
+                {"role": "assistant", "content": "", "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "follow", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": "c1", "content": "иду за Egor"}]
+        before = [{"role": "tool", "tool_call_id": "x", "content": "old"}, {"role": "user", "content": "привет"},
+                  {"role": "assistant", "content": "Привет."}]
+        t1 = log.turn("SYSTEM", [{"type": "function"}], before, turn, "user", "ru", "altron")
+        log.turn("SYSTEM", [{"type": "function"}], [], [{"role": "user", "content": "x"},
+                 {"role": "assistant", "content": "", "tool_calls": [{"id": "c2", "function": {"name": "mine", "arguments": "{}"}}]},
+                 {"role": "tool", "tool_call_id": "c2", "content": "ОШИБКА: нет кирки"}])
+        log.rate(False, "не то")                                # "не так" is about the last turn
+        log.rate(True, "", t1)
+        out = os.path.join(d, "train.jsonl")
+        self.assertEqual(dataset.export(d, out), 1)            # only the good one
+        with open(out, encoding="utf-8") as f:
+            ex = json.loads(f.read())
+        self.assertEqual(ex["messages"][0], {"role": "system", "content": "SYSTEM"})
+        self.assertEqual(ex["messages"][1]["content"], "привет")   # the context starts at a user message
+        self.assertEqual(ex["messages"][4]["tool_calls"][0]["function"]["arguments"], {})
+        self.assertIn("хороших: 1, плохих: 1", dataset.stats(d))
+
+    def test_a_turn_speaks_its_reply_once_and_is_kept(self):
+        replies = [
+            {"role": "assistant", "content": "", "spoken_calls": ["r1"], "tool_calls": [
+                {"id": "r1", "type": "function", "function": {"name": "reply", "arguments": '{"text": "Иду."}'}},
+                {"id": "f1", "type": "function", "function": {"name": "follow", "arguments": "{}"}}]},
+            {"role": "assistant", "content": ""}]
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                return dict(replies.pop(0))
+
+        said, ran = [], []
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "altron"
+            cut_speech = False
+            dataset = dataset.DatasetLog(tempfile.mkdtemp())
+
+            async def say(self, text, mood=None):
+                said.append(text)
+
+            async def run_tool(self, name, args, wait):
+                ran.append(name)
+                return "иду за Egor"
+
+            def log(self, text):
+                pass
+
+            def note_question(self, q):
+                return True
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run("[Egor (командир) говорит]: где мой сундук? и иди за мной", "user"))
+        self.assertEqual(said, [])                  # "Иду." was already said while streamed: not twice
+        self.assertEqual(ran, ["follow"])           # a phrase with a question in it may still lead to action
+        turns, _ = dataset.load(Hub.dataset.dir)
+        self.assertEqual(len(turns), 1)
+        self.assertEqual([m["role"] for m in list(turns.values())[0]["turn"]], ["user", "assistant", "tool", "tool", "assistant"])
 
 
 if __name__ == "__main__":

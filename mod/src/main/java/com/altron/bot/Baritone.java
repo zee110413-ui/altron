@@ -8,7 +8,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/** Baritone (pathfinding/mining) accessed by reflection so the mod works without it. */
+/**
+ * Baritone (pathfinding, mining, building) accessed by reflection so the mod works without it. Walking itself —
+ * going somewhere and following someone — goes to Altron's own legs (Legs) unless the brain's config says "legs":
+ * "baritone"; mining and building by blueprint still need Baritone.
+ */
 public final class Baritone {
     private static Object primary;
     private static boolean missing;
@@ -44,8 +48,18 @@ public final class Baritone {
         return get() != null;
     }
 
-    /** Run a Baritone chat command without the # prefix, e.g. "mine diamond_ore". */
+    public static boolean installed() {
+        return get() != null;
+    }
+
+    /** Run a Baritone chat command without the # prefix, e.g. "mine diamond_ore". A command that moves him (mine,
+     *  build, farm...) takes the legs over from his own walking. */
     public static boolean command(String cmd) {
+        if (!cmd.startsWith("set ")) Legs.cancel();
+        return rawCommand(cmd);
+    }
+
+    private static boolean rawCommand(String cmd) {
         Object b = get();
         if (b == null) return false;
         try {
@@ -59,18 +73,27 @@ public final class Baritone {
     }
 
     public static void cancel() {
+        Legs.cancel();
+        rawCancel();
+    }
+
+    static void rawCancel() {
         Object b = get();
         if (b == null) return;
         try {
             Object pb = m("baritone.api.IBaritone", "getPathingBehavior").invoke(b);
             m("baritone.api.behavior.IPathingBehavior", "cancelEverything").invoke(pb);
         } catch (Throwable t) {
-            command("stop");
+            rawCommand("stop");
         }
     }
 
-    /** True while Baritone is pathing or any of its processes is in control. */
+    /** True while he is walking (his own legs) or Baritone is pathing or any of its processes is in control. */
     public static boolean busy() {
+        return Legs.busy() || rawBusy();
+    }
+
+    static boolean rawBusy() {
         Object b = get();
         if (b == null) return false;
         try {
@@ -85,8 +108,12 @@ public final class Baritone {
         }
     }
 
-    /** True while Baritone is actually walking a path (not just "following, standing next to the player"). */
+    /** True while he is actually walking a path (not just "following, standing next to the player"). */
     public static boolean pathing() {
+        return Legs.pathing() || rawPathing();
+    }
+
+    static boolean rawPathing() {
         Object b = get();
         if (b == null) return false;
         try {
@@ -97,8 +124,30 @@ public final class Baritone {
         }
     }
 
-    /** Walk to within {@code range} blocks of pos (digging/bridging as needed). */
+    /** Walk to within {@code range} blocks of pos. */
     public static boolean gotoNear(BlockPos pos, int range) {
+        if (Legs.enabled()) {
+            rawCancel();
+            return Legs.gotoNear(pos, range);
+        }
+        return rawGotoNear(pos, range);
+    }
+
+    /** Follow a player, staying about three blocks behind. */
+    public static boolean follow(String player) {
+        if (Legs.enabled()) {
+            rawCancel();
+            return Legs.follow(player, 3);
+        }
+        return rawFollow(player);
+    }
+
+    static boolean rawFollow(String player) {
+        return rawCommand("follow player " + player);
+    }
+
+    /** Baritone itself, even when his own legs walk (it may dig and bridge: getting out of a pit). */
+    public static boolean rawGotoNear(BlockPos pos, int range) {
         Object b = get();
         if (b == null) return false;
         try {
@@ -110,12 +159,20 @@ public final class Baritone {
             return true;
         } catch (Throwable t) {
             AltronMod.LOG.warn("[Altron] baritone goto failed: {}", t.toString());
-            return command("goto " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
+            return rawCommand("goto " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
         }
     }
 
     /** Walk to a column x,z (any height: over hills, into valleys). */
     public static boolean gotoXZ(int x, int z) {
+        if (Legs.enabled()) {
+            rawCancel();
+            return Legs.gotoXZ(x, z);
+        }
+        return rawGotoXZ(x, z);
+    }
+
+    static boolean rawGotoXZ(int x, int z) {
         Object b = get();
         if (b == null) return false;
         try {
@@ -125,7 +182,7 @@ public final class Baritone {
             m("baritone.api.process.ICustomGoalProcess", "setGoalAndPath", goalCls).invoke(cgp, goal);
             return true;
         } catch (Throwable t) {
-            return command("goto " + x + " " + z);
+            return rawCommand("goto " + x + " " + z);
         }
     }
 

@@ -3,6 +3,7 @@ places. It is saved to disk (brain/memory) and survives restarts; with every phr
 memories that fit it, like a person recalling things."""
 import json
 import os
+import random
 import re
 import time
 from pathlib import Path
@@ -56,6 +57,8 @@ class LongMemory:
         #   kind: "rule" (the commander said never/always...), "success", "failure", "bad_recipe" (a recipe a machine refused)
         self.lessons = []
         self.journal = []    # {"t", "world", "who", "text"}
+        # moments lived together, to bring up later like old friends do — {"t", "world", "text"}
+        self.moments = []
         self.started = time.time()
         self._load()
 
@@ -67,6 +70,7 @@ class LongMemory:
                 self.facts = data.get("facts", [])
                 self.places = data.get("places", [])
                 self.lessons = data.get("lessons", [])
+                self.moments = data.get("moments", [])
             except Exception:
                 # a damaged file must not erase the memories: keep a copy and start the index anew
                 self.file.replace(self.dir / ("memory.broken.%d.json" % int(time.time())))
@@ -81,7 +85,8 @@ class LongMemory:
 
     def _save(self):
         tmp = self.file.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"facts": self.facts, "places": self.places, "lessons": self.lessons},
+        tmp.write_text(json.dumps({"facts": self.facts, "places": self.places, "lessons": self.lessons,
+                                   "moments": self.moments},
                                   ensure_ascii=False, indent=1), encoding="utf-8")
         os.replace(tmp, self.file)
 
@@ -152,6 +157,30 @@ class LongMemory:
         x, y, z = p["pos"]
         dim = "" if p.get("dim", "minecraft:overworld") == "minecraft:overworld" else ", " + p["dim"]
         return "«%s»: %d %d %d%s" % (p["name"], x, y, z, dim)
+
+    # ------------------------------------------------------------------ moments lived together
+    def add_moment(self, text):
+        text = re.sub(r"\s+", " ", text or "").strip()[:300]
+        if not text:
+            return "нечего запоминать"
+        new = stems(text)
+        for m in self.moments[-20:]:
+            old = stems(m["text"])
+            if new and old and len(new & old) / len(new | old) > 0.7:
+                return "это уже есть в воспоминаниях"
+        self.moments.append({"t": time.time(), "world": self.world, "text": text})
+        del self.moments[:-300]
+        self._save()
+        return "запомнил как общее воспоминание: " + text
+
+    def old_moment(self, older_than, rng=random):
+        """A moment from a while ago to bring up (this world's first), or None."""
+        pool = [m for m in self.moments if m["t"] < older_than and m["world"] in ("", self.world)] or \
+            [m for m in self.moments if m["t"] < older_than]
+        if not pool:
+            return None
+        m = rng.choice(pool)
+        return "%s: %s" % (when(m["t"]), m["text"])
 
     # ------------------------------------------------------------------ experience: learning from what happened
     RULE_RE = re.compile(r"\b(никогда|не\s+(?:надо|нужно|смей|ломай|трогай|бери|ходи|копай|стреляй|разбирай|лезь|делай)|"
@@ -246,6 +275,10 @@ class LongMemory:
             s = len(q & stems(p["name"]))
             if s:
                 scored.append((s * 3, p["t"], "место " + self.place_line(p)))
+        for m in self.moments:
+            s = len(q & stems(m["text"]))
+            if s:
+                scored.append((s * 2, m["t"], "воспоминание %s: %s" % (when(m["t"]), m["text"])))
         for e in self.journal:
             if older_than is not None and e["t"] > older_than:
                 continue
@@ -290,8 +323,8 @@ class LongMemory:
 
     def overview(self):
         places = self.world_places()
-        text = "В долгой памяти: %d фактов, %d мест в этом мире, %d уроков опыта, %d записей журнала (с %s)." % (
-            len(self.facts), len(places), len(self.lessons_here()), len(self.journal),
+        text = "В долгой памяти: %d фактов, %d мест в этом мире, %d уроков опыта, %d общих воспоминаний, %d записей " \
+               "журнала (с %s)." % (len(self.facts), len(places), len(self.lessons_here()), len(self.moments), len(self.journal),
             when(self.journal[0]["t"]) if self.journal else "—")
         if self.facts:
             text += "\nФакты: " + "; ".join(f["text"] for f in self.facts[-10:])

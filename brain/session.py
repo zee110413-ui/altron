@@ -14,6 +14,7 @@ import sys
 import threading
 
 import altron
+import persona
 from launcher import BRAIN_DIR, apply_profile, launch_host, rel, resolve_install
 
 COMMANDER = "MJreggich"
@@ -42,7 +43,7 @@ async def main(argv):
         from knowledge import Knowledge
         from speech import STT, TTS
         hub.knowledge = Knowledge.load(cfg, hub.log)
-        hub.tts = TTS(cfg)
+        hub.tts = TTS(cfg, persona.voice_settings(cfg, hub.persona))
         hub.stt = STT(cfg, hub.log)
         hub.log("Слух и голос готовы (распознавание речи: %s)." % hub.stt.device)
 
@@ -51,7 +52,10 @@ async def main(argv):
     threading.Thread(target=hub.console_thread, daemon=True).start()
     tasks = [asyncio.create_task(server.serve_forever()), asyncio.create_task(hub.voice_loop()),
              asyncio.create_task(hub.agent_loop()), asyncio.create_task(heartbeat(hub)),
-             asyncio.create_task(keep_body(hub))]
+             asyncio.create_task(keep_body(hub)),
+             # the commander coming back after «живи сам», and his own thinking between orders (goals, quiet
+             # moments): he looks around and the AI decides
+             asyncio.create_task(hub.life_loop()), asyncio.create_task(hub.observe_loop())]
     await altron.wait_llm(cfg, hub.log)
     if "--attach" in argv:
         # a new brain for the game and body that are still running: they come back to this port by themselves
@@ -147,7 +151,8 @@ async def attach(hub):
     hub.joined = True
     hub.log("Мозг перезапущен: игра и тело Альтрона на месте (мир %s)." % hub.memory.world)
     back = hub.restore_modes()   # carry on with what he was doing before the restart
-    await hub.say("Я снова на связи." + (" Продолжаю: %s." % ", ".join(back) if back else ""))
+    await hub.requests.put(("event", "", "[Событие] Твой мозг перезапустился, ты снова на связи%s. Можешь коротко дать "
+                            "знать об этом (или ignore)." % ("; продолжаешь: %s" % ", ".join(back) if back else "")))
     # the commander's last words, if the failure cut them short: answered now
     import time
     try:

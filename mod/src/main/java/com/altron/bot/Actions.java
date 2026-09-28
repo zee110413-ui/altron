@@ -55,6 +55,7 @@ public final class Actions {
         if (type.equals("config")) {
             BotClient.owner = J.str(msg, "owner", BotClient.owner);
             BotClient.worldName = J.str(msg, "world", BotClient.worldName);
+            Legs.mode = J.str(msg, "legs", Legs.mode);   // own legs, or Baritone as before
             return;
         }
         if (!type.equals("cmd")) return;
@@ -568,7 +569,12 @@ public final class Actions {
                 return start(new com.altron.bot.tasks.BuildPlanTask(list, J.has(a, "x") ? pos(a) : null, J.str(a, "what", "постройку")));
             }
             case "drive":
+                // "езжай за мной": follow a player (the commander by default) instead of a point
+                if (!J.has(a, "x") || J.str(a, "follow", "").equals("true")) return start(DriveTask.following(who(a)));
                 return start(new DriveTask(J.dbl(a, "x", 0), J.dbl(a, "z", 0)));
+            case "vehicle_gunner":
+                // man the gun of the vehicle he sits in and shoot at hostile creatures he sees, until told to stop
+                return start(new com.altron.bot.tasks.VehicleGunTask(J.dbl(a, "radius", 48), J.str(a, "target", "hostile")));
             case "item_info": {
                 Item it = item(a);
                 if (it == null) return err("не знаю предмет " + J.str(a, "item", ""));
@@ -631,7 +637,7 @@ public final class Actions {
                 return start(new UseEntityTask(J.str(a, "target", ""), J.num(a, "ticks", 5), false).withItem(it, sneak));
             }
             case "revive":
-                return start(new UseEntityTask(who(a), J.num(a, "ticks", 200), true));
+                return start(new UseEntityTask(who(a), J.num(a, "ticks", 200), true).near(J.has(a, "x") ? pos(a) : null));
 
             // ---------- raw control ----------
             case "press_key": {

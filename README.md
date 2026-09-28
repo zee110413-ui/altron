@@ -2,7 +2,8 @@
 
 Altron is a second player in your world that you talk to by voice. He follows you, fights, mines, crafts, carries
 things between chests and machines, uses the GUIs of any mod, remembers your base, chats with you — and answers
-in your language.
+in your language. The code gives him senses and skills; **every decision — what to do, what to say, or to keep quiet
+— is made by the AI itself**.
 
 It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speech recognition and Piper for the voice.
 
@@ -16,22 +17,29 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
 ## What he can do
 
 - **Talk**: in any language Whisper and your Piper voices know. He answers in the language you speak (and thinks in
-  it: Russian or English instructions), jokes, remembers what you tell him about yourself, starts small talk when it
-  has been quiet for a while (`chatter_minutes`). He starts speaking while the AI is still writing the answer, stops
-  when you talk over him, and his voice changes with the moment (fast in a fight, quiet when sympathising).
-- **Notice what happens**: warns you of a creeper about to blow up or a crowd of monsters, reacts when you are badly
-  hurt, die, get an advancement or go to the Nether, greets players who join, mentions nightfall and storms.
+  it: Russian or English instructions), in his own words — nothing he says is canned, except a shout when a creeper
+  is about to blow up. He starts speaking while the AI is still writing the answer, stops when you talk over him.
+- **Feel and remember**: he has a mood of his own that you hear in his voice, an attitude to every player built up by
+  what they did (saved him, gave him diamonds, hit him), opinions and tastes he keeps, and shared moments he brings up
+  later ("remember when the creeper took our first house?"). In quiet moments he decides himself whether to say
+  something, ask, joke or stay silent.
+- **Two voices**: `altron` — a cold, theatrical machine; `teammate` — a deadpan raid teammate with a flat
+  speech-synthesizer voice and dry humour. Say "talk like the teammate" to switch.
+- **Notice what happens**: dangers, players badly hurt or downed, deaths, advancements, players joining, night and
+  storms reach the AI as facts, and it decides what to do about them.
 - **Several players**: obeys the commander and his friends ("Vasya is my friend, obey him"), talks to strangers but
   does not take their orders, remembers what each player tells about themselves.
-- **Act on his own**: `assist` — defends and feeds you and falls back when losing a fight; `autonomy` — finds useful
-  work while you are away and tells you what he did when you come back.
+- **Goals of his own**: long orders ("guard the base", "help me", "live on your own") become his goals; while he has
+  them he keeps looking around and decides what to do. When he dies, getting his things back becomes a goal too.
+- **Learn**: every turn of the AI is logged; say "well done" or "not like that" and it is rated. The good turns
+  fine-tune the same model — see [TRAINING.md](TRAINING.md).
 - **Work with any mod** (Forge 1.20.1 packs): reads every mod's items, recipes and manuals from the pack's files,
   opens and clicks any mod window, uses machines he has seen to make things (`obtain`), loads materials into a machine
   in one trip (`load_machine`), looks things up on the web when the pack's data is not enough.
-- **Play**: follow, guard, fight (bows, swords and mod guns), mine like a player (no x-ray), smelt, craft, build
-  multiblocks, drive vehicles, climb ladders, fetch and stash items, study your base, sleep in a bed at night, gesture
-  (nod, wave, bow, dance), set reminders, pick his things up after he dies, build a house, shelter, wall, tower,
-  platform or bridge from a description.
+- **Play**: walk with his own pathfinding (steps, jumps, drops, ladders, swimming, doors), follow, guard, fight (bows,
+  swords and mod guns), mine like a player (no x-ray), smelt, craft, build multiblocks, drive vehicles and man their
+  guns, get downed players up, fetch and stash items, study your base, sleep in a bed at night, gesture (nod, wave,
+  bow, dance), set reminders, build a house, shelter, wall, tower, platform or bridge from a description.
 - **Remember**: places, chests and their contents, what you said — across restarts.
 
 ## Requirements
@@ -45,7 +53,8 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
   - `models/*.gguf` — a chat model with tool calling (e.g. a Qwen 7-9B GGUF) and, for vision, its `mmproj` file;
   - `models/whisper-large-v3-turbo` (and `whisper-small` for CPU) — faster-whisper models;
   - `models/piper/*.onnx` — [Piper voices](https://huggingface.co/rhasspy/piper-voices), one per language;
-  - `mod/libs/baritone-api-forge-1.10.1.jar` — Baritone for Forge 1.20.1.
+  - `mod/libs/baritone-api-forge-1.10.1.jar` — Baritone for Forge 1.20.1: mining and building by blueprint (walking
+    works without it; with it installed it is also a backup when his own legs find no way).
 
 ## Quick install (Windows)
 
@@ -89,8 +98,12 @@ on your gaming PC just play and type `/altron`.
 | `language` | `"auto"` (answers in the language you speak) or a fixed code: `"en"`, `"ru"`, `"de"`... |
 | `languages` | languages to recognize with `"auto"`, e.g. `["en", "de"]` |
 | `tts_voices` | a Piper voice per language: `{"en": "../models/piper/en_US-ryan-high.onnx"}`; `tts_voice` is the fallback |
-| `tts_style` | `"ultron"` (low, doubled, metallic), `"robot"` (light helmet effect) or `"plain"`; `tts_pitch` overrides the pitch |
-| `chatter_minutes` | after this many quiet minutes he may start a conversation; `0` turns it off |
+| `tts_style` | Altron's own voice: `"ultron"` (low, doubled, metallic), `"robot"` (light helmet effect) or `"plain"`; `tts_pitch` overrides the pitch |
+| `persona` | `"altron"` or `"teammate"` (also switched by voice); `tts_personas` — the teammate's own voice files |
+| `idle_think_minutes` | in a quiet moment this often he thinks whether to say something; `0` — only when spoken to |
+| `legs` | `"own"` — his own pathfinding, Baritone as a backup (default); `"own_only"`; `"baritone"` — the old walking |
+| `instant_ack` | a canned "Yes, commander" before the AI has thought (off: he answers in his own words) |
+| `dataset` | log every AI turn for fine-tuning (see TRAINING.md) |
 | `tts_moods` | the voice follows the moment (faster in a fight, quieter when sympathising) |
 | `barge_in` | you can talk over him and he stops (default on) |
 | `react_events` | reactions to what happens around (danger, deaths, players joining...) |
@@ -110,6 +123,8 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 Второй игрок в твоём мире, с которым ты говоришь голосом. Ходит за тобой, воюет, копает, крафтит, носит вещи
 между сундуками и машинами, пользуется окнами любых модов, помнит твою базу, болтает с тобой — на твоём языке.
+Код даёт ему органы чувств и умения, а **все решения — что делать, что сказать или промолчать — принимает сама
+нейросеть**.
 Всё работает **офлайн на твоём ПК**: локальная нейросеть (llama.cpp), Whisper для распознавания речи и Piper для голоса.
 
 > Проект фанатский и не связан с Marvel/Disney. Стиль голоса «ultron» — это звуковой эффект поверх любого голоса
@@ -118,21 +133,28 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 ## Что умеет
 
 - **Общаться** на любом языке, который знают Whisper и твои голоса Piper: отвечает на языке, на котором ты говоришь
-  (и думает на нём), шутит, помнит, что ты о себе рассказывал, сам заговаривает, если долго тихо (`chatter_minutes`).
-  Начинает говорить, пока ИИ ещё дописывает ответ, замолкает, если ты его перебил, а голос меняется по ситуации.
-- **Замечать, что происходит**: предупредит о крипере и толпе монстров, отреагирует, если ты ранен, погиб, получил
-  достижение или ушёл в Незер, поздоровается с зашедшим игроком, скажет о ночи и грозе.
+  (и думает на нём), своими словами — заготовленных фраз нет, кроме крика «крипер рядом!». Начинает говорить, пока
+  ИИ ещё дописывает ответ, замолкает, если ты его перебил.
+- **Чувствовать и помнить**: у него своё настроение (его слышно в голосе), своё отношение к каждому игроку — копится
+  от поступков (спас, подарил алмазы, ударил), свои вкусы и мнения, общие воспоминания, которые он вспоминает к месту
+  («помнишь, как крипер снёс наш первый дом?»). В тишине сам решает — заговорить, спросить, пошутить или промолчать.
+- **Два голоса**: `altron` — холодная театральная машина; `teammate` — невозмутимый тиммейт с ровным голосом
+  синтезатора речи и сухим юмором. Скажи «говори как тиммейт», чтобы сменить.
+- **Замечать, что происходит**: опасность, раненые и упавшие игроки, смерти, достижения, зашедшие игроки, ночь и
+  гроза приходят нейросети как факты, а что с ними делать — решает она.
 - **Играть с несколькими игроками**: слушается командира и его друзей, с чужими говорит, но их приказы не выполняет,
   помнит, что каждый о себе рассказывал.
-- **Действовать сам**: `assist` — защищает и кормит тебя, отступает, если проигрывает бой; `autonomy` — сам находит
-  дела, пока тебя нет, и рассказывает, что сделал.
+- **Свои цели**: долгие приказы («охраняй базу», «помогай мне», «живи сам») становятся его целями; пока они есть, он
+  оглядывается и сам решает, что делать. Погиб — вернуть свои вещи тоже становится целью.
+- **Учиться**: каждый ход нейросети записывается, «молодец» и «не так» — оценки; на хороших ходах та же модель
+  дообучается — см. [TRAINING.md](TRAINING.md).
 - **Работать с любыми модами** (сборки Forge 1.20.1): читает предметы, рецепты и руководства всех модов из файлов
   сборки, открывает и нажимает окна любых модов, делает предметы в увиденных машинах (`obtain`), загружает материал
   в машину за один поход (`load_machine`), ищет в интернете, если в сборке нет ответа.
-- **Играть**: следовать, охранять, воевать (лук, меч, оружие модов), копать как игрок (без рентгена), плавить,
-  крафтить, строить многоблочные машины, водить технику, лазить по лестницам, приносить и складывать вещи, изучать
-  базу, спать ночью в кровати, делать жесты (кивнуть, помахать, поклониться, станцевать), напоминать, подбирать свои
-  вещи после смерти, строить по описанию дом, укрытие, стену, башню, площадку или мост.
+- **Играть**: ходить своими ногами (свой поиск пути: шаги, прыжки, спуски, лестницы, вода, двери), следовать,
+  охранять, воевать (лук, меч, оружие модов), копать как игрок (без рентгена), плавить, крафтить, строить многоблочные
+  машины, водить технику и стрелять из неё, поднимать раненых, приносить и складывать вещи, изучать базу, спать ночью
+  в кровати, делать жесты, напоминать, строить по описанию дом, укрытие, стену, башню, площадку или мост.
 - **Помнить** места, сундуки и их содержимое, твои слова — и после перезапуска.
 
 ## Установка в один клик (Windows)
@@ -161,7 +183,8 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 `brain\.venv\Scripts\python.exe brain\build_pc2_kit.py` — он соберёт папку `ai_server` (портативный Python, мозг,
 модели, llama.cpp, файлы игры для тела Альтрона). Скопируй её на второй ПК и запускай там, а на своём просто играй.
 
-Настройки — в таблице выше (`language`, `languages`, `tts_voices`, `tts_style`, `chatter_minutes`...).
+Настройки — в таблице выше (`language`, `languages`, `tts_voices`, `persona`, `legs`, `idle_think_minutes`...).
+Baritone нужен только для копания и стройки по чертежу: ходит Альтрон своими ногами.
 Подробная инструкция для игры — в `КАК ИГРАТЬ.txt`.
 
 ## Лицензия

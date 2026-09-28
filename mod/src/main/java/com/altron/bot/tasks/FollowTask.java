@@ -35,7 +35,7 @@ public class FollowTask extends Task {
     }
 
     private void startFollow() {
-        following = Baritone.command("follow player " + who);
+        following = Baritone.follow(who);
     }
 
     @Override
@@ -43,7 +43,7 @@ public class FollowTask extends Task {
         if (age == 1) {
             if (Bot.findPlayer(who) == null) return fail("не вижу игрока " + who + " рядом");
             startFollow();
-            if (!following) return fail("Baritone не установлен, не могу идти следом");
+            if (!following) return fail("не могу идти следом за " + who);
         }
         if (guard) {
             boolean engaged = combat.tick();

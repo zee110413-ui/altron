@@ -52,6 +52,15 @@ public class UseEntityTask extends Task {
         return this;
     }
 
+    /** Where it was last known to be (a downed player behind a wall): walk there first if it is not in sight. */
+    private net.minecraft.core.BlockPos near;
+    private int nearWalk;
+
+    public UseEntityTask near(net.minecraft.core.BlockPos at) {
+        this.near = at;
+        return this;
+    }
+
     /** Boats, minecarts, modded tanks, cars, helicopters: big non-living entities. */
     public static boolean isVehicle(Entity e) {
         return !(e instanceof LivingEntity || e instanceof ItemEntity || e instanceof Projectile || e instanceof ExperienceOrb)
@@ -95,7 +104,13 @@ public class UseEntityTask extends Task {
                 list = Info.entities(10, e -> e.isAlive() && Info.perceives(e) && isVehicle(e));
                 if (!list.isEmpty()) note = " (" + target + " не вижу, взял ближайшую технику)";
             }
+            if (list.isEmpty() && near != null && p.blockPosition().distSqr(near) > 4) {
+                if (nearWalk == 0 || (nearWalk % 40 == 0 && !Baritone.busy())) Baritone.gotoNear(near, 1);
+                if (++nearWalk > 20 * 90) return fail("не смог дойти до " + target + " (" + Bot.pos(near) + ")");
+                return Status.RUNNING;
+            }
             if (list.isEmpty()) return fail("не вижу рядом: " + target + "; " + around());
+            if (nearWalk > 0) Baritone.cancel();
             entity = list.get(0);
         }
         if (!entity.isAlive()) return fail(target + " пропал");

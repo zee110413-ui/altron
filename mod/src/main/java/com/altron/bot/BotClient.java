@@ -204,6 +204,7 @@ public class BotClient {
                     "msg", "Альтрон в мире: " + Bot.pos(p.blockPosition()) + ". " + Memory.summary()));
         }
         Input.tick();
+        Legs.tick();   // his own walking: before the look, which must not steer against it
         Bot.tickLook();
         Memory.tick();
         // in a vehicle: mods like SuperbWarfare read the controls only for a window in front
@@ -263,7 +264,8 @@ public class BotClient {
         // Report getting hurt badly
         float hp = p.getHealth();
         long now = System.currentTimeMillis();
-        if (lastHp > 0 && hp < 8 && hp < lastHp && now - lastLowHpEvent > 30000) {
+        // (not at the moment of death: "мало здоровья" right after "меня уничтожили" makes no sense)
+        if (lastHp > 0 && hp > 0 && hp < 8 && hp < lastHp && now - lastLowHpEvent > 30000) {
             lastLowHpEvent = now;
             Bot.event("low_health", "У меня мало здоровья: " + Math.round(hp) + "/20");
         }

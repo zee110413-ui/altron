@@ -31,6 +31,7 @@ import java.util.Map;
  */
 public class HostWorldEvents {
     private final Map<String, Long> lastSent = new HashMap<>();
+    private final java.util.Set<String> downed = new java.util.HashSet<>();
     private long lastDayTime = -1;
     private boolean wasThundering;
 
@@ -40,7 +41,20 @@ public class HostWorldEvents {
 
     /** Send unless the same kind about the same player went out less than {@code gapMs} ago. */
     private void send(String kind, String who, long gapMs, Object... more) {
-        String key = kind + "|" + who;
+        sendAs(kind, kind, who, gapMs, more);
+    }
+
+    /** Each kind of danger keeps its own pause: a creeper's hiss must not silence the boss or the crowd warning. */
+    private void danger(String what, String who, long gapMs, Object... more) {
+        Object[] all = new Object[more.length + 2];
+        all[0] = "what";
+        all[1] = what;
+        System.arraycopy(more, 0, all, 2, more.length);
+        sendAs("danger", "danger:" + what, who, gapMs, all);
+    }
+
+    private void sendAs(String kind, String rateKey, String who, long gapMs, Object... more) {
+        String key = rateKey + "|" + who;
         long now = System.currentTimeMillis();
         if (now - lastSent.getOrDefault(key, 0L) < gapMs) return;
         lastSent.put(key, now);
@@ -65,7 +79,8 @@ public class HostWorldEvents {
                 "cause", by != null ? by.getName().getString() : event.getSource().getMsgId());
     }
 
-    @SubscribeEvent
+    // last, and only if nobody cancelled it: the Incapacitated mod cancels a death and lays the player down instead
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.LOWEST)
     public void onDeath(LivingDeathEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer sp) || isBot(sp)) return;
         var p = sp.blockPosition();
@@ -111,6 +126,15 @@ public class HostWorldEvents {
         if (thunder && !wasThundering) send("storm", "*", 120_000);
         wasThundering = thunder;
         for (ServerPlayer sp : server.getPlayerList().getPlayers()) {
+            // the Incapacitated mod: downed, not dead yet — someone crouching next to him gets him up (Altron too)
+            boolean down = IncapCompat.downed(sp);
+            if (down && !downed.contains(name(sp))) {
+                var p = sp.blockPosition();
+                send("downed", name(sp), 0, "pos", J.arr(p.getX(), p.getY(), p.getZ()), "seconds", IncapCompat.secondsLeft(sp),
+                        "bot", isBot(sp));
+            }
+            if (down) downed.add(name(sp));
+            else downed.remove(name(sp));
             if (isBot(sp) || sp.isSpectator() || sp.isCreative()) continue;
             danger(sp);
             int food = sp.getFoodData().getFoodLevel();
@@ -124,16 +148,14 @@ public class HostWorldEvents {
         List<Creeper> creepers = sp.level().getEntitiesOfClass(Creeper.class, box.deflate(3),
                 c -> c.isAlive() && (c.getSwellDir() > 0 || c.isIgnited()));
         if (!creepers.isEmpty()) {
-            send("danger", name(sp), 8_000, "what", "creeper");
+            danger("creeper", name(sp), 8_000);
             return;
         }
         var bosses = sp.level().getEntitiesOfClass(Entity.class, sp.getBoundingBox().inflate(48),
                 e -> e.isAlive() && (e instanceof WitherBoss || e instanceof EnderDragon || e instanceof Warden));
-        if (!bosses.isEmpty()) {
-            send("danger", name(sp), 120_000, "what", "boss", "name", bosses.get(0).getName().getString());
-            return;
-        }
+        // a boss stays around for minutes: it must not hide a crowd of monsters closing in meanwhile
+        if (!bosses.isEmpty()) danger("boss", name(sp), 120_000, "name", bosses.get(0).getName().getString());
         int hostile = sp.level().getEntitiesOfClass(Entity.class, box, e -> e.isAlive() && e instanceof Enemy).size();
-        if (hostile >= 4) send("danger", name(sp), 60_000, "what", "crowd", "count", hostile);
+        if (hostile >= 4) danger("crowd", name(sp), 60_000, "count", hostile);
     }
 }

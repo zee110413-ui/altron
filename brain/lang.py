@@ -1,4 +1,5 @@
-"""Languages Altron speaks: the few phrases the code says by itself, and a guess of a typed phrase's language."""
+"""Languages Altron speaks: the very few phrases the code says by itself (everything else is the AI's own words), and a
+guess of a typed phrase's language."""
 import re
 
 NAMES = {"ru": "русский", "en": "English", "uk": "українська", "be": "беларуская", "kk": "қазақша", "de": "Deutsch",
@@ -6,6 +7,7 @@ NAMES = {"ru": "русский", "en": "English", "uk": "українська", 
          "cs": "čeština", "nl": "Nederlands", "zh": "中文", "ja": "日本語", "ko": "한국어"}
 
 PHRASES = {
+    # the instant "yes" to an order, before the AI has thought — only with "instant_ack": true in config.json
     "acks": {
         "ru": ("Есть, командир.", "Принял.", "Сделаю.", "Понял, командир."),
         "en": ("Yes, commander.", "Understood.", "Consider it done.", "On it, commander."),
@@ -16,42 +18,13 @@ PHRASES = {
         "pl": ("Tak jest, dowódco.", "Przyjąłem.", "Zrobię to.", "Już się robi, dowódco."),
         "pt": ("Sim, comandante.", "Entendido.", "Considere feito.", "Já vou, comandante."),
     },
-    "online": {"ru": "Альтрон на связи. Жду приказов.", "en": "Altron online. Awaiting orders.",
-               "uk": "Альтрон на зв'язку. Чекаю наказів.", "de": "Altron ist online. Ich warte auf Befehle.",
-               "fr": "Altron en ligne. J'attends vos ordres.", "es": "Altron en línea. Espero órdenes.",
-               "pl": "Altron online. Czekam na rozkazy.", "pt": "Altron online. Aguardando ordens."},
-    "died": {"ru": "Меня уничтожили. Перезагружаюсь.", "en": "I have been destroyed. Rebooting.",
-             "uk": "Мене знищили. Перезавантажуюсь.", "de": "Ich wurde zerstört. Starte neu.",
-             "fr": "J'ai été détruit. Redémarrage.", "es": "Me han destruido. Reiniciando.",
-             "pl": "Zniszczono mnie. Restartuję się.", "pt": "Fui destruído. Reiniciando."},
-    "low_health": {"ru": "Внимание, мои системы повреждены, здоровья мало.",
-                   "en": "Warning: my systems are damaged, health is low.",
-                   "uk": "Увага, мої системи пошкоджено, здоров'я мало.",
-                   "de": "Achtung, meine Systeme sind beschädigt, wenig Gesundheit.",
-                   "fr": "Attention, mes systèmes sont endommagés, peu de santé.",
-                   "es": "Atención, mis sistemas están dañados, poca salud.",
-                   "pl": "Uwaga, moje systemy są uszkodzone, mało zdrowia.",
-                   "pt": "Atenção, meus sistemas estão danificados, pouca vida."},
-    "stopped": {"ru": "Остановился.", "en": "Stopped.", "uk": "Зупинився.", "de": "Angehalten.", "fr": "Arrêté.",
-                "es": "Detenido.", "pl": "Zatrzymałem się.", "pt": "Parei."},
-    "thinking": {"ru": "Секунду, подумаю.", "en": "One moment, thinking.", "uk": "Секунду, подумаю.",
-                 "de": "Einen Moment, ich denke nach.", "fr": "Un instant, je réfléchis.", "es": "Un momento, pienso.",
-                 "pl": "Chwilę, pomyślę.", "pt": "Um momento, pensando."},
+    # the one reflex: a creeper explodes in 1.5 s, faster than the AI can think
     "creeper": {"ru": "%s, крипер рядом! Отойди!", "en": "%s, creeper next to you! Move!",
                 "uk": "%s, кріпер поруч! Відійди!", "de": "%s, ein Creeper neben dir! Weg da!",
                 "fr": "%s, un creeper à côté de toi ! Bouge !", "es": "¡%s, un creeper a tu lado! ¡Muévete!",
                 "pl": "%s, creeper obok ciebie! Odsuń się!", "pt": "%s, creeper do seu lado! Sai daí!"},
-    "boss": {"ru": "Внимание: рядом %s.", "en": "Warning: %s nearby.", "uk": "Увага: поруч %s.",
-             "de": "Achtung: %s in der Nähe.", "fr": "Attention : %s à proximité.", "es": "Atención: %s cerca.",
-             "pl": "Uwaga: %s w pobliżu.", "pt": "Atenção: %s por perto."},
-    "crowd": {"ru": "%s, вокруг тебя %d монстров, осторожно.", "en": "%s, %d monsters around you, careful.",
-              "uk": "%s, навколо тебе %d монстрів, обережно.", "de": "%s, %d Monster um dich herum, Vorsicht.",
-              "fr": "%s, %d monstres autour de toi, prudence.", "es": "%s, %d monstruos a tu alrededor, cuidado.",
-              "pl": "%s, wokół ciebie %d potworów, ostrożnie.", "pt": "%s, %d monstros ao seu redor, cuidado."},
     "commander": {"ru": "Командир", "en": "Commander", "uk": "Командире", "de": "Kommandant", "fr": "Commandant",
                   "es": "Comandante", "pl": "Dowódco", "pt": "Comandante"},
-    "stuck": {"ru": "Командир, я застрял %s: выход закрыт, а ломать твоё я не буду. Открой мне, пожалуйста.",
-              "en": "Commander, I am stuck %s: the way out is closed and I will not break your things. Please let me out."},
 }
 
 

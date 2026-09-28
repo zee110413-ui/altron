@@ -26,6 +26,8 @@ $LlmQuant = 'Q4_K_M'
 $WhisperGpu = @('mobiuslabsgmbh/faster-whisper-large-v3-turbo', 'deepdml/faster-whisper-large-v3-turbo-ct2')
 $WhisperCpu = @('Systran/faster-whisper-small')
 $Voices = [ordered]@{ ru = 'ru_RU-dmitri-medium'; en = 'en_US-ryan-high' }
+# the second manner of speaking ("teammate", a speech-synthesizer voice): its own voices
+$TeammateVoices = [ordered]@{ ru = 'ru_RU-denis-medium'; en = 'en_US-danny-low' }
 $BaritoneTag = 'v1.10.1'
 $UA = @{ 'User-Agent' = 'altron-installer'; 'Accept' = 'application/json' }
 
@@ -218,20 +220,28 @@ Step 'whisper' {
     Ok 'Whisper готов / ready'
 }
 
+function Get-PiperVoice($name) {
+    $p = $name -split '-'
+    $loc = $p[0]; $speaker = ($p[1..($p.Count - 2)]) -join '-'; $q = $p[-1]
+    $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/$($loc.Split('_')[0])/$loc/$speaker/$q/$name"
+    Get-File "$base.onnx" (Join-Path $Root "models\piper\$name.onnx")
+    Get-File "$base.onnx.json" (Join-Path $Root "models\piper\$name.onnx.json")
+    return "../models/piper/$name.onnx"
+}
+
 Step 'voices' {
     Say 'Голоса (Piper)' 'Voices (Piper)'
     $map = @{}
-    foreach ($lang in $Voices.Keys) {
-        $name = $Voices[$lang]
-        $p = $name -split '-'
-        $loc = $p[0]; $speaker = ($p[1..($p.Count - 2)]) -join '-'; $q = $p[-1]
-        $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/$($loc.Split('_')[0])/$loc/$speaker/$q/$name"
-        Get-File "$base.onnx" (Join-Path $Root "models\piper\$name.onnx")
-        Get-File "$base.onnx.json" (Join-Path $Root "models\piper\$name.onnx.json")
-        $map[$lang] = "../models/piper/$name.onnx"
-    }
+    foreach ($lang in $Voices.Keys) { $map[$lang] = Get-PiperVoice $Voices[$lang] }
     $global:Updates.tts_voices = $map
     $global:Updates.tts_voice = $map[@($Voices.Keys)[0]]
+}
+
+Step 'teammate voices' {
+    Say 'Голос тиммейта (вторая манера речи)' 'The teammate voice (the second manner of speaking)'
+    $map = @{}
+    foreach ($lang in $TeammateVoices.Keys) { $map[$lang] = Get-PiperVoice $TeammateVoices[$lang] }
+    $global:Updates.tts_personas = @{ teammate = @{ voices = $map } }
 }
 
 # ------------------------------------------------------------------------------------------------ Baritone, Java

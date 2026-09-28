@@ -116,6 +116,17 @@ public class HostClientEvents {
         });
     }
 
+    /** The unattended test host died: press "Respawn" for it (nothing happens when it is alive). */
+    public static void respawn() {
+        Minecraft mc = Minecraft.getInstance();
+        mc.execute(() -> {
+            if (mc.player != null && (mc.player.isDeadOrDying() || mc.screen instanceof net.minecraft.client.gui.screens.DeathScreen)) {
+                mc.player.respawn();
+                mc.setScreen(null);
+            }
+        });
+    }
+
     /** The host player says something in chat (the demo director speaks through it). */
     public static void sayInChat(String text) {
         Minecraft mc = Minecraft.getInstance();
