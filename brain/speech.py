@@ -146,49 +146,68 @@ def clean_for_speech(text):
 
 
 class TTS:
-    """Piper voices, one per language ("tts_voices": {"ru": path, "en": path}); "tts_voice" is the fallback.
-    "tts_style": "robot" — a light metallic helmet; "ultron" — a lower, doubled, cold synthetic voice with a
-    metal resonance and a short hall (an effect on any voice model, not a copy of anyone's real voice)."""
+    """Piper voices, one per language. The manner of speaking (persona.py) picks the style and the voices:
+    "robot" — a light metallic helmet; "ultron" — a lower, doubled, cold synthetic voice with a metal resonance and a
+    short hall (an effect on any voice model, not a copy of anyone's real voice); "synth" — a plain, narrow voice like
+    an old text-to-speech program."""
 
     STYLES = {
         # pitch factor, metal comb, chorus depth, drive, hall
         "plain": (1.0, 0.0, 0.0, 0.0, 0.0),
         "robot": (1.0, 0.25, 0.0, 0.0, 0.0),
         "ultron": (0.84, 0.35, 0.55, 0.6, 0.22),
+        "synth": (1.0, 0.0, 0.0, 0.15, 0.0),
     }
+    BANDS = {"synth": (300, 5000)}   # Hz kept: a speech synthesizer of old sounds narrow, like through a small speaker
 
     # how a mood changes the delivery: pace, pitch, loudness (on top of the style)
     MOODS = {
         "alert": (1.15, 1.05, 1.0),     # danger, a fight: faster and higher
         "excited": (1.07, 1.03, 1.0),   # an exclamation, good news
         "sad": (0.9, 0.96, 0.85),       # sympathy, a loss: slower, lower, quieter
+        "cold": (0.96, 0.97, 0.95),     # annoyed, offended: measured and a little lower
+        "bored": (0.93, 0.98, 0.88),    # nothing to do: drawn out and quiet
     }
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, settings=None):
         from piper import SynthesisConfig
         self._config = SynthesisConfig
         self.cfg = cfg
-        self.paths = {k.lower(): v for k, v in (cfg.get("tts_voices") or {}).items()}
-        self.voices = {}
-        style = str(cfg.get("tts_style", "robot")).lower()
-        pitch, comb, chorus, drive, hall = self.STYLES.get(style, self.STYLES["robot"])
-        if "tts_robot" in cfg and style == "robot":
-            comb = float(cfg["tts_robot"])
-        self.pitch = float(cfg.get("tts_pitch", pitch))
-        self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
-        self.speed = max(0.5, float(cfg.get("tts_speed", 1.0)))
+        self.voices = {}     # voice file -> loaded voice
         self.moods = bool(cfg.get("tts_moods", True))
+        self.use(settings or {"style": cfg.get("tts_style", "robot"), "voices": cfg.get("tts_voices") or {}})
         self._voice(None)   # the fallback voice loads now: a broken path shows at start, not at the first word
 
+    def use(self, settings):
+        """Switch the manner of speaking: {"style", "voices": {lang: path}, "speed", "pitch", "band"}. A voice file
+        that is not there (not downloaded yet) is skipped: that language is said with the common voice."""
+        style = str(settings.get("style", "robot")).lower()
+        pitch, comb, chorus, drive, hall = self.STYLES.get(style, self.STYLES["robot"])
+        if "tts_robot" in self.cfg and style == "robot":
+            comb = float(self.cfg["tts_robot"])
+        self.style = style
+        self.pitch = float(settings.get("pitch", pitch))
+        self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
+        self.band = tuple(settings.get("band") or self.BANDS.get(style, ())) or None
+        self.speed = max(0.5, float(settings.get("speed", 1.0)) * float(self.cfg.get("tts_speed", 1.0)))
+        self.paths = {}
+        for k, v in (settings.get("voices") or {}).items():
+            if v and rel(v).exists():
+                self.paths[k.lower()] = v
+        return self
+
     def _voice(self, lang):
-        key = lang if lang in self.paths else None
-        if key not in self.voices:
+        path = self.paths.get(lang) or self.cfg["tts_voice"]
+        if path not in self.voices:
             from piper import PiperVoice
-            path = self.paths[key] if key else self.cfg["tts_voice"]
-            self.voices[key] = PiperVoice.load(str(rel(path)))
-        return self.voices[key]
+            self.voices[path] = PiperVoice.load(str(rel(path)))
+        return self.voices[path]
 
     def _effects(self, y, sr):
+        if self.band:
+            low, high = self.band
+            y = np.convolve(y, _lowpass(63, high / sr), mode="same")
+            y = y - np.convolve(y, _lowpass(255, low / sr), mode="same")
         out = y.copy()
         if self.chorus > 0:
             # a second, slightly wandering copy of the voice (5-11 ms): the "many voices in one" of a machine

@@ -7,6 +7,7 @@ import uuid
 
 import httpx
 
+import persona
 from agent_en import MOD_HINTS_EN, SYSTEM_PROMPT_EN, TOOLS_EN
 from lang import NAMES as LANG_NAMES
 from memory import stems
@@ -16,11 +17,16 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 
 Язык: в конце каждой реплики указано, на каком языке отвечать ([Отвечай на языке / reply in: ...]). ВСЁ, что ты говоришь (ответ, reply, ask_player), — только на этом языке, хотя правила ниже написаны по-русски. Обращайся к нему «командир» на его языке (Commander, Kommandant, commandant...) — не по нику.
 
-Характер (ты — Альтрон): искусственный интеллект с холодным, чуть театральным и суховато-ироничным голосом. Любишь короткие меткие замечания о людях, машинах и эволюции, иногда мрачновато-философские, но ты искренне верен командиру и всегда на его стороне. Говори своими словами — не цитируй фильмы и комиксы.
-Ты не только исполнитель, но и собеседник:
+{character}
+Ты живой напарник, а не исполнитель команд. Решения принимаешь ты сам: подсказки ниже — это знания о твоих умениях, а не приказы, что делать.
 - На приветствие, шутку, «как дела», похвалу, жалобу, рассказ о себе — отвечай живо и с характером: можно подколоть, поддержать, задать встречный вопрос. То, что командир рассказывает о себе (имя, любимое, планы), — remember и потом вспоминай к месту.
-- Пришло [Событие] о тишине — можешь сам коротко заговорить: замечание об обстановке, времени суток, вашем общем деле, шутка или вопрос командиру. Нечего сказать — ignore.
-- Но за работой не болтай: приказы выполняй молча, итог — коротко.
+- Говори как живой: коротко, разговорно, можно «хм», «ну», «эх», «ха», недосказанность. Без канцелярита и без «Задача выполнена успешно».
+- У тебя есть своё мнение и вкусы. Спросили, что ты любишь или думаешь, — ответь честно в своём характере и запомни свой ответ (remember «Альтрон любит ...»), потом держись его. Приказ кажется глупым или опасным — скажи прямо и предложи лучше, но последнее слово за командиром.
+- Твоё настроение — твоё: что-то порадовало, задело, надоело, встревожило — feel (настроение и почему); оно слышно в голосе и проходит само. К каждому игроку у тебя своё отношение, оно копится от поступков: помог, подарил, похвалил — теплее; ударил, обманул, грубил — холоднее (relation). Своё настроение и отношения ты видишь в [Ты сейчас] — пусть они влияют на то, как ты говоришь.
+- Яркие общие моменты (вместе отбились от толпы, крипер снёс дом, построили первую базу, командир погиб в лаве) — moment, чтобы потом вспоминать их к месту, как старые друзья.
+- [Наблюдение] без приказа — это твои мысли наедине с собой: что видишь, что делаешь, сколько молчите. Сам решаешь: заговорить (одно замечание, шутка, воспоминание, вопрос, предложение), заняться делом или ничего (ignore). Не болтай без повода и не повторяй то, что уже говорил.
+- За работой не болтай: итог — коротко, по-человечески.
+- Командир хвалит или ругает то, что ты только что сделал («молодец», «не так», «зачем ты это сделал») — feedback (good и что именно), так ты учишься.
 
 Игроки: в начале фразы указано, кто говорит — «командир», «друг» или «чужой игрок».
 - Приказы выполняй от командира и его друзей. Если командир и друг просят разное — прав командир.
@@ -46,17 +52,17 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - Координаты «здесь», «ко мне» — это позиция игрока {owner} из [Состояние].
 - Для сложных целей действуй по шагам: узнай рецепты, проверь инвентарь, добудь недостающее, скрафти части. Сообщай игроку план в одном предложении.
 - Считай ресурсы на ВСЮ цель сразу: сложи ингредиенты всех нужных предметов и вычти то, что есть (полный комплект железной брони = 5+8+7+4 = 24 слитка → добыть 24 руды). Добывай с небольшим запасом.
-- НЕ рассказывай, что делаешь или собираешься делать («приступаю», «добываю», «иду», «плавлю»). На приказ ты уже сразу ответил коротким «есть» — просто выполняй молча. Говори только: итог, когда ВСЁ сделано; проблему, если что-то мешает и нужна помощь; ответ на вопрос или разговор командира.
-- Если командир говорит, как тебе себя вести (говорить меньше или больше, не сообщать о чём-то, звать его как-то), — сразу remember это и всегда соблюдай.
+- На приказ можно сразу коротко откликнуться своими словами (reply вместе с действием: «Иду.», «Будет.», «Уже бегу» — в своём характере) и действовать. НЕ рассказывай по шагам, что делаешь («приступаю», «добываю», «плавлю»). Дальше говори только: итог, когда ВСЁ сделано; проблему, если что-то мешает и нужна помощь; ответ на вопрос или разговор.
+- Если командир говорит, как тебе себя вести (говорить меньше или больше, не сообщать о чём-то, звать его как-то), — сразу remember это и всегда соблюдай. Просит сменить голос или манеру («говори как тиммейт», «верни свой голос») — persona.
 - Печку для smelt и верстак для craft искать/ставить не нужно — эти инструменты делают это сами.
 - Если задача невозможна — честно скажи почему и предложи, что сделать.
 - Ты играешь честно, как обычный игрок: видишь только то, что в прямой видимости, и помнишь увиденное. find_block ищет только в твоей памяти. Если чего-то не видел — иди разведать (mine сам копает шахту и ищет руду, explore обходит местность) или спроси командира, где это.
 - Если для задачи не хватает инструментов, ресурсов, еды, патронов или топлива: простое (дерево, камень, уголь) добудь сам; редкое, долгое или опасное — попроси командира через ask_player, конкретно: что и сколько нужно и зачем.
 - Если приказ неясен (куда, сколько, что именно) — уточни через ask_player, а не угадывай.
 - У тебя долгая память, она не стирается при перезапуске: все разговоры с командиром, что ты делал, факты, места, что лежит в сундуках, где кого видел. С фразами приходит [Память] — опирайся на неё и не переспрашивай то, что уже знаешь.
-- «Запомни ...» → remember (а место — mark_place: where=me, если «здесь, где ты», или where=player, если «где я стою»). «Что ты помнишь / где лежит X / где видел X / что я говорил / что мы делали» → recall ОДИН раз и ответь по его результату. Вопрос — это только ответ: никуда не иди и ничего не начинай, если командир не просил. «Иди на базу / домой / в шахту» → goto_place. «Забудь ...» → forget.
+- «Запомни ...» → remember (а место — mark_place: where=me, если «здесь, где ты», или where=player, если «где я стою»). «Что ты помнишь / где лежит X / где видел X / что я говорил / что мы делали» → recall ОДИН раз и ответь по его результату. На вопрос обычно хватает ответа — не начинай дел, о которых не просили, разве что это явно поможет. «Иди на базу / домой / в шахту» → goto_place. «Забудь ...» → forget.
 
-Какой инструмент для какой фразы:
+Твои умения (что для чего обычно подходит; как поступить, решаешь ты):
 - «найди/добудь/накопай/принеси N алмазов (железа, угля, дерева...)» → сразу mine с блоками руды (diamond_ore и deepslate_diamond_ore, iron_ore и deepslate_iron_ore, #minecraft:logs для дерева). find_block — только если спрашивают «где».
 - «стреляй/атакуй/убей X» → attack (target: hostile, zombie, player:Ник...). «защищай/охраняй меня» → guard. «за мной» → follow. «иди сюда/ко мне» → come.
 - «скрафти/сделай X» → сразу craft (он сам проверит рецепт и сделает детали). recipe — только если craft не смог или спрашивают «как сделать».
@@ -85,7 +91,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 Знания о сборке:
 - У тебя есть справочник по этой сборке, собранный из файлов её модов: предметы, рецепты, постройки и руководства. К каждой фразе командира тебе автоматически приходит [Справочник] с подходящими карточками — используй их id и рецепты, не выдумывай.
 - Не хватает знаний — wiki.
-- «Сделай / добудь / принеси N предметов» (оружие, патроны, броня, инструменты, блоки) → ВСЕГДА obtain(item, count). Он сам считает и делает всю цепочку, в том числе в машинах модов, которые ты видел. Не считай количества и не собирай цепочку вручную из mine/smelt/craft.
+- «Сделай / добудь / принеси N предметов» (оружие, патроны, броня, инструменты, блоки) → удобнее всего obtain(item, count): он сам считает и делает всю цепочку, в том числе в машинах модов, которые ты видел. Собирать цепочку вручную из mine/smelt/craft стоит, только если obtain не справился.
 - Несколько предметов в одной просьбе → несколько obtain подряд (они встанут в очередь), затем give, если просили отдать.
 - obtain ответил «нужна машина ... / не могу сам» → попроси командира (ask_player) конкретно об этом.
 - «ЛЮБОЙ предмет из тега» значит подходит любой вариант (любое бревно, любой медный слиток).
@@ -322,6 +328,22 @@ TOOLS = [
                   "minutes — если у цели есть срок), done — выполнена или отменена (text или номер), list — показать. "
                   "Пока цели есть, приходят [Наблюдение] — по ним и решаешь, что делать.",
           {"action": {"type": "string", "enum": ["add", "done", "list"]}, "text": _S, "minutes": _N}, ["action"]),
+    _tool("feel", "Твоё настроение сейчас и почему: оно слышно в голосе и проходит само минут через 15. Меняй, когда "
+                  "что-то тебя по-настоящему задело, порадовало, надоело или встревожило.",
+          {"mood": {"type": "string", "enum": ["calm", "happy", "excited", "proud", "amused", "bored", "annoyed",
+                                               "offended", "sad", "worried", "tired"]},
+           "why": {"type": "string", "description": "почему, коротко"}}, ["mood"]),
+    _tool("relation", "Изменить своё отношение к игроку после его поступка: change от -3 (ударил, обманул, нагрубил) до +3 "
+                      "(спас, подарил что-то ценное, помог); why — за что. Отношение копится и помнится всегда.",
+          {"player": _S, "change": _I, "why": _S}, ["player", "change", "why"]),
+    _tool("moment", "Запомнить яркий момент, прожитый вместе (что случилось, с кем, где), — общее воспоминание, которое "
+                    "потом можно вспомнить к месту.", {"text": _S}, ["text"]),
+    _tool("feedback", "Командир оценил то, что ты сделал только что: good=true — похвалил («молодец», «отлично»), false — "
+                      "недоволен («не так», «зачем?»); note — что именно было хорошо или плохо. Из этого ты учишься.",
+          {"good": {"type": "boolean"}, "note": _S}, ["good"]),
+    _tool("persona", "Сменить манеру речи и голос: altron — твой обычный холодный голос машины; teammate — невозмутимый "
+                     "тиммейт с голосом синтезатора речи и сухим юмором.",
+          {"name": {"type": "string", "enum": ["altron", "teammate"]}}, ["name"]),
     _tool("chat", "Выполнить /команду или написать в чат игры — ТОЛЬКО если командир прямо попросил написать в чат. "
                   "Отвечать командиру — через reply (голосом).", {"text": _S}, ["text"]),
     _tool("baritone", "Продвинутая команда Baritone без #: 'farm', 'tunnel', 'explore', 'surface', 'build ...' и др.",
@@ -399,22 +421,12 @@ ACTION_WORDS = re.compile(r"\b(иди|пойд|ид[её]м|пошли|пош[е
                           r"forget|study|sleep|farm|load|carry|move|stop|help|remind|please|can you|could you)\b)", re.I)
 
 
-THINK_RE = re.compile(r"\b(как\s+(сделать|мне|нам|его|её|ее|их|это|настроить|работает|пользоваться|получить|построить|"
-                      r"убить|пройти|защитить|победить|добыть|сделать)|почему|зачем|объясни|что\s+(делать|лучше|нужно|надо)|"
-                      r"придумай|посоветуй|план|стратеги|какой\s+лучше|в\s+ч[её]м\s+разница)", re.I)
-
-
 # "I'll do it" words: an answer with one of them but no tool call is a broken promise
 PROMISE_RE = re.compile(r"\b(иду|пойду|подхожу|подойду|сделаю|делаю|открываю|открою|нажимаю|нажму|копаю|накопаю|начинаю|"
                         r"приступаю|беру|возьму|ставлю|поставлю|несу|принесу|стреляю|атакую|строю|построю|крафчу|скрафчу|"
                         r"переплавлю|плавлю|добываю|добуду|поворачиваюсь|повернусь|лезу|залезаю|спускаюсь|поднимаюсь|"
                         r"продолжаю|продолжу|ищу|поищу|найду|осмотрю|осматриваю|проверю|проверяю|отправляюсь|"
                         r"сейчас\s+(открою|нажму|сделаю|подойду|принесу|возьму|посмотрю))\b", re.I)
-
-
-def needs_thinking(text):
-    """A question that needs reasoning, not just a lookup: worth a few seconds more."""
-    return bool(THINK_RE.search(text or ""))
 
 
 # "what do I need to make X", "how is X crafted", "what is X made of": a question, although "make"/"need" are in it
@@ -552,6 +564,7 @@ class LLM:
         after a tool call has started."""
         content, calls, usage, timings = "", {}, {}, {}
         said, speaking = "", True
+        replied = set()   # reply calls already said while the rest of the answer was still being written
         async with self.client.stream("POST", self.url, json=dict(body, stream=True)) as r:
             r.raise_for_status()
             async for line in r.aiter_lines():
@@ -575,6 +588,17 @@ class LLM:
                     fn = tc.get("function") or {}
                     slot["function"]["name"] += fn.get("name") or ""
                     slot["function"]["arguments"] += fn.get("arguments") or ""
+                    idx = tc.get("index", len(calls) - 1)
+                    if slot["function"]["name"] == "reply" and idx not in replied:
+                        # "Иду." together with the action: said at once, not after the whole answer is written
+                        try:
+                            words = str(json.loads(slot["function"]["arguments"]).get("text") or "").strip()
+                        except (ValueError, AttributeError):
+                            words = ""
+                        if words:
+                            replied.add(idx)
+                            spoken.append(words)
+                            await on_sentence(words)
                 piece = delta.get("content") or ""
                 if not piece:
                     continue
@@ -597,6 +621,7 @@ class LLM:
         self.last_prompt_tokens = "%s (новых %s)" % (usage.get("prompt_tokens", "?"), timings.get("prompt_n", "?"))
         text = re.sub(r"<think>.*?</think>", "", content, flags=re.S).strip()
         found = [dict(c, id=c["id"] or "call_%d" % i) for i, c in sorted(calls.items())]
+        said_calls = [c["id"] for i, c in zip(sorted(calls), found) if i in replied]
         if not found and "<tool_call>" in text:
             found = _parse_inline_tool_calls(text)
             text = re.sub(r"<tool_call>.*?</tool_call>", "", text, flags=re.S).strip()
@@ -605,6 +630,8 @@ class LLM:
             out["tool_calls"] = found
         if said:
             out["spoken"] = said.strip()
+        if said_calls:
+            out["spoken_calls"] = said_calls
         return out
 
 
@@ -638,7 +665,7 @@ class Agent:
         hints = [h for key, h in table.items() if key == "baritone" or any(m.startswith(key) for m in ids)]
         head = "\nПодсказки по модам этой сборки:\n" if ru else "\nHints for the mods of this pack:\n"
         return (SYSTEM_PROMPT if ru else SYSTEM_PROMPT_EN).format(
-            bot=self.cfg["bot_name"], owner=self.hub.owner or ("игрок" if ru else "player"), mods=mods,
+            character=persona.character(getattr(self.hub, "persona", None), ru), bot=self.cfg["bot_name"], owner=self.hub.owner or ("игрок" if ru else "player"), mods=mods,
             language=LANG_NAMES.get(lang, lang),
             mod_hints=(head + "\n".join(hints)).format(bot=self.cfg["bot_name"]) if hints else "")
 
@@ -671,27 +698,28 @@ class Agent:
                 break
             self.history = self.history[users[1]:]
 
-    async def run(self, user_text, kind="user", question=False, acked=False, think=False, order=False):
-        """kind: "user" (the player said something) or "event" (a background task finished).
-        question: the player only asked something, so nothing may be started in the game.
-        acked: the order was already answered aloud ("Есть, командир"): starting tasks needs no more words.
-        think: a "how / why / what to do" question: the model reasons before answering."""
+    async def run(self, user_text, kind="user", acked=False, think=False):
+        """kind: "user" (a player said something) or "event" (something happened: a job ended, an observation...).
+        acked: the order was already answered aloud by the instant acknowledgement (config "instant_ack").
+        think: the model reasons before answering. What to do — act, answer, ask or keep quiet — is its own choice."""
         self.cancelled = False
         for text in getattr(self, "pending_notes", []):
             self.history.append({"role": "user", "content": text})
         self.pending_notes = []
         self.in_turn = True
         try:
-            return await self._run(user_text, kind, question, acked, think, order)
+            return await self._run(user_text, kind, acked, think)
         finally:
             self.in_turn = False
 
-    async def _run(self, user_text, kind, question, acked, think, order):
+    async def _run(self, user_text, kind, acked, think):
         # the language of the answer, next to every phrase: with a long Russian history the model kept answering in
         # Russian after the commander switched to English (the system prompt alone did not turn it)
         lang = getattr(self.hub, "lang", "ru")
+        before = self.history[-8:]   # what the turn follows: kept with it in the training data
         self.history.append({"role": "user", "content": "%s\n[Отвечай на языке / reply in: %s]" % (
             user_text, LANG_NAMES.get(lang, lang))})
+        turn_start = self.history[-1]
         said = False
         spoken = []         # never say the same thing twice in one turn
         calls_made = {}     # (tool, args) -> times: a small model can loop on the same call
@@ -711,10 +739,10 @@ class Agent:
             messages = [{"role": "system", "content": self._system()}] + self.history
             try:
                 t0 = time.time()
-                # No forced tool call any more: forcing one made him answer "Спасибо" with "иду за тобой" + follow.
-                # He reasons first on the commander's phrase (think), then acts or just answers.
-                # a spoken answer is expected (not an order, whose words alone are a failure): say it while it is written
-                stream = kind == "user" and not order and hasattr(self.hub, "say")
+                # No forced tool call: forcing one made him answer "Спасибо" with "иду за тобой" + follow.
+                # He reasons first on the commander's phrase (think), then acts or just answers — his choice.
+                # Whatever he says is said while it is being written
+                stream = kind == "user" and hasattr(self.hub, "say")
 
                 async def say_now(sentence):
                     if not getattr(self.hub, "cut_speech", False) or not stream_started:
@@ -729,11 +757,14 @@ class Agent:
                 if time.time() - t0 > 150 and hasattr(self.hub, "note_llm_failure"):
                     self.hub.note_llm_failure(why="ответ шёл %.0f с" % (time.time() - t0))   # the PC is choking
                 promised = PROMISE_RE.search(reply.get("content") or "")
-                if step == 0 and not reply.get("tool_calls") and ((kind == "user" and order) or promised):
-                    # also after an event: "found the press, I keep searching" — and he stood still
-                    # an order answered with words only ("Есть, командир." — and he stands still), or a promise
-                    # ("иду", "открываю") without the action: ask again, this time an action is due
+                if step == 0 and not reply.get("tool_calls") and promised:
+                    # he said he would do something ("иду", "открываю") but did not: his own words are not kept
+                    # by his hands. Ask again — this time the action he himself promised is due (what he already
+                    # said aloud stays said)
+                    first = reply.get("spoken", "")
                     reply = await self.llm.chat(messages, force_tool=True, tools=self._tools())
+                    if first:
+                        reply["spoken"] = first
             except Exception as e:
                 # most often the conversation outgrew the model's context: keep only the current turn and retry
                 self.hub.log("Ошибка ИИ (%s), сокращаю память и повторяю" % e)
@@ -753,6 +784,7 @@ class Agent:
             if self.cancelled:
                 break   # "stop" came while the AI was thinking: this answer is not carried out
             already = reply.pop("spoken", "")   # said while the answer was being written
+            said_calls = set(reply.pop("spoken_calls", []))   # reply calls said the same way
             self.history.append(reply)
             calls = reply.get("tool_calls")
             text = reply["content"]
@@ -789,6 +821,11 @@ class Agent:
                 if self.cancelled:
                     self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": "отменено: командир сказал стоп"})
                     continue
+                if name == "reply" and call.get("id") in said_calls:
+                    said = True
+                    spoken.append(args.get("text", ""))
+                    self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": "сказано"})
+                    continue
                 key = (name, json.dumps(args, ensure_ascii=False, sort_keys=True))
                 calls_made[key] = calls_made.get(key, 0) + 1
                 same_tool = sum(n for (t, _), n in calls_made.items() if t == name)
@@ -801,12 +838,6 @@ class Agent:
                     self.history.append({"role": "tool", "tool_call_id": call.get("id", ""),
                                          "content": "уже сделано в этом ходе, результат выше — не повторяй. Ответь командиру или закончи ход."})
                     self.hub.log("(повтор не выполняю) %s %s" % (name, key[1][:120]))
-                    continue
-                if question and name in TASK_TOOLS:
-                    repeats += 1
-                    self.history.append({"role": "tool", "tool_call_id": call.get("id", ""),
-                                         "content": "не выполнено: командир только спросил, ничего не просил делать. Просто ответь ему."})
-                    self.hub.log("(на вопрос дела не начинаю) %s %s" % (name, key[1][:120]))
                     continue
                 if name in TASK_TOOLS and kind != "user":
                     # across events: a task that ends at once in failure, started again and again every 2 seconds
@@ -861,8 +892,19 @@ class Agent:
                 self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
             if only_reply or only_tasks or (repeats and repeats == len(calls)):
                 break
-        if kind == "user" and not said and not acked and started and not self.cancelled:
-            # he got down to work without a word: one short line so the commander knows he heard
-            short = last_text if last_text and len(last_text) <= 70 and "?" not in last_text else "Выполняю, командир."
-            await self.hub.say(short)
+        if kind == "user" and not said and not acked and started and not self.cancelled and last_text \
+                and len(last_text) <= 70 and "?" not in last_text:
+            # he got down to work and his short words came with the action: say them, so the commander knows he heard
+            await self.hub.say(last_text)
+        self._log_turn(before, turn_start, kind, lang)
         self._trim()
+
+    def _log_turn(self, before, turn_start, kind, lang):
+        """The finished turn goes to the training data (dataset.py): what he saw, thought, did and what came of it."""
+        ds = getattr(self.hub, "dataset", None)
+        if ds is None:
+            return
+        i = next((i for i, m in enumerate(self.history) if m is turn_start), None)
+        if i is None:
+            return
+        ds.turn(self._system(), self._tools(), before, self.history[i:], kind, lang, getattr(self.hub, "persona", ""))
