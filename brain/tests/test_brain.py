@@ -20,6 +20,7 @@ import agent_en  # noqa: E402
 import altron  # noqa: E402
 import dataset  # noqa: E402
 import feelings  # noqa: E402
+import field_test  # noqa: E402
 import knowledge  # noqa: E402
 import lang  # noqa: E402
 import launcher  # noqa: E402
@@ -42,6 +43,7 @@ def run(coro):
 def make_hub(**cfg_over):
     cfg = json.loads((BRAIN / "config.json").read_text(encoding="utf-8"))
     cfg["memory_dir"] = tempfile.mkdtemp()
+    cfg["brain_log"] = ""   # tests do not write into brain/logs/brain.log
     cfg.update(cfg_over)
     hub = altron.Hub(cfg)
     hub.owner = "Egor"
@@ -134,6 +136,22 @@ class Buildings(unittest.TestCase):
             structures.plan_args({"kind": "castle"})
 
 
+    def test_the_plan_is_told_to_his_hands(self):
+        plan = structures.plan("wall", 3, 1, 2, "minecraft:cobblestone")
+        text = structures.describe(plan, (100, 64, -5))
+        self.assertEqual(text, "y 64, cobblestone: z -5 x 100..102\ny 65, cobblestone: z -5 x 100..102")
+
+
+class Hands(unittest.TestCase):
+    def test_no_scripted_routines_only_hands(self):
+        names = {t["function"]["name"] for t in agent.TOOLS}
+        self.assertTrue({"control", "view"} <= names)
+        self.assertFalse(names & {"baritone", "obtain", "smelt", "fetch", "stash", "autonomy", "assist", "sleep"})
+        # nothing acts in the world but the keyboard and the mouse (control; gui and click_slot in windows)
+        self.assertFalse(names & {"mine", "goto", "follow", "attack", "craft", "use_block", "place_block", "break_block",
+                                  "give", "eat", "turn", "press_key", "emote", "explore", "container_take"})
+
+
 class Planner(unittest.TestCase):
     def setUp(self):
         k = knowledge.Knowledge()
@@ -144,17 +162,9 @@ class Planner(unittest.TestCase):
                       "out": [["thermal:iron_dust", 2]]}]
         self.k = k
 
-    def test_a_seen_machine_of_any_mod_is_used(self):
-        _, steps, unresolved = self.k.acquire("thermal:iron_dust", 4, {"minecraft:raw_iron": 2},
-                                              stations={"thermal:machine_pulverizer"})
-        self.assertEqual(unresolved, [])
-        self.assertEqual(steps[0][0], "machine")
-        self.assertEqual(steps[0][1]["machines"], ["thermal:machine_pulverizer"])
-
-    def test_an_unseen_machine_is_asked_for(self):
-        _, steps, unresolved = self.k.acquire("thermal:iron_dust", 4, {"minecraft:raw_iron": 2}, stations=set())
-        self.assertEqual(steps, [])
-        self.assertTrue(unresolved)
+    def test_a_machine_of_any_mod_is_known(self):
+        # the machine's recipes are knowledge for the AI: which block makes iron dust
+        self.assertEqual(self.k.machine("thermal:pulverizer")["blocks"], ["thermal:machine_pulverizer"])
 
 
 class Install(unittest.TestCase):
@@ -188,7 +198,7 @@ class Voice(unittest.TestCase):
     def test_styles_and_moods(self):
         t = speech.TTS.__new__(speech.TTS)
         t.pitch, t.comb, t.chorus, t.drive, t.hall = speech.TTS.STYLES["ultron"]
-        t.speed, t.moods, t.band = 1.0, True, None
+        t.speed, t.moods, t.band, t.crush, t.flat = 1.0, True, None, 0, None
         configs = []
         t._config = lambda **k: configs.append(k) or k
 
@@ -213,6 +223,29 @@ class Voice(unittest.TestCase):
         self.assertEqual(t.paths, {})                     # a voice file that is not there: the common voice is used
         synth = np.frombuffer(b"".join(t.synth("Test.", None, "cold")), "<i2")
         self.assertTrue(len(synth) and np.isfinite(synth).all())
+        self.assertLess(configs[-1]["noise_scale"], 0.667)   # the even, monotonous delivery of a synthesizer
+
+    def test_a_windows_voice_says_russian(self):
+        import sapi
+        t = speech.TTS.__new__(speech.TTS)
+        t.cfg, t.moods = {"tts_voice": "none.onnx", "tts_speed": 1.0}, True
+        t.use(persona.voice_settings({}, "teammate"))
+        said = []
+        old = sapi.find, sapi.speak
+        sapi.find = lambda name: "IVONA 2 Maxim" if name == "Maxim" else None
+        sapi.speak = lambda voice, text, rate=0: said.append((voice, text, rate)) or (
+            (np.sin(np.arange(2205) / 5) * 8000).astype(np.int16), 22050)
+        try:
+            chunks = list(t.synth("Докладываю. У нас минус дом!", "ru"))
+            self.assertEqual([v for v, _, _ in said], ["IVONA 2 Maxim", "IVONA 2 Maxim"])   # sentence by sentence
+            self.assertEqual(said[0][2], 1)                  # 1.08 of the pace is +1 on Windows' scale
+            self.assertEqual(len(chunks), 2)
+
+            self.assertEqual(t._sapi_voice("en"), "IVONA 2 Maxim")   # English too, with Maxim's robot accent
+            sapi.find = lambda name: None
+            self.assertIsNone(t._sapi_voice("ru"))            # not installed: the Piper synthesizer voice says it
+        finally:
+            sapi.find, sapi.speak = old
 
     def test_personas(self):
         self.assertEqual(persona.find("говори как тиммейт"), "teammate")
@@ -220,6 +253,34 @@ class Voice(unittest.TestCase):
         cfg = {"tts_style": "robot", "tts_voices": {"ru": "a.onnx"}, "tts_personas": {"teammate": {"voices": {"ru": "b.onnx"}}}}
         self.assertEqual(persona.voice_settings(cfg, "altron")["style"], "robot")    # config.json's own style stays
         self.assertEqual(persona.voice_settings(cfg, "teammate")["voices"]["ru"], "b.onnx")
+        self.assertEqual(persona.voice_settings(cfg, "")["style"], "synth")          # the teammate talks by default
+
+
+class VoicePreview(unittest.TestCase):
+    def test_writes_the_phrases_and_keeps_the_tuning(self):
+        import voice_preview
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        (tmp / "brain").mkdir()
+        (tmp / "brain" / "config.json").write_text(json.dumps({"tts_voice": "a.onnx"}), encoding="utf-8")
+        seen = []
+
+        class FakeTTS:
+            def __init__(self, cfg, settings):
+                seen.append(settings)
+
+            def synth(self, text, lang):
+                yield b"\x00\x00" * 480
+
+        old = voice_preview.BRAIN_DIR, speech.TTS
+        voice_preview.BRAIN_DIR, speech.TTS = tmp / "brain", FakeTTS
+        try:
+            voice_preview.main(["--persona", "teammate", "--speed", "1.2", "--crush", "11025", "--save", "--no-play"])
+        finally:
+            voice_preview.BRAIN_DIR, speech.TTS = old
+        self.assertEqual((seen[0]["style"], seen[0]["speed"], seen[0]["crush"]), ("synth", 1.2, 11025))
+        self.assertEqual(len(list((tmp / "test-reports" / "voice").glob("teammate_*.wav"))), 3)
+        cfg = json.loads((tmp / "brain" / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(cfg["tts_personas"]["teammate"]["speed"], 1.2)
 
 
 class Streaming(unittest.TestCase):
@@ -271,6 +332,22 @@ class Streaming(unittest.TestCase):
         self.assertEqual(reply["spoken_calls"], ["r1"])
         self.assertEqual([c["function"]["name"] for c in reply["tool_calls"]], ["reply", "follow"])
 
+    def test_calls_the_server_did_not_parse(self):
+        xml = ('Хорошо, <tool_call>\n<function=explore>\n<parameter=radius>\n50\n</parameter>\n'
+               '<parameter=blocks>\nminecraft:oak_log\n</parameter>\n</function>\n</tool_call>')
+        calls = agent._parse_inline_tool_calls(xml)
+        self.assertEqual(calls[0]["function"]["name"], "explore")
+        self.assertEqual(json.loads(calls[0]["function"]["arguments"]), {"radius": 50, "blocks": "minecraft:oak_log"})
+        js = '<tool_call>{"name": "follow", "arguments": {}}</tool_call>'
+        self.assertEqual(agent._parse_inline_tool_calls(js)[0]["function"]["name"], "follow")
+        self.assertEqual(agent._strip_inline_calls("Пока ты отсутствовал, <tool_call><function=exp"), "Пока ты отсутствовал,")
+
+        def handler(req):
+            return httpx.Response(200, json={"choices": [{"message": {"content": "Хорошо, <tool_call><function=exp"}}]})
+        llm = agent.LLM({"llm_port": 1})
+        llm.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.assertEqual(run(llm.chat([{"role": "user", "content": "x"}]))["content"], "")   # an unfinished call is not said
+
     def test_online_service_gets_no_llama_fields(self):
         seen = {}
 
@@ -315,12 +392,12 @@ class Companion(unittest.TestCase):
                           "msg": "для постройки стену не хватает: 20x minecraft:cobblestone"}))
         self.assertIn("не хватает", run(hub.requests.get())[2])   # the AI hears it and can tell the commander
 
-    def test_death_becomes_his_goal(self):
+    def test_death_is_told_not_decided(self):
         hub = make_hub()
         hub.joined, hub.bot = True, object()
         run(hub.after_death([10, 64, -16], ""))
-        self.assertIn("10 64 -16", hub.goals_text())          # the goal is in front of the AI at every turn
-        self.assertIn("реши сам", run(hub.requests.get())[2])  # how to get the things back is its own decision
+        self.assertEqual(hub.goals_text(), "")                 # no goal made for him: whether to go back is his call
+        self.assertIn("10 64 -16", run(hub.requests.get())[2])  # he hears where his things lie
 
     def test_goals(self):
         hub = make_hub()
@@ -367,6 +444,18 @@ class Companion(unittest.TestCase):
         run(hub.handle_phrase("Egor", "Альтрон, иди за мной"))
         self.assertEqual(acks, [])                         # no canned "Есть, командир": the AI answers itself
         self.assertEqual(hub.requests.qsize(), 1)
+
+    def test_tags_and_half_phrases_are_not_said(self):
+        hub = make_hub()
+        spoken = []
+
+        class Tts:
+            def synth(self, text, lang=None, mood=None):
+                spoken.append(text)
+                yield b"\x00\x00"
+        hub.tts, hub.host = Tts(), type("W", (), {"write": lambda self, b: None, "drain": lambda self: asyncio.sleep(0)})()
+        run(hub.say("[Наблюдение] Командир смотрит на снег."))
+        self.assertEqual(spoken, ["Командир смотрит на снег."])
 
     def test_stop_is_a_reflex_and_the_words_are_his(self):
         hub = make_hub()
@@ -592,6 +681,115 @@ class Learning(unittest.TestCase):
         turns, _ = dataset.load(Hub.dataset.dir)
         self.assertEqual(len(turns), 1)
         self.assertEqual([m["role"] for m in list(turns.values())[0]["turn"]], ["user", "assistant", "tool", "tool", "assistant"])
+
+
+class FieldTestDryRun(unittest.TestCase):
+    """The field test itself, run against a pretend brain: every part and the report, without the game."""
+
+    def test_every_part_and_the_report(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        log_path = tmp / "brain.log"
+
+        class Clock:
+            now = 1000.0
+
+            def time(self):
+                return self.now
+
+            def sleep(self, s):
+                self.now += max(s, 0.05)
+
+            def strftime(self, *a):
+                return time.strftime(*a)
+        clock = Clock()
+
+        class FakeBrain(field_test.Brain):
+            def __init__(self):
+                self.bot_pos, self.host_pos = [0.0, 64.0, 0.0], [3.0, 64.0, 0.0]
+                self.persona, self.goals, self.running = "altron", [], None
+                self.blocks = {}
+
+            def write(self, *lines):
+                with open(log_path, "a", encoding="utf-8") as f:
+                    for ln in lines:
+                        f.write("2026-01-01 12:00:00 " + ln + "\n")
+
+            def call(self, msg, timeout=300):
+                t = msg["type"]
+                if t == "state":
+                    return {"busy": False, "requests": 0, "speaking": False, "macro": False, "running": self.running,
+                            "joined": True, "state": {"pos": self.bot_pos}, "persona": self.persona,
+                            "goals": self.goals, "owner": "Egor"}
+                if t == "say":
+                    text = msg["text"]
+                    if "тиммейт" in text:
+                        self.persona = "teammate"
+                        self.write("  -> persona {}: ok")
+                    elif "обычный голос" in text:
+                        self.persona = "altron"
+                    elif "охраняй" in text:
+                        self.goals = ["охранять командира"]
+                        self.write("  -> goal {}: ok")
+                    elif "не охранять" in text:
+                        self.goals = []
+                    elif "ко мне" in text:
+                        self.bot_pos = list(self.host_pos)
+                        self.write("  -> come {}: ok")
+                    elif "Молодец" in text:
+                        self.write("  -> feedback {}: ok")
+                    self.write("Альтрон: " + ("Fine, thanks." if text.startswith("Altron") else "Хм, ладно."))
+                    return "сказано"
+                if t == "task":
+                    a = msg["args"]
+                    if msg["name"] == "control":   # the pretend hands do what the keys and the mouse say
+                        if a.get("track"):
+                            self.bot_pos = list(self.host_pos)
+                        elif "jump" in a.get("keys", []):
+                            self.bot_pos = [self.bot_pos[0], self.bot_pos[1] + 1, self.bot_pos[2]]
+                        elif "forward" in a.get("keys", []):
+                            self.bot_pos = [self.bot_pos[0] + 12, self.bot_pos[1], self.bot_pos[2]]
+                        key = "%d,%d,%d" % (a.get("x", 0), a.get("y", 0) + (1 if a.get("right") else 0), a.get("z", 0))
+                        if a.get("left"):
+                            self.blocks[key] = "minecraft:air"
+                        if a.get("right"):
+                            self.blocks[key] = "minecraft:stone"
+                    self.running = None
+                    return "ГОТОВО: руки"
+                if t == "probe":
+                    a = msg["args"]
+                    if "tp_host" in a:
+                        self.host_pos = list(a["tp_host"])
+                        self.bot_pos = [self.host_pos[0] - 2, self.host_pos[1], self.host_pos[2]]
+                    if "tp_bot" in a:
+                        self.bot_pos = list(a["tp_bot"])
+                    if "commands" in a and any("time set 13000" in c for c in a["commands"]):
+                        self.write("(событие мира) night {}")
+                    got = {"%d,%d,%d" % tuple(b): self.blocks.get("%d,%d,%d" % tuple(b), "minecraft:stone") for b in a.get("blocks", [])}
+                    return {"bot": {"pos": self.bot_pos}, "host": {"pos": self.host_pos}, "entities": [], "blocks": got}
+                return "ok"
+
+        old = field_test.time, field_test.REPORT_DIR
+        field_test.time, field_test.REPORT_DIR = clock, tmp
+        try:
+            args = type("A", (), {"keep_course": False})()
+            t = field_test.FieldTest(FakeBrain(), {"brain_port": 1, "bot_dir": str(tmp), "host_dir": str(tmp)}, args)
+            t.log = field_test.BrainLog(log_path)
+            t.build_course()
+            for part in ("hands", "talk", "goals", "events"):
+                getattr(t, "part_" + part)()
+            t.take_down()
+            report = t.write().read_text(encoding="utf-8")
+        finally:
+            field_test.time, field_test.REPORT_DIR = old
+        marks = {r[1]: r[2] for r in t.results}
+        self.assertEqual(marks["идти (forward+sprint 3 с)"], "✅")
+        self.assertEqual(marks["сломать блок (left hold)"], "✅")
+        self.assertEqual(marks["поставить блок (right click)"], "✅")
+        self.assertEqual(marks["тиммейт: включился?"], "✅")
+        self.assertEqual(marks["английский"], "✅")
+        self.assertEqual(marks["ночь"], "✅")
+        self.assertIn("| руки | бежать к командиру (track) | ✅ |", report)
+        self.assertIn("## config.json", report)
 
 
 if __name__ == "__main__":

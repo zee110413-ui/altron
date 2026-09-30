@@ -120,12 +120,12 @@ public final class Bot {
         return player().getDeltaMovement().horizontalDistanceSqr() > 0.003;
     }
 
-    /** Called every client tick: keeps turning toward the last target (Baritone steers the head while it walks). */
+    /** Called every client tick: keeps turning toward the last target (his legs steer the head while he walks). */
     static void tickLook() {
         clock++;
         if (holdTicks > 0) holdTicks--;
         if (lookTicks <= 0 || player() == null) return;
-        if (Baritone.busy() && (holdTicks <= 0 || walking() || Baritone.pathing())) {   // never steer against a walk
+        if (Nav.busy() && (holdTicks <= 0 || walking() || Nav.pathing())) {   // never steer against a walk
             lookTicks = 0;
             return;
         }

@@ -16,12 +16,32 @@ echo Собираю мод Альтрона (первый раз 5-15 минут
 echo Building the Altron mod (the first time takes 5-15 minutes: Forge is downloaded)...
 cd /d "%ROOT%mod"
 call gradlew.bat --no-daemon --console=plain build
-if errorlevel 1 (
-    echo.
-    echo ОШИБКА СБОРКИ / BUILD FAILED
-    pause
-    exit /b 1
+if not errorlevel 1 goto built
+rem The Forge server did not answer (it is often slow or down): the plugin and Minecraft were downloaded by an
+rem earlier build, so build from what is already on this PC.
+echo.
+echo Не достучался до сервера Forge - собираю из того, что уже скачано раньше...
+echo Could not reach the Forge server - building from what was downloaded before...
+call gradlew.bat --no-daemon --console=plain --offline build
+if not errorlevel 1 goto built
+if defined GRADLE_USER_HOME (
+    set "GRADLE_USER_HOME="
+    echo Пробую ещё раз с общим кэшем Gradle в папке пользователя...
+    echo Once more with the common Gradle cache in the user folder...
+    call gradlew.bat --no-daemon --console=plain --offline build
+    if not errorlevel 1 goto built
 )
+echo.
+echo ОШИБКА СБОРКИ / BUILD FAILED
+echo Если выше "could not resolve" или "was not found" - нет связи с maven.minecraftforge.net, а раньше мод здесь не
+echo собирался. Проверь: curl.exe -I https://maven.minecraftforge.net/  - или скачай готовый мод со страницы
+echo GitHub Actions ^(Mod build and release, файл altron-0.1.0^) и положи jar в mod\build\libs.
+echo "could not resolve" / "was not found" above: maven.minecraftforge.net is not reachable. Or take the built jar
+echo from GitHub Actions ^(Mod build and release^) and put it into mod\build\libs.
+pause
+exit /b 1
+
+:built
 echo.
 echo Готово. Мозг Альтрона сам поставит мод в выбранную сборку при запуске.
 echo Done. Altron's brain installs the mod into the chosen modpack when it starts.

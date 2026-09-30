@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.BotClient;
 import com.altron.bot.Combat;
 import com.altron.bot.Task;
@@ -31,7 +31,7 @@ public class AttackTask extends Task {
     @Override
     public void stop() {
         combat.stop();
-        Baritone.cancel();
+        Nav.cancel();
     }
 
     @Override

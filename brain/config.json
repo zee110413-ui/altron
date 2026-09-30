@@ -31,7 +31,7 @@
   "tts_voices": {"ru": "../models/piper/ru_RU-dmitri-medium.onnx", "en": "../models/piper/en_US-ryan-high.onnx"},
   "tts_style": "ultron",
   "tts_speed": 1.0,
-  "persona": "altron",
+  "persona": "teammate",
   "tts_personas": {"teammate": {"voices": {"ru": "../models/piper/ru_RU-denis-medium.onnx", "en": "../models/piper/en_US-danny-low.onnx"}}},
   "idle_think_minutes": 4,
   "observe_every_sec": 45,
@@ -56,6 +56,5 @@
   "bot_low_priority": true,
   "bot_render_always": false,
   "stt_keep_audio": true,
-  "legs": "own",
-  "extra_bot_mods": ["../mod/libs/baritone-api-forge-1.10.1.jar"]
+  "extra_bot_mods": []
 }

@@ -26,25 +26,20 @@ import java.util.Map;
 import java.util.PriorityQueue;
 
 /**
- * Altron's own legs: finding a way and walking it like a player, without Baritone.
+ * Altron's own legs: finding a way and walking it like a player.
  *
  * <p>A* over the cells his feet can stand in: walking (also diagonally), stepping up a block with a jump, dropping
  * down up to three blocks (any height into water), ladders and vines, swimming, and wooden doors and fence gates he
- * opens by hand on the way. He never breaks or places anything while walking: a guest does not dig through walls.
- * The search runs a few thousand cells per tick so the game never stutters; a far goal is reached in pieces (the part
- * of the world that is loaded, then onwards).
- *
- * <p>"legs" from the brain's config: "own" — these legs, with Baritone as a backup when it is installed and these
- * find no way; "own_only" — never Baritone; "baritone" — Baritone as before. Baritone.java routes walking here.
+ * opens by hand on the way. He never breaks or places anything while walking: a guest does not dig through walls
+ * (DigTask digs on purpose, through natural ground only). The search runs a few thousand cells per tick so the game
+ * never stutters; a far goal is reached in pieces (the part of the world that is loaded, then onwards).
  */
 public final class Legs {
-    public enum State {IDLE, SEARCHING, WALKING, FOLLOWING, BACKUP}
+    public enum State {IDLE, SEARCHING, WALKING, FOLLOWING}
 
     private static final int PER_TICK = 2500;        // cells searched per tick
     private static final int PER_SEARCH = 40000;     // cells per search before a partial way is taken
     private static final int MAX_DROP = 3;
-
-    public static volatile String mode = "own";
 
     private static State state = State.IDLE;
     private static Goal goal;
@@ -67,10 +62,6 @@ public final class Legs {
     }
 
     // ------------------------------------------------------------------ what the rest of the mod asks for
-    public static boolean enabled() {
-        return !"baritone".equalsIgnoreCase(mode) || !Baritone.installed();
-    }
-
     public static boolean gotoNear(BlockPos pos, int range) {
         start(new Near(pos.immutable(), Math.max(0, range)), null, 0);
         return true;
@@ -91,12 +82,12 @@ public final class Legs {
 
     /** Going somewhere or following someone (also while standing next to the one he follows). */
     public static boolean busy() {
-        return state != State.IDLE && (state != State.BACKUP || Baritone.rawBusy());
+        return state != State.IDLE;
     }
 
     /** Really on the way: searching or walking, not standing next to the one he follows. */
     public static boolean pathing() {
-        return state == State.SEARCHING || state == State.WALKING || (state == State.BACKUP && Baritone.rawPathing());
+        return state == State.SEARCHING || state == State.WALKING;
     }
 
     public static String lastFailure() {
@@ -104,7 +95,6 @@ public final class Legs {
     }
 
     public static void cancel() {
-        if (state == State.BACKUP) Baritone.rawCancel();
         state = State.IDLE;
         search = null;
         path = List.of();
@@ -113,7 +103,14 @@ public final class Legs {
     }
 
     private static void start(Goal g, String player, int range) {
-        if (state == State.BACKUP) Baritone.rawCancel();
+        // the same place again, or one a step away (Combat asks every second while chasing a mob): walk on,
+        // a new search each time would stop him every second
+        if (state == State.WALKING && follow == null && player == null && goal instanceof Near old && g instanceof Near n
+                && old.range() == n.range() && old.pos().distSqr(n.pos()) <= 4 && !path.isEmpty()
+                && path.get(path.size() - 1).distSqr(n.pos()) <= (n.range() + 2) * (n.range() + 2)) {
+            goal = g;
+            return;
+        }
         goal = g;
         follow = player;
         followRange = range;
@@ -139,10 +136,6 @@ public final class Legs {
     public static void tick() {
         LocalPlayer p = Bot.player();
         if (p == null || state == State.IDLE) return;
-        if (state == State.BACKUP) {
-            if (!Baritone.rawBusy()) state = State.IDLE;
-            return;
-        }
         if (follow != null && Bot.level().getGameTime() % 10 == 0) {
             Player t = Bot.findPlayer(follow);
             if (t != null) {
@@ -202,12 +195,6 @@ public final class Legs {
             // someone he follows is out of reach for now (across water, up a cliff): wait and look again
             state = State.FOLLOWING;
             retryAt = Bot.level().getGameTime() + 60;
-            if ("own".equalsIgnoreCase(mode) && Baritone.installed() && Baritone.rawFollow(follow)) state = State.BACKUP;
-            return;
-        }
-        if ("own".equalsIgnoreCase(mode) && Baritone.installed() && goal != null && goal.handOver()) {
-            AltronMod.LOG.info("[Altron] own legs found no way ({}), Baritone takes over", why);
-            state = State.BACKUP;
             return;
         }
         AltronMod.LOG.info("[Altron] no way: {}", why);
@@ -352,7 +339,7 @@ public final class Legs {
         mc.options.keyShift.setDown(sneak);
     }
 
-    static BlockPos feet(LocalPlayer p) {
+    public static BlockPos feet(LocalPlayer p) {
         // standing on a slab or a carpet the feet are inside its cell; on a full block, in the cell above it
         return BlockPos.containing(p.getX(), p.getY() + 0.05, p.getZ());
     }
@@ -388,7 +375,7 @@ public final class Legs {
 
     /** Nothing in the way of a player's body here: empty, or only thin things at its sides (a ladder on the wall, an
      *  open trapdoor), or a door or gate he opens by hand. */
-    private static boolean free(BlockPos c) {
+    public static boolean free(BlockPos c) {
         BlockState st = Bot.level().getBlockState(c);
         if (harmful(st)) return false;
         if (openable(st)) return true;
@@ -415,19 +402,23 @@ public final class Legs {
         return (free(c) || (low(c) && !harmful(Bot.level().getBlockState(c)))) && free(c.above());
     }
 
-    /** Something to stand on (or hold on to, or swim in) at this cell. */
+    /** Something to stand on (or hold on to, or swim at the surface of) at this cell. Under the surface is no
+     *  place to walk: he would float up off the way (and drown on a long one). */
     private static boolean support(BlockPos c) {
-        if (low(c) || climbable(c) || water(c)) return true;
+        if (low(c) || climbable(c) || (water(c) && !water(c.above()))) return true;
         BlockPos below = c.below();
         BlockState st = Bot.level().getBlockState(below);
         if (harmful(st)) return false;
-        VoxelShape s = st.getCollisionShape(Bot.level(), below);
-        if (s.isEmpty()) return false;
-        double top = s.max(Direction.Axis.Y);
-        return top >= 0.8 && top <= 1.0;   // not the top of a fence or a wall: nobody stands there
+        // what is under the middle of the cell, where his feet are: the top edge of a ladder or of an open trapdoor at
+        // the side is nothing to stand on, the top of a fence or a wall (1.5 high) is out of reach
+        double top = -1;
+        for (AABB box : st.getCollisionShape(Bot.level(), below).toAabbs()) {
+            if (box.intersects(BODY.minX, 0, BODY.minZ, BODY.maxX, 2, BODY.maxZ)) top = Math.max(top, box.maxY);
+        }
+        return top >= 0.8 && top <= 1.0;
     }
 
-    private static boolean standable(BlockPos c) {
+    public static boolean standable(BlockPos c) {
         return body(c) && support(c);
     }
 
@@ -437,8 +428,6 @@ public final class Legs {
 
         double h(BlockPos n);
 
-        /** Hand this goal over to Baritone (a backup when these legs find no way); false if it cannot take it. */
-        boolean handOver();
     }
 
     record Near(BlockPos pos, int range) implements Goal {
@@ -450,9 +439,6 @@ public final class Legs {
             return Math.max(0, octile(n.getX() - pos.getX(), n.getZ() - pos.getZ()) + Math.abs(n.getY() - pos.getY()) - range);
         }
 
-        public boolean handOver() {
-            return Baritone.rawGotoNear(pos, range);
-        }
     }
 
     record XZ(int x, int z) implements Goal {
@@ -464,9 +450,6 @@ public final class Legs {
             return octile(n.getX() - x, n.getZ() - z);
         }
 
-        public boolean handOver() {
-            return Baritone.rawGotoXZ(x, z);
-        }
     }
 
     static double octile(int dx, int dz) {
@@ -500,7 +483,8 @@ public final class Legs {
             this.goal = goal;
             // standing in the air for a moment (a jump, a ledge): search from the ground below
             BlockPos s = from;
-            for (int i = 0; i < 3 && !standable(s) && Bot.level().getBlockState(s.below()).getCollisionShape(Bot.level(), s.below()).isEmpty(); i++) {
+            for (int i = 0; i < 3 && !standable(s) && !water(s)
+                    && Bot.level().getBlockState(s.below()).getCollisionShape(Bot.level(), s.below()).isEmpty(); i++) {
                 s = s.below();
             }
             start = new Node(s);
@@ -581,10 +565,10 @@ public final class Legs {
                     }
                 }
             }
-            // up and down ladders and vines, and swimming up and down
-            if ((climbable(c) || inWater) && body(c.above())) add(n, c.above(), 1.5);
+            // up and down ladders and vines; under water, up to the surface
+            if ((climbable(c) || (inWater && water(c.above()))) && body(c.above())) add(n, c.above(), 1.5);
             BlockPos down = c.below();
-            if ((climbable(down) || water(down)) && body(down)) add(n, down, 1.5);
+            if (climbable(down) && body(down)) add(n, down, 1.5);
         }
 
         /** The way found: to the goal, or (out of budget) to the cell nearest to it — if that is any nearer. */

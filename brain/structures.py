@@ -92,3 +92,26 @@ def plan_args(args, resolve=lambda q: q):
 def _block_id(ref):
     ref = ref.strip().lower()
     return ref if ":" in ref else "minecraft:" + ref
+
+
+def describe(blocks, origin=(0, 0, 0)):
+    """The plan in few words for the AI's own hands: layer by layer (bottom first), each material as runs along x at
+    absolute coordinates — «y 64, cobblestone: z 20 x 10..16; z 21 x 10, 16; ...»."""
+    ox, oy, oz = origin
+    layers = {}
+    for x, y, z, b in blocks:
+        layers.setdefault(y, {}).setdefault(b.split(":")[-1], {}).setdefault(z, []).append(x)
+    out = []
+    for y in sorted(layers):
+        for b, rows in layers[y].items():
+            parts = []
+            for z in sorted(rows):
+                xs = sorted(rows[z])
+                runs, start = [], xs[0]
+                for a, n in zip(xs, xs[1:] + [None]):
+                    if n != a + 1:
+                        runs.append(str(start + ox) if start == a else "%d..%d" % (start + ox, a + ox))
+                        start = n
+                parts.append("z %d x %s" % (z + oz, ", ".join(runs)))
+            out.append("y %d, %s: %s" % (y + oy, b, "; ".join(parts)))
+    return "\n".join(out)

@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Inv;
 import com.altron.bot.Task;
@@ -45,7 +45,7 @@ public class GiveTask extends Task {
                 walker.stop();
                 walker = null;
             }
-            Baritone.cancel();
+            Nav.cancel();
             Bot.lookAt(target.getEyePosition());
             if (!Bot.aimed(target.getEyePosition(), 15) && ++aimWait < 12) return Status.RUNNING;   // face him, then hand it over
         }
@@ -77,6 +77,6 @@ public class GiveTask extends Task {
     @Override
     public void stop() {
         if (walker != null) walker.stop();
-        if (walk > 0) Baritone.cancel();
+        if (walk > 0) Nav.cancel();
     }
 }

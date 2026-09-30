@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Legs;
 import com.altron.bot.Task;
@@ -19,8 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Walk to a position (his own legs, or Baritone), or to a player who may keep moving.
- * What Baritone cannot do, it does like a player: climbs mod ladders, and opens an iron door with the button or
+ * Walk to a position with his own legs, or to a player who may keep moving.
+ * What the legs cannot do, it does like a player: climbs mod ladders, and opens an iron door with the button or
  * lever next to it and walks through at once. If it makes no progress it tries a new path, then gives up with the
  * reason instead of standing forever.
  */
@@ -43,8 +43,6 @@ public class GotoTask extends Task {
     private int passTicks;
     private int doors;
     private String blockedBy = "";
-    private boolean escaping;      // shut in a pit or a nook: digging natural ground and placing blocks only to get out
-    private Vec3 startPos;
 
     public GotoTask(String name, BlockPos target, int range) {
         this(name, target, range, null);
@@ -58,7 +56,7 @@ public class GotoTask extends Task {
     }
 
     /**
-     * The way goes up or down, and Baritone cannot find it (it knows vanilla ladders only): climb a ladder that
+     * The way goes up or down, and the legs cannot find it (it knows vanilla ladders only): climb a ladder that
      * leads there like a player, then walk on. At most a few ladders per trip.
      */
     private boolean climbLadder() {
@@ -67,7 +65,7 @@ public class GotoTask extends Task {
         climbs++;
         idle = 0;
         stuck = 0;
-        Baritone.cancel();
+        Nav.cancel();
         climb = new ClimbTask(dy > 0, target.getY(), true);
         return true;
     }
@@ -80,7 +78,7 @@ public class GotoTask extends Task {
         return openIronDoor(6);
     }
 
-    /** slack: how far off the straight way the door may be (small when looking ahead, before Baritone gives up). */
+    /** slack: how far off the straight way the door may be (small when looking ahead, before the legs gives up). */
     private boolean openIronDoor(double slack) {
         if (doors >= 3) return false;
         var p = p();
@@ -123,7 +121,7 @@ public class GotoTask extends Task {
         activator = act;
         passing = new ArrayList<>(List.of(Vec3.atBottomCenterOf(door), Vec3.atBottomCenterOf(door.relative(ours.getOpposite())),
                 Vec3.atBottomCenterOf(door.relative(ours.getOpposite(), 2))));
-        Baritone.cancel();
+        Nav.cancel();
         return true;
     }
 
@@ -135,7 +133,7 @@ public class GotoTask extends Task {
     @Override
     protected Status run() {
         var p = p();
-        if (climb != null) {   // climbing a ladder Baritone could not use: then walk on
+        if (climb != null) {   // climbing a ladder the legs could not use: then walk on
             Status s = climb.tick();
             if (s == Status.RUNNING) return s;
             climb.stop();
@@ -144,14 +142,14 @@ public class GotoTask extends Task {
             if (s == Status.FAILED) blockedBy = why;
             stuck = 0;
             lastPos = p.position();
-            Baritone.gotoNear(target, range);
+            Nav.gotoNear(target, range);
             return Status.RUNNING;
         }
         if (approach != null) {   // to the doorstep first
-            if (approachTicks++ == 0) Baritone.gotoNear(approach, 0);
+            if (approachTicks++ == 0) Nav.gotoNear(approach, 0);
             double hd = Math.hypot(p.getX() - (approach.getX() + 0.5), p.getZ() - (approach.getZ() + 0.5));
-            if (hd < 0.7 || (approachTicks > 20 && !Baritone.busy()) || approachTicks > 20 * 20) {
-                Baritone.cancel();
+            if (hd < 0.7 || (approachTicks > 20 && !Nav.busy()) || approachTicks > 20 * 20) {
+                Nav.cancel();
                 approach = null;
                 opener = new UseBlockTask(activator);
             }
@@ -179,7 +177,7 @@ public class GotoTask extends Task {
                 idle = 0;
                 stuck = 0;
                 lastPos = p.position();
-                Baritone.gotoNear(target, range);
+                Nav.gotoNear(target, range);
                 return Status.RUNNING;
             }
             Vec3 next = passing.get(0);
@@ -191,70 +189,48 @@ public class GotoTask extends Task {
             Player t = Bot.findPlayer(player);
             if (t != null && t.blockPosition().distSqr(target) > 9) {
                 target = t.blockPosition();   // he moved: head for where he is now
-                if (started) Baritone.gotoNear(target, range);
+                if (started) Nav.gotoNear(target, range);
             }
         }
         double d = Bot.distTo(target);
-        if (startPos == null) startPos = p.position();
         if (!started) {
             if (d <= range + 0.8) return done("уже на месте");
-            // getting out of a pit needs digging a step or putting a block down: Baritone's job, his own legs never do it
-            boolean going = escaping && Baritone.installed() ? Baritone.rawGotoNear(target, range) : Baritone.gotoNear(target, range);
-            if (!going) return fail("не могу ходить: нет ни своих ног, ни Baritone");
+            if (!Nav.gotoNear(target, range)) return fail("не могу пойти к " + Bot.pos(target));
             started = true;
             lastPos = p.position();
             return Status.RUNNING;
         }
-        // an iron door with its button right on the way: press it, as a person would, instead of letting Baritone
+        // an iron door with its button right on the way: press it, as a person would, instead of letting the legs
         // dig under the wall of someone's house
         if (age % 40 == 5 && d > range + 2 && doors < 3 && openIronDoor(2.5)) {
             return Status.RUNNING;
         }
         // close enough — but while still walking, only when really there: through a door he used to stop in the doorway
-        if (d <= range + 0.8 && (!Baritone.busy() || d <= range + 0.3)) {
-            Baritone.cancel();
+        if (d <= range + 0.8 && (!Nav.busy() || d <= range + 0.3)) {
+            Nav.cancel();
             return done("пришёл к " + Bot.pos(target));
         }
-        if (age > 20 && !Baritone.busy()) {
+        if (age > 20 && !Nav.busy()) {
             if (++idle > 10) {
-                // Baritone stopped a little short: fine — but not a doorway short of a room
+                // the legs stopped a little short: fine — but not a doorway short of a room
                 if (d <= range + 1.2) return done("пришёл к " + Bot.pos(target));
-                // Baritone found no way: maybe up or down a mod's ladder, or through an iron door
+                // the legs found no way: maybe up or down a mod's ladder, or through an iron door
                 if (climbLadder() || openIronDoor()) return Status.RUNNING;
                 int room = roomAround(p().blockPosition());
-                // shut in, or Baritone sees no way at all and he has not made a single step (a pit by conveyors
-                // Baritone will not walk on)
-                boolean noStep = startPos != null && p().position().distanceTo(startPos) < 1.5;
-                if ((room < 30 || noStep) && !escaping) {
-                    // fallen into a hole (a conveyor shaft...): like a person, dig a step in the earth or put a block
-                    // under the feet — only natural ground may go (Baritone.Protected), nobody's build
-                    escaping = true;
-                    Baritone.setAllowBreak(true, java.util.Set.of());
-                    Baritone.command("set allowPlace true");
-                    // blocks to put under the feet: the cheap natural ones he carries (sand, dirt, gravel...)
-                    java.util.List<net.minecraft.world.item.Item> blocks = new java.util.ArrayList<>();
-                    for (int i = 0; i < 36; i++) {
-                        var st = p().getInventory().getItem(i);
-                        if (st.getItem() instanceof net.minecraft.world.item.BlockItem bi && Baritone.natural(bi.getBlock())
-                                && bi.getBlock().defaultBlockState().isCollisionShapeFullBlock(Bot.level(), p().blockPosition())) {
-                            blocks.add(st.getItem());
-                        }
-                    }
-                    Baritone.setThrowaway(blocks);
-                    started = false;
-                    idle = 0;
-                    return Status.RUNNING;
-                }
+                // shut in, or the legs sees no way at all and he has not made a single step (a pit by conveyors
+                // the legs will not walk on)
+                // shut in (a pit, a closed room): how to get out — dig a step, put a block under the feet, open
+                // something — is the AI's own choice, with its hands (control); here only what he sees is said
                 return fail("не смог дойти до " + Bot.pos(target) + ", осталось " + Math.round(d) + " бл."
                         + (blockedBy.isEmpty() ? "" : " — " + blockedBy)
                         + (Legs.lastFailure().isEmpty() ? "" : " (" + Legs.lastFailure() + ")")
-                        + (room < 30 ? " — Я ЗАПЕРТ: вокруг всего " + room + " свободных клеток, выход закрыт (дверь, которую мне"
-                        + " не открыть, или стены — ломать чужое не буду)" : ""));
+                        + (room < 30 ? " — Я ЗАПЕРТ: вокруг всего " + room + " свободных клеток, выход закрыт (яма, стены или"
+                        + " дверь, которую не открыть)" : ""));
             }
         } else {
             idle = 0;
         }
-        // Baritone "busy" but the bot does not move (endless path search, blocked way): try again, then give up
+        // the legs "busy" but the bot does not move (endless path search, blocked way): try again, then give up
         if (age % 20 == 0) {
             Vec3 now = p.position();
             if (lastPos != null && now.distanceToSqr(lastPos) < 0.25) {
@@ -262,12 +238,12 @@ public class GotoTask extends Task {
                     stuck = 0;
                     if (climbLadder() || openIronDoor()) return Status.RUNNING;
                     if (++repaths > 2) {
-                        Baritone.cancel();
+                        Nav.cancel();
                         return fail("не могу пройти к " + Bot.pos(target) + " (застрял, осталось " + Math.round(d) + " бл.)"
                                 + (blockedBy.isEmpty() ? "" : " — " + blockedBy));
                     }
-                    Baritone.cancel();
-                    Baritone.gotoNear(target, range + repaths);
+                    Nav.cancel();
+                    Nav.gotoNear(target, range + repaths);
                 }
             } else {
                 stuck = 0;
@@ -302,43 +278,22 @@ public class GotoTask extends Task {
         return seen.size();
     }
 
-    private void endEscape() {
-        if (!escaping) return;
-        escaping = false;
-        Baritone.setAllowBreak(false, null);
-        Baritone.command("set allowPlace false");
-        Baritone.setThrowaway(java.util.List.of());
-    }
-
-    @Override
-    protected Status done(String msg) {
-        endEscape();
-        return super.done(msg);
-    }
-
-    @Override
-    protected Status fail(String msg) {
-        endEscape();
-        return super.fail(msg);
-    }
-
     @Override
     public void stop() {
-        endEscape();
         if (climb != null) climb.stop();
         if (opener != null) opener.stop();
         if (passTicks > 0) keys(false, false);
-        if (started) Baritone.cancel();
+        if (started) Nav.cancel();
     }
 
     @Override
     public void pause() {
-        Baritone.cancel();
+        Nav.cancel();
     }
 
     @Override
     public void resume() {
-        if (started) Baritone.gotoNear(target, range);
+        if (started) Nav.gotoNear(target, range);
     }
 
     @Override

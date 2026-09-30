@@ -131,12 +131,12 @@ public class Combat {
                 if (--pathCooldown <= 0) {
                     pathCooldown = 15;
                     var away = p.position().subtract(target.position()).normalize().scale(9).add(p.position());
-                    Baritone.gotoNear(net.minecraft.core.BlockPos.containing(away), 1);
+                    Nav.gotoNear(net.minecraft.core.BlockPos.containing(away), 1);
                 }
                 Bot.lookAt(target);
                 return true;
             }
-            if (Baritone.busy()) Baritone.cancel();
+            if (Nav.busy()) Nav.cancel();
             Bot.lookAt(target);
             // like a player: turn, settle the sight on the target, then pull the trigger (tighter aim far away);
             // a target that keeps dodging gets shot at anyway after a while
@@ -169,7 +169,7 @@ public class Combat {
                 Bot.lookAt(target);
                 return true;
             }
-            if (Baritone.busy()) Baritone.cancel();
+            if (Nav.busy()) Nav.cancel();
             Bot.lookAt(target);
             if (p.getAttackStrengthScale(0.5f) >= 0.95f && (Bot.aimed(target, 25) || d < 1.2)) {
                 Bot.mc().gameMode.attack(p, target);
@@ -191,7 +191,7 @@ public class Combat {
     private void approach(Entity e, int range) {
         if (--pathCooldown > 0) return;
         pathCooldown = 20;
-        Baritone.gotoNear(e.blockPosition(), range);
+        Nav.gotoNear(e.blockPosition(), range);
     }
 
     /** Gun with ammo > bow with arrows > best melee weapon. */

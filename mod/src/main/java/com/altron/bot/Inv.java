@@ -63,16 +63,15 @@ public final class Inv {
         return sb.length() == 0 ? "ничего нового" : sb.toString();
     }
 
-    /** Put the item at invIndex into the selected hotbar slot (or select it if already in the hotbar). */
     /**
-     * Put an inventory item into the hand. Hotbar slots 1 and 9 belong to Baritone (it keeps swapping a pickaxe
-     * and throwaway blocks into them), so anything else is held in slots 2-8, where it stays put.
+     * Put an inventory item into the hand: a tool already in the hotbar is simply selected; anything else is brought
+     * into slots 2-8, where it stays put.
      */
     public static void hold(LocalPlayer p, int invIndex) {
         if (invIndex < 0) return;
         ItemStack want = p.getInventory().getItem(invIndex);
-        boolean baritoneTool = want.getItem() instanceof DiggerItem;
-        if (invIndex < 9 && (baritoneTool || (invIndex >= 1 && invIndex <= 7))) {
+        boolean tool = want.getItem() instanceof DiggerItem;
+        if (invIndex < 9 && (tool || (invIndex >= 1 && invIndex <= 7))) {
             p.getInventory().selected = invIndex;
             return;
         }

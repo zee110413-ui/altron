@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Info;
 import com.altron.bot.Input;
@@ -105,12 +105,12 @@ public class UseEntityTask extends Task {
                 if (!list.isEmpty()) note = " (" + target + " не вижу, взял ближайшую технику)";
             }
             if (list.isEmpty() && near != null && p.blockPosition().distSqr(near) > 4) {
-                if (nearWalk == 0 || (nearWalk % 40 == 0 && !Baritone.busy())) Baritone.gotoNear(near, 1);
+                if (nearWalk == 0 || (nearWalk % 40 == 0 && !Nav.busy())) Nav.gotoNear(near, 1);
                 if (++nearWalk > 20 * 90) return fail("не смог дойти до " + target + " (" + Bot.pos(near) + ")");
                 return Status.RUNNING;
             }
             if (list.isEmpty()) return fail("не вижу рядом: " + target + "; " + around());
-            if (nearWalk > 0) Baritone.cancel();
+            if (nearWalk > 0) Nav.cancel();
             entity = list.get(0);
         }
         if (!entity.isAlive()) return fail(target + " пропал");
@@ -124,12 +124,12 @@ public class UseEntityTask extends Task {
         // reach like a player's: from the eyes to the nearest point of its body (a tank's middle is far from its side)
         double reach = Math.sqrt(entity.getBoundingBox().distanceToSqr(p.getEyePosition()));
         if (reach > 2.8 && p.getVehicle() == null) {
-            if (walk == 0 || walk % 30 == 0) Baritone.gotoNear(entity.blockPosition(), 1);
+            if (walk == 0 || walk % 30 == 0) Nav.gotoNear(entity.blockPosition(), 1);
             if (++walk > 20 * 90) return fail("не смог подойти к " + target);
             return Status.RUNNING;
         }
         if (walk > 0) {
-            Baritone.cancel();
+            Nav.cancel();
             walk = 0;
         }
         Bot.lookAt(entity.getBoundingBox().getCenter());
@@ -163,6 +163,6 @@ public class UseEntityTask extends Task {
     public void stop() {
         Input.release(Bot.mc().options.keyUse.getKey());
         if (crouch || sneak) Bot.mc().options.keyShift.setDown(false);
-        if (walk > 0) Baritone.cancel();
+        if (walk > 0) Nav.cancel();
     }
 }

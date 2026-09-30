@@ -69,7 +69,7 @@ for name in ("whisper-large-v3-turbo", "whisper-small", "piper"):
     copy_tree(ALTRON / "models" / name, KIT / "models" / name, skip=(".cache",))
 done()
 
-step("llama.cpp, Baritone, память Альтрона о мирах...")
+step("llama.cpp, память Альтрона о мирах...")
 if (KIT / "llama").exists() and not (KIT / "tools" / "llama").exists():
     (KIT / "tools").mkdir(exist_ok=True)
     shutil.move(str(KIT / "llama"), str(KIT / "tools" / "llama"))

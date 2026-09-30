@@ -28,7 +28,6 @@ $WhisperCpu = @('Systran/faster-whisper-small')
 $Voices = [ordered]@{ ru = 'ru_RU-dmitri-medium'; en = 'en_US-ryan-high' }
 # the second manner of speaking ("teammate", a speech-synthesizer voice): its own voices
 $TeammateVoices = [ordered]@{ ru = 'ru_RU-denis-medium'; en = 'en_US-danny-low' }
-$BaritoneTag = 'v1.10.1'
 $UA = @{ 'User-Agent' = 'altron-installer'; 'Accept' = 'application/json' }
 
 function Say($ru, $en) { Write-Host "`n== $ru" -ForegroundColor Cyan; Write-Host "   $en" -ForegroundColor DarkCyan }
@@ -244,20 +243,7 @@ Step 'teammate voices' {
     $global:Updates.tts_personas = @{ teammate = @{ voices = $map } }
 }
 
-# ------------------------------------------------------------------------------------------------ Baritone, Java
-Step 'baritone' {
-    Say 'Baritone (навигация тела)' 'Baritone (pathfinding)'
-    $libs = Join-Path $Root 'mod\libs'
-    $have = Get-ChildItem $libs -Filter 'baritone-api-forge-*.jar' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $have) {
-        $asset = (Get-GhRelease 'cabaletta/baritone' $BaritoneTag).assets | Where-Object { $_.name -match '^baritone-api-forge-[\d.]+\.jar$' } | Select-Object -First 1
-        if (-not $asset) { throw "no baritone-api-forge jar in $BaritoneTag" }
-        Get-File $asset.browser_download_url (Join-Path $libs $asset.name)
-        $have = Get-Item (Join-Path $libs $asset.name)
-    } else { Ok "есть / present: $($have.Name)" }
-    $global:Updates.extra_bot_mods = @("../mod/libs/$($have.Name)")
-}
-
+# ------------------------------------------------------------------------------------------------ Java
 Step 'java' {
     Say 'Java 17 (для сборки мода)' 'Java 17 (to build the mod)'
     if (Get-ChildItem (Join-Path $Root 'tools') -Directory -Filter 'jdk-17*' -ErrorAction SilentlyContinue) { Ok 'есть / present'; return }

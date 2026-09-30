@@ -1,12 +1,11 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Inv;
 import com.altron.bot.Memory;
 import com.altron.bot.Task;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -23,8 +22,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Mine blocks like a player: first the ones the bot has seen and remembered, then
- * branch-mine with Baritone in legit mode (it only digs out ores that become visible).
+ * Mine the blocks the bot has seen and remembers (and trees for wood), one by one, like a player. Where to dig when
+ * none is known — a shaft, a tunnel, a cave — is the AI's own choice, with its hands (control).
  */
 public class MineTask extends Task {
     private static final Item[] PICKAXES = {Items.WOODEN_PICKAXE, Items.STONE_PICKAXE, Items.IRON_PICKAXE,
@@ -33,14 +32,11 @@ public class MineTask extends Task {
 
     private final Set<Block> blocks;
     private final int count;
-    private final String command;
     private Map<String, Integer> before;
     private Deque<BlockPos> remembered;
     private Task sub;
-    private boolean exploring;
-    private Set<BlockPos> seen = new HashSet<>();
     private int mined;
-    private int idle;
+    private int refreshedAt = -1;
     private boolean collected;
     private final boolean logs;   // cutting wood: only trees, never the logs of a house
 
@@ -48,7 +44,6 @@ public class MineTask extends Task {
         super("mine");
         this.blocks = new HashSet<>(blocks);
         this.count = Math.max(1, count);
-        this.command = "mine " + blocks.stream().map(Bot::id).collect(Collectors.joining(" "));
         this.logs = blocks.stream().allMatch(b -> b.defaultBlockState().is(BlockTags.LOGS));
     }
 
@@ -80,15 +75,6 @@ public class MineTask extends Task {
         return "нужен особый инструмент";
     }
 
-    private Set<BlockPos> scanNear() {
-        Set<BlockPos> s = new HashSet<>();
-        BlockPos c = p().blockPosition();
-        for (BlockPos bp : BlockPos.betweenClosed(c.offset(-5, -5, -5), c.offset(5, 5, 5))) {
-            if (blocks.contains(Bot.level().getBlockState(bp).getBlock())) s.add(bp.immutable());
-        }
-        return s;
-    }
-
     private String gained() {
         return Inv.diff(before, Inv.snapshot(p()));
     }
@@ -110,14 +96,12 @@ public class MineTask extends Task {
                         + ". Попроси командира дать инструмент.");
             }
             before = Inv.snapshot(p());
-            if (logs) Memory.lookAround();   // trees around that he has not looked at yet
+            Memory.lookAround();   // what is around that he has not looked at yet
             remembered = new ArrayDeque<>(Memory.find(blocks, 96, 64));
             if (logs) remembered.removeIf(bp -> Bot.level().hasChunkAt(bp) && !inTree(bp));
-            // digging on the way to what he mines (natural ground only, see Baritone.Protected); wood is cut by hand
-            if (!logs) Baritone.setAllowBreak(true, blocks);
         }
         if (mined >= count && sub == null) {
-            Baritone.cancel();
+            Nav.cancel();
             if (collectDrops()) return Status.RUNNING;
             return done("добыто блоков: " + mined + ". Получено: " + gained());
         }
@@ -147,66 +131,42 @@ public class MineTask extends Task {
             sub = new BreakTask(next);
             return Status.RUNNING;
         }
-        // 2) Explore: legit branch mining (not for wood: Baritone would cut the logs of houses too)
-        if (logs) {
-            if (mined > 0 && collectDrops()) return Status.RUNNING;
-            return mined > 0 ? done("нарубил: " + mined + ". Получено: " + gained())
-                    : fail("рядом не вижу деревьев (брёвна в постройках не рублю) — нужно найти лес (explore)");
+        // digging opens up new ore: one more look around before giving up
+        if (refreshedAt != mined) {
+            refreshedAt = mined;
+            Memory.lookAround();
+            remembered = new ArrayDeque<>(Memory.find(blocks, 96, 64));
+            if (logs) remembered.removeIf(bp -> Bot.level().hasChunkAt(bp) && !inTree(bp));
+            if (!remembered.isEmpty()) return Status.RUNNING;
         }
-        if (!exploring) {
-            Baritone.setMineLevel(BuiltInRegistries.BLOCK.getKey(blocks.iterator().next()).getPath(), p().getBlockY());
-            if (!Baritone.command(command)) return fail("Baritone не установлен, не могу копать");
-            exploring = true;
-            seen = scanNear();
-            return Status.RUNNING;
-        }
-        if (age % 5 == 0) {
-            Set<BlockPos> now = scanNear();
-            BlockPos me = p().blockPosition();
-            for (BlockPos bp : seen) {
-                if (!now.contains(bp) && bp.distSqr(me) < 49 && !blocks.contains(Bot.level().getBlockState(bp).getBlock())) mined++;
-            }
-            seen = now;
-        }
-        if (age > 60 && !Baritone.busy()) {
-            if (++idle > 60) {
-                if (mined > 0 && collectDrops()) return Status.RUNNING;
-                return mined > 0 ? done("больше не нахожу. Добыто: " + mined + ". Получено: " + gained())
-                        : fail("не нашёл таких блоков");
-            }
-        } else {
-            idle = 0;
-        }
-        if (age > 20 * 60 * 20) {
-            Baritone.cancel();
-            return done("время вышло (20 мин). Добыто: " + mined + ". Получено: " + gained());
-        }
-        return Status.RUNNING;
+        // 2) Nothing more he knows of: where to look (a shaft, a tunnel, a cave, another forest) is the AI's decision
+        if (mined > 0 && collectDrops()) return Status.RUNNING;
+        String what = logs ? "деревьев (брёвна в постройках не рублю)" : "таких блоков";
+        return mined > 0 ? done("больше не вижу " + what + ". Добыто: " + mined + ". Получено: " + gained())
+                : fail("не вижу и не помню " + what + " поблизости — нужно поискать: explore, или копай сам (control: смотри "
+                + "на блок и держи левую кнопку), руда видна, когда откроется")
+                ;
     }
 
     @Override
     public void stop() {
         if (sub != null) sub.stop();
-        Baritone.cancel();
-        Baritone.setAllowBreak(false, null);
+        Nav.cancel();
     }
 
     @Override
     public void pause() {
         if (sub != null) sub.pause();
-        Baritone.cancel();
-        Baritone.setAllowBreak(false, null);   // fighting back or eating: walking again, not digging
+        Nav.cancel();
     }
 
     @Override
     public void resume() {
-        if (!logs && before != null) Baritone.setAllowBreak(true, blocks);
         if (sub != null) sub.resume();
-        else if (exploring) Baritone.command(command);
     }
 
     @Override
     public String progress() {
-        return mined + "/" + count + (exploring ? " (ищу в шахте)" : "");
+        return mined + "/" + count;
     }
 }

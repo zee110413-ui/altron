@@ -9,6 +9,15 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish mod_version: a GitHub release v<version> (notes from docs/release-notes.md) and Modrinth'
+        type: boolean
+        default: false
+      beta:
+        description: 'Publish it as a beta'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -45,6 +54,22 @@ jobs:
           name: altron-${{ steps.jar.outputs.version }}
           path: ${{ steps.jar.outputs.path }}
 
+      - name: Create the GitHub release (manual publish)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.jar.outputs.version }}
+          JAR: ${{ steps.jar.outputs.path }}
+          BETA: ${{ inputs.beta }}
+        run: |
+          if gh release view "v$VERSION" > /dev/null 2>&1; then
+            echo "Release v$VERSION already exists: bump mod_version in mod/gradle.properties."
+            exit 1
+          fi
+          FLAG=""; [ "$BETA" = "true" ] && FLAG="--prerelease"
+          gh release create "v$VERSION" "$JAR" --target "$GITHUB_SHA" --title "Altron $VERSION" \
+            --notes-file docs/release-notes.md $FLAG
+
       - name: Check the release tag
         if: github.event_name == 'release'
         env:
@@ -65,19 +90,20 @@ jobs:
         run: gh release upload "$TAG" "$JAR" --clobber
 
       - name: Publish to Modrinth
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           MODRINTH_PROJECT_ID: ${{ secrets.MODRINTH_PROJECT_ID }}
           VERSION: ${{ steps.jar.outputs.version }}
           JAR: ${{ steps.jar.outputs.path }}
           CHANGELOG: ${{ github.event.release.body }}
-          PRERELEASE: ${{ github.event.release.prerelease }}
+          PRERELEASE: ${{ github.event.release.prerelease || inputs.beta }}
         run: |
           if [ -z "$MODRINTH_TOKEN" ] || [ -z "$MODRINTH_PROJECT_ID" ]; then
             echo "MODRINTH_TOKEN / MODRINTH_PROJECT_ID secrets are not set: skipping Modrinth."
             exit 0
           fi
+          [ -z "$CHANGELOG" ] && CHANGELOG=$(cat docs/release-notes.md)
           TYPE=release; [ "$PRERELEASE" = "true" ] && TYPE=beta
           DATA=$(jq -n --arg name "Altron $VERSION" --arg v "$VERSION" --arg log "$CHANGELOG" \
                        --arg pid "$MODRINTH_PROJECT_ID" --arg type "$TYPE" \
@@ -89,3 +115,20 @@ jobs:
             -H "User-Agent: zee110413-ui/altron (GitHub Actions)" \
             -F "data=$DATA" \
             -F "file=@$JAR;type=application/java-archive"
+
+      - name: Update the Modrinth project page
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish)
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_PROJECT_ID: ${{ secrets.MODRINTH_PROJECT_ID }}
+        run: |
+          if [ -z "$MODRINTH_TOKEN" ] || [ -z "$MODRINTH_PROJECT_ID" ]; then exit 0; fi
+          DATA=$(jq -n --rawfile body docs/modrinth.md \
+            --arg summary "A voice AI teammate: a second player whose only hands are the keyboard and the mouse, driven by an AI on your PC." \
+            '{body: $body, description: $summary}')
+          # the page text follows docs/modrinth.md; a token without the project-write scope only skips this
+          curl --fail-with-body -sS -X PATCH "https://api.modrinth.com/v2/project/$MODRINTH_PROJECT_ID" \
+            -H "Authorization: $MODRINTH_TOKEN" \
+            -H "User-Agent: zee110413-ui/altron (GitHub Actions)" \
+            -H "Content-Type: application/json" \
+            -d "$DATA" || echo "::warning::The Modrinth page was not updated (does the token have PROJECT_WRITE?)"

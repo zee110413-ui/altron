@@ -9,6 +9,7 @@
 !/*.md
 !/mod/
 !/brain/
+!/test-reports/
 # ai_server/ (the kit for a second PC) is built by brain/build_pc2_kit.py and copied over, not kept in git
 
 # Per-PC state and caches made at run time (the encyclopedia cache is rebuilt from the pack's files)

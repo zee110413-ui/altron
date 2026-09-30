@@ -78,7 +78,8 @@ PROFILES = {
                  "меньше лучей зрения, низкий приоритет, короче память разговора ИИ",
         "bot_lite": True, "bot_memory_mb": 2048, "bot_render_distance": 3, "bot_simulation_distance": 4,
         "bot_rays": 25, "bot_render_always": False, "bot_low_priority": True,
-        "llm_context": 16384, "llm_cache_ram_mb": 512, "history_chars": 9000,
+        # the instructions and 80 tools alone take ~15k tokens: with 16k the talk had no room and every answer failed
+        "llm_context": 24576, "llm_cache_ram_mb": 512, "history_chars": 9000,
     },
     "balanced": {
         "title_en": "Balanced (normal)",
@@ -297,6 +298,8 @@ def prepare_bot_dir(cfg, log=print, game_dir=None, voice=False, options=None, li
         skip = tuple(s for s in skip if not s.startswith("voicechat"))   # he talks through his own voice chat client
     wanted = {jar.name: jar for jar in (pack / "mods").glob("*.jar") if not (skip and jar.name.lower().startswith(skip))}
     for extra in cfg.get("extra_bot_mods", []):
+        if "baritone" in str(extra).lower():
+            continue   # an old config: his body has no Baritone any more
         p = rel(extra)
         if p.exists():
             wanted[p.name] = p
