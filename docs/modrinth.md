@@ -11,7 +11,8 @@ brain, a local AI model, Whisper, Piper voices, Java 17 and Simple Voice Chat, a
 
 ## What he does
 - **Talks** in the language you speak, in his own words, with a mood of his own and memories you share. By default he
-  is a deadpan teammate with a flat speech-synthesizer voice and very dry humour; "Altron's voice" is a cold machine.
+  is a deadpan teammate with a speech-synthesizer voice (the IVONA Maxim voice, if it is installed in Windows) and very
+  dry humour; "Altron's voice" is a cold machine.
 - **Plays with his hands only**: walks, follows, fights, digs, places blocks, uses chests, furnaces, crafting tables
   and mod machines, drives vehicles — all as keys, mouse moves and clicks the AI chooses.
 - **Knows your pack**: reads the items, recipes and manuals of every mod from the pack's files; looks up the web when
@@ -41,7 +42,7 @@ Source, instructions and settings: **https://github.com/zee110413-ui/altron** ·
 **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)**.
 
 - **Говорит** на твоём языке, своими словами, со своим настроением и общими воспоминаниями. По умолчанию —
-  невозмутимый тиммейт с ровным голосом синтезатора и очень сухим юмором; «голос Альтрона» — холодная машина.
+  невозмутимый тиммейт с голосом синтезатора (IVONA Максим, если он установлен в Windows) и очень сухим юмором; «голос Альтрона» — холодная машина.
 - **Играет только руками**: ходит, следует, дерётся, копает, ставит блоки, пользуется сундуками, печами, верстаками и
   машинами модов, водит технику — клавишами, мышью и кликами, которые выбирает нейросеть.
 - **Знает твою сборку**, **играет честно** (видит только то, что в прямой видимости), **помнит** места, сундуки и

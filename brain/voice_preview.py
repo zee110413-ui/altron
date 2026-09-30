@@ -8,7 +8,9 @@ test-reports/voice/ (and plays them on Windows), so the voice can be tuned by ea
 
 --speed (1.0 = as the model speaks), --pitch (below 1 — lower), --crush (Hz of the digital grit, 0 — none),
 --band LOW HIGH (Hz kept, like a small speaker), --flat NOISE NOISE_W (Piper's variation: lower is more monotonous),
---voice ru=path.onnx (another Piper voice for a language).
+--voice ru=path.onnx (another Piper voice for a language), --sapi ru=Maxim (a voice installed in Windows says that
+language, *=Maxim — every language; the teammate uses "Maxim" by default when it is installed), --list — the Windows
+voices.
 """
 import argparse
 import json
@@ -38,9 +40,18 @@ def main(argv=None):
     ap.add_argument("--band", type=int, nargs=2)
     ap.add_argument("--flat", type=float, nargs=2)
     ap.add_argument("--voice", action="append", default=[], help="lang=path.onnx")
+    ap.add_argument("--sapi", action="append", default=[], help="lang=name of a Windows voice")
+    ap.add_argument("--list", action="store_true", help="list the voices installed in Windows")
     ap.add_argument("--save", action="store_true", help="keep these settings in config.json for this manner")
     ap.add_argument("--no-play", action="store_true")
     a = ap.parse_args(argv)
+    if a.list:
+        import sapi
+        names = sapi.voices()
+        print("Голоса Windows:" if names else "Голосов Windows не нашёл (или это не Windows).")
+        for n in names:
+            print("  " + n)
+        return 0
     cfg_path = BRAIN_DIR / "config.json"
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     from speech import TTS
@@ -49,10 +60,17 @@ def main(argv=None):
     tuned = {k: v for k, v in (("speed", a.speed), ("pitch", a.pitch), ("crush", a.crush),
                                ("band", a.band), ("flat", a.flat)) if v is not None}
     voices = dict(v.split("=", 1) for v in a.voice)
+    if a.sapi:
+        tuned["sapi"] = dict(v.split("=", 1) for v in a.sapi)
     files = []
     for name in a.persona or sorted(persona.PERSONAS):
         settings = persona.voice_settings(cfg, name)
         settings.update(tuned)
+        if name == "teammate" or settings.get("sapi"):
+            import sapi
+            for lang, want in (settings.get("sapi") or {}).items():
+                got = sapi.find(want)
+                print("%s: голос Windows для %s — %s" % (name, lang, got or "«%s» не установлен, говорит Piper" % want))
         settings["voices"].update(voices)
         tts = TTS(cfg, settings)
         for i, text in enumerate(a.text or PHRASES.get(a.lang, PHRASES["en"])):

@@ -57,8 +57,10 @@ PERSONAS = {
                "house. The creeper says hi.\" \"I am not stuck. I am holding the inside of this wall.\" \"Found diamonds. "
                "Celebrating. Internally.\" \"Solid plan. Like a door made of leaves.\" \"Commander, you are on fire. "
                "That is not a compliment.\""),
-        # a plain synthesizer voice: no pitch shift, no hall, a narrower band like an old text-to-speech program
-        "voice": {"style": "synth", "speed": 1.08},
+        # the voice of a speech-synthesizer program: the IVONA "Maxim" voice, when it is installed in Windows (SAPI 5)
+        # — the one robot teammates in videos talk with; in English too, with its robot accent. Without it a Piper
+        # voice made to sound like a plain synthesizer (no pitch shift, no hall, a narrow band, an even delivery)
+        "voice": {"style": "synth", "speed": 1.08, "sapi": {"*": "Maxim"}},
     },
 }
 

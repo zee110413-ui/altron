@@ -101,7 +101,7 @@ on your gaming PC just play and type `/altron`.
 | `languages` | languages to recognize with `"auto"`, e.g. `["en", "de"]` |
 | `tts_voices` | a Piper voice per language: `{"en": "../models/piper/en_US-ryan-high.onnx"}`; `tts_voice` is the fallback |
 | `tts_style` | Altron's own voice: `"ultron"` (low, doubled, metallic), `"robot"` (light helmet effect) or `"plain"`; `tts_pitch` overrides the pitch |
-| `persona` | `"teammate"` (default: a deadpan teammate with a flat speech-synthesizer voice and very dry humour) or `"altron"` (also switched by voice); `tts_personas` — the teammate's own voice files |
+| `persona` | `"teammate"` (default: a deadpan teammate with a speech-synthesizer voice and very dry humour) or `"altron"` (also switched by voice); `tts_personas` — the teammate's own voice files. If the IVONA **Maxim** voice (SAPI 5) is installed in Windows, the teammate talks with it in every language; otherwise a Piper voice made to sound like a synthesizer (`"sapi": {"*": "Maxim"}` in `tts_personas.teammate`) |
 | `idle_think_minutes` | in a quiet moment this often he thinks whether to say something; `0` — only when spoken to |
 | `instant_ack` | a canned "Yes, commander" before the AI has thought (off: he answers in his own words) |
 | `dataset` | log every AI turn for fine-tuning (see TRAINING.md) |
@@ -139,8 +139,9 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 - **Чувствовать и помнить**: у него своё настроение (его слышно в голосе), своё отношение к каждому игроку — копится
   от поступков (спас, подарил алмазы, ударил), свои вкусы и мнения, общие воспоминания, которые он вспоминает к месту
   («помнишь, как крипер снёс наш первый дом?»). В тишине сам решает — заговорить, спросить, пошутить или промолчать.
-- **Два голоса**: `teammate` (по умолчанию) — невозмутимый тиммейт с ровным голосом синтезатора речи и очень сухим
-  юмором; `altron` — холодная театральная машина. Скажи «верни голос Альтрона» или «говори как тиммейт», чтобы сменить.
+- **Два голоса**: `teammate` (по умолчанию) — невозмутимый тиммейт с голосом синтезатора речи и очень сухим
+  юмором: если в Windows установлен голос IVONA **Максим** (SAPI 5), тиммейт говорит им на всех языках, иначе —
+  голосом Piper, похожим на синтезатор; `altron` — холодная театральная машина. Скажи «верни голос Альтрона» или «говори как тиммейт», чтобы сменить.
 - **Замечать, что происходит**: опасность, раненые и упавшие игроки, смерти, достижения, зашедшие игроки, ночь и
   гроза приходят нейросети как факты, а что с ними делать — решает она.
 - **Играть с несколькими игроками**: слушается командира и его друзей, с чужими говорит, но их приказы не выполняет,

@@ -225,6 +225,28 @@ class Voice(unittest.TestCase):
         self.assertTrue(len(synth) and np.isfinite(synth).all())
         self.assertLess(configs[-1]["noise_scale"], 0.667)   # the even, monotonous delivery of a synthesizer
 
+    def test_a_windows_voice_says_russian(self):
+        import sapi
+        t = speech.TTS.__new__(speech.TTS)
+        t.cfg, t.moods = {"tts_voice": "none.onnx", "tts_speed": 1.0}, True
+        t.use(persona.voice_settings({}, "teammate"))
+        said = []
+        old = sapi.find, sapi.speak
+        sapi.find = lambda name: "IVONA 2 Maxim" if name == "Maxim" else None
+        sapi.speak = lambda voice, text, rate=0: said.append((voice, text, rate)) or (
+            (np.sin(np.arange(2205) / 5) * 8000).astype(np.int16), 22050)
+        try:
+            chunks = list(t.synth("Докладываю. У нас минус дом!", "ru"))
+            self.assertEqual([v for v, _, _ in said], ["IVONA 2 Maxim", "IVONA 2 Maxim"])   # sentence by sentence
+            self.assertEqual(said[0][2], 1)                  # 1.08 of the pace is +1 on Windows' scale
+            self.assertEqual(len(chunks), 2)
+
+            self.assertEqual(t._sapi_voice("en"), "IVONA 2 Maxim")   # English too, with Maxim's robot accent
+            sapi.find = lambda name: None
+            self.assertIsNone(t._sapi_voice("ru"))            # not installed: the Piper synthesizer voice says it
+        finally:
+            sapi.find, sapi.speak = old
+
     def test_personas(self):
         self.assertEqual(persona.find("говори как тиммейт"), "teammate")
         self.assertEqual(persona.find("верни обычный голос"), "altron")

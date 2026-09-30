@@ -196,6 +196,10 @@ class TTS:
         self.crush = int(settings.get("crush", self.CRUSH.get(style, 0)) or 0)
         self.flat = tuple(settings.get("flat") or self.FLAT.get(style) or ()) or None
         self.speed = max(0.5, float(settings.get("speed", 1.0)) * float(self.cfg.get("tts_speed", 1.0)))
+        # a voice installed in Windows says this language, when it is there (SAPI 5: {"ru": "Maxim"}); it is a
+        # speech synthesizer already, so it goes out as it is, without the effects that imitate one
+        self.sapi = dict(settings.get("sapi") or {})
+        self.sapi_effects = bool(settings.get("sapi_effects", False))
         self.paths = {}
         for k, v in (settings.get("voices") or {}).items():
             if v and rel(v).exists():
@@ -240,12 +244,50 @@ class TTS:
             out = tail
         return out
 
+    def _sapi_voice(self, lang):
+        table = getattr(self, "sapi", None) or {}
+        name = table.get((lang or "").lower()) or table.get("*")   # "*": the same voice for every language
+        if not name:
+            return None
+        import sapi
+        return sapi.find(name)
+
+    def _finish(self, y, loud):
+        peak = float(np.max(np.abs(y))) if len(y) else 0.0
+        if peak > 0:
+            y = y * (0.85 * loud / peak)
+        y = np.concatenate([np.zeros(2400, dtype=np.float32), y, np.zeros(2400, dtype=np.float32)])
+        return (y * 32767).astype("<i2").tobytes()
+
+    def _synth_sapi(self, voice, text, pitch, pace, loud):
+        import math
+        import sapi
+        # Windows counts the pace from -10 to 10, about three times faster or slower at the ends
+        rate = round(10 * math.log(max(0.3, self.speed * pace)) / math.log(3))
+        for sentence in re.split(r"(?<=[.!?…])\s+", text):
+            if not sentence.strip():
+                continue
+            pcm, sr = sapi.speak(voice, sentence, rate)
+            a = pcm.astype(np.float32) / 32768.0
+            y = resample(a, sr * pitch, 48000)
+            if self.sapi_effects:
+                y = self._effects(y, 48000)
+            yield self._finish(y, loud)
+
     def synth(self, text, lang=None, mood=None):
         """Yields 48 kHz mono s16le PCM chunks, one per sentence."""
         text = clean_for_speech(text)
         if not text:
             return
         pace, rise, loud = self.MOODS.get(mood, (1.0, 1.0, 1.0)) if self.moods else (1.0, 1.0, 1.0)
+        voice = self._sapi_voice(lang)
+        if voice:
+            try:
+                yield from self._synth_sapi(voice, text, rise if self.sapi_effects else 1.0, pace, loud)
+                return
+            except Exception as e:   # the Windows voice broke: the Piper voice says it
+                self.sapi = {}
+                print("Голос Windows «%s» не сработал (%s): говорю голосом Piper" % (voice, e))
         pitch = self.pitch * rise
         # lowering the pitch slows the voice down: speak that much faster first, so the pace stays the same
         flat = dict(zip(("noise_scale", "noise_w_scale"), self.flat)) if self.flat else {}
@@ -255,8 +297,4 @@ class TTS:
             # read at a lower rate than it was made: the whole voice goes down by the pitch factor
             y = resample(a, chunk.sample_rate * pitch, 48000)
             y = self._effects(y, 48000)
-            peak = float(np.max(np.abs(y))) if len(y) else 0.0
-            if peak > 0:
-                y = y * (0.85 * loud / peak)
-            y = np.concatenate([np.zeros(2400, dtype=np.float32), y, np.zeros(2400, dtype=np.float32)])
-            yield (y * 32767).astype("<i2").tobytes()
+            yield self._finish(y, loud)
