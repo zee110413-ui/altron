@@ -64,17 +64,22 @@ def main(argv=None):
         return 1
     out = BRAIN_DIR.parent / "test-reports" / "voice"
     out.mkdir(parents=True, exist_ok=True)
+    import numpy as np
     files = []
     for i, text in enumerate(a.text or PHRASES.get(a.lang, PHRASES["en"])):
         path = out / ("%s_%s_%d.wav" % (name, a.lang, i + 1))
+        pcm = b"".join(tts.synth(text, a.lang))
         with wave.open(str(path), "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
             w.setframerate(48000)
-            for chunk in tts.synth(text, a.lang):
-                w.writeframes(chunk)
+            w.writeframes(pcm)
         files.append(path)
-        print("%s -> %s" % (text, path))
+        y = np.frombuffer(pcm, dtype="<i2")
+        peak = int(np.max(np.abs(y))) if len(y) else 0
+        # how long and how loud: a silent file means the voice gave no sound, not the headphones
+        print("%s -> %s (%.1f с, громкость %d%%%s)" % (text, path, len(y) / 48000, peak * 100 // 32767,
+                                                     ", ТИШИНА: голос не дал звука" if peak < 300 else ""))
     if a.save and (a.speed is not None or a.pitch is not None):
         keep = json.loads(cfg_path.read_text(encoding="utf-8"))
         if a.speed is not None:
@@ -86,6 +91,7 @@ def main(argv=None):
         cfg_path.write_text(json.dumps(keep, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if sys.platform == "win32" and not a.no_play:
         import winsound
+        print("Играю в устройство Windows по умолчанию (Параметры -> Система -> Звук -> Вывод)...")
         for path in files:
             winsound.PlaySound(str(path), winsound.SND_FILENAME)
     return 0

@@ -114,7 +114,10 @@ def _speak(name, text, rate):
         v.Speak(text, 0)
         stream.Close()
         with wave.open(path, "rb") as w:
-            return w.readframes(w.getnframes()), w.getframerate()
+            frames, rate = w.readframes(w.getnframes()), w.getframerate()
+        if not frames:
+            raise RuntimeError("голос Windows «%s» не дал звука" % name)
+        return frames, rate
     finally:
         try:
             os.remove(path)
