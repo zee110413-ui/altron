@@ -1,6 +1,7 @@
 package com.altron.bot.tasks;
 
 import com.altron.bot.Bot;
+import com.altron.bot.Info;
 import com.altron.bot.Input;
 import com.altron.bot.Legs;
 import com.altron.bot.Task;
@@ -23,6 +24,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * The AI's own hands on the keyboard and the mouse: hold some keys for a while, turn the head, click or hold the left
@@ -38,14 +40,21 @@ public class ControlTask extends Task {
     private final String left;       // "", "click", "hold"
     private final String right;
     private final int slot;          // 1-9, or 0: keep
+    private final Vec3 at;           // look at this point (the hand moves the mouse there)
+    private final Predicate<Entity> track;   // or keep the crosshair on the nearest such creature
+    private final String trackName;
     private float wantYaw, wantPitch;
     private BlockPos digging;
     private boolean using;
     private boolean leftDone, rightDone;   // a click is one press
     private final List<String> did = new ArrayList<>();
 
-    public ControlTask(List<KeyMapping> keys, int ticks, float turn, float tilt, Float pitch, String left, String right, int slot) {
+    public ControlTask(List<KeyMapping> keys, int ticks, float turn, float tilt, Float pitch, String left, String right, int slot,
+                       Vec3 at, Predicate<Entity> track, String trackName) {
         super("control");
+        this.at = at;
+        this.track = track;
+        this.trackName = trackName;
         this.keys = keys;
         this.ticks = Math.max(1, Math.min(ticks, 200));
         this.turn = turn;
@@ -68,6 +77,22 @@ public class ControlTask extends Task {
         EntityHitResult e = ProjectileUtil.getEntityHitResult(p, eye, eye.add(look.scale(reach)), box,
                 en -> !en.isSpectator() && en.isPickable(), max);
         return e != null ? e : block;
+    }
+
+    /** {yaw, pitch} from the eyes to a point, the way the mouse would have to go. */
+    private static float[] rotationTo(LocalPlayer p, Vec3 t) {
+        Vec3 eye = p.getEyePosition();
+        double dx = t.x - eye.x, dy = t.y - eye.y, dz = t.z - eye.z;
+        return new float[]{(float) Math.toDegrees(Math.atan2(dz, dx)) - 90f,
+                Mth.clamp((float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz))), -90f, 90f)};
+    }
+
+    private Entity tracked(LocalPlayer p) {
+        Entity best = null;
+        for (Entity e : Info.entities(48, e -> e != p && track.test(e) && Info.perceives(e))) {
+            if (best == null || e.distanceTo(p) < best.distanceTo(p)) best = e;
+        }
+        return best;
     }
 
     private static String blockName(BlockPos pos) {
@@ -133,14 +158,37 @@ public class ControlTask extends Task {
         LocalPlayer p = p();
         Minecraft mc = Bot.mc();
         if (age == 1) {
-            Bot.closeContainer();
+            // a tap counts too (the inventory, drop, a mod's reload key): press it the way a keyboard does
+            boolean world = !left.isEmpty() || !right.isEmpty();
+            for (KeyMapping k : keys) {
+                KeyMapping.click(k.getKey());
+                if (k != mc.options.keyInventory) world = true;
+            }
+            if (world) Bot.closeContainer();   // hands in the world: an open window would swallow the input
             if (slot >= 1 && slot <= 9) {
                 p.getInventory().selected = slot - 1;
                 did.add("слот " + slot);
             }
             wantYaw = p.getYRot() + turn;
             wantPitch = Mth.clamp(pitch != null ? pitch : p.getXRot() + tilt, -90f, 90f);
+            if (at != null) {
+                float[] r = rotationTo(p, at);
+                wantYaw = r[0];
+                wantPitch = r[1];
+            }
             Bot.turnOnRequest(ticks + 20);   // his idle glances leave the head alone meanwhile
+        }
+        if (track != null) {
+            // the hand keeps the mouse on the creature while it moves
+            Entity e = tracked(p);
+            if (e != null) {
+                float[] r = rotationTo(p, new Vec3(e.getX(), e.getY() + e.getBbHeight() * 0.8, e.getZ()));
+                wantYaw = r[0];
+                wantPitch = r[1];
+                if (age == 1) did.add("веду прицел за " + e.getName().getString() + String.format(" (%.1f бл.)", e.distanceTo(p)));
+            } else if (age == 1) {
+                did.add("не вижу " + trackName);
+            }
         }
         // the head turns like a hand moves a mouse: fast, but not in one frame
         float dy = Mth.wrapDegrees(wantYaw - p.getYRot());

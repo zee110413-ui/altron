@@ -147,6 +147,9 @@ class Hands(unittest.TestCase):
         names = {t["function"]["name"] for t in agent.TOOLS}
         self.assertTrue({"control", "view"} <= names)
         self.assertFalse(names & {"baritone", "obtain", "smelt", "fetch", "stash", "autonomy", "assist", "sleep"})
+        # nothing acts in the world but the keyboard and the mouse (control; gui and click_slot in windows)
+        self.assertFalse(names & {"mine", "goto", "follow", "attack", "craft", "use_block", "place_block", "break_block",
+                                  "give", "eat", "turn", "press_key", "emote", "explore", "container_take"})
 
 
 class Planner(unittest.TestCase):
@@ -229,6 +232,33 @@ class Voice(unittest.TestCase):
         self.assertEqual(persona.voice_settings(cfg, "altron")["style"], "robot")    # config.json's own style stays
         self.assertEqual(persona.voice_settings(cfg, "teammate")["voices"]["ru"], "b.onnx")
         self.assertEqual(persona.voice_settings(cfg, "")["style"], "synth")          # the teammate talks by default
+
+
+class VoicePreview(unittest.TestCase):
+    def test_writes_the_phrases_and_keeps_the_tuning(self):
+        import voice_preview
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        (tmp / "brain").mkdir()
+        (tmp / "brain" / "config.json").write_text(json.dumps({"tts_voice": "a.onnx"}), encoding="utf-8")
+        seen = []
+
+        class FakeTTS:
+            def __init__(self, cfg, settings):
+                seen.append(settings)
+
+            def synth(self, text, lang):
+                yield b"\x00\x00" * 480
+
+        old = voice_preview.BRAIN_DIR, speech.TTS
+        voice_preview.BRAIN_DIR, speech.TTS = tmp / "brain", FakeTTS
+        try:
+            voice_preview.main(["--persona", "teammate", "--speed", "1.2", "--crush", "11025", "--save", "--no-play"])
+        finally:
+            voice_preview.BRAIN_DIR, speech.TTS = old
+        self.assertEqual((seen[0]["style"], seen[0]["speed"], seen[0]["crush"]), ("synth", 1.2, 11025))
+        self.assertEqual(len(list((tmp / "test-reports" / "voice").glob("teammate_*.wav"))), 3)
+        cfg = json.loads((tmp / "brain" / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(cfg["tts_personas"]["teammate"]["speed"], 1.2)
 
 
 class Streaming(unittest.TestCase):
@@ -655,6 +685,7 @@ class FieldTestDryRun(unittest.TestCase):
             def __init__(self):
                 self.bot_pos, self.host_pos = [0.0, 64.0, 0.0], [3.0, 64.0, 0.0]
                 self.persona, self.goals, self.running = "altron", [], None
+                self.blocks = {}
 
             def write(self, *lines):
                 with open(log_path, "a", encoding="utf-8") as f:
@@ -666,7 +697,7 @@ class FieldTestDryRun(unittest.TestCase):
                 if t == "state":
                     return {"busy": False, "requests": 0, "speaking": False, "macro": False, "running": self.running,
                             "joined": True, "state": {"pos": self.bot_pos}, "persona": self.persona,
-                            "goals": self.goals, "legs": "own"}
+                            "goals": self.goals, "owner": "Egor"}
                 if t == "say":
                     text = msg["text"]
                     if "тиммейт" in text:
@@ -688,12 +719,20 @@ class FieldTestDryRun(unittest.TestCase):
                     return "сказано"
                 if t == "task":
                     a = msg["args"]
-                    if msg["name"] == "goto":
-                        self.bot_pos = [a["x"] + 0.5, a["y"], a["z"] + 0.5]
-                    elif msg["name"] == "come":
-                        self.bot_pos = list(self.host_pos)
+                    if msg["name"] == "control":   # the pretend hands do what the keys and the mouse say
+                        if a.get("track"):
+                            self.bot_pos = list(self.host_pos)
+                        elif "jump" in a.get("keys", []):
+                            self.bot_pos = [self.bot_pos[0], self.bot_pos[1] + 1, self.bot_pos[2]]
+                        elif "forward" in a.get("keys", []):
+                            self.bot_pos = [self.bot_pos[0] + 12, self.bot_pos[1], self.bot_pos[2]]
+                        key = "%d,%d,%d" % (a.get("x", 0), a.get("y", 0) + (1 if a.get("right") else 0), a.get("z", 0))
+                        if a.get("left"):
+                            self.blocks[key] = "minecraft:air"
+                        if a.get("right"):
+                            self.blocks[key] = "minecraft:stone"
                     self.running = None
-                    return "ГОТОВО: пришёл"
+                    return "ГОТОВО: руки"
                 if t == "probe":
                     a = msg["args"]
                     if "tp_host" in a:
@@ -703,7 +742,8 @@ class FieldTestDryRun(unittest.TestCase):
                         self.bot_pos = list(a["tp_bot"])
                     if "commands" in a and any("time set 13000" in c for c in a["commands"]):
                         self.write("(событие мира) night {}")
-                    return {"bot": {"pos": self.bot_pos}, "host": {"pos": self.host_pos}, "entities": []}
+                    got = {"%d,%d,%d" % tuple(b): self.blocks.get("%d,%d,%d" % tuple(b), "minecraft:stone") for b in a.get("blocks", [])}
+                    return {"bot": {"pos": self.bot_pos}, "host": {"pos": self.host_pos}, "entities": [], "blocks": got}
                 return "ok"
 
         old = field_test.time, field_test.REPORT_DIR
@@ -713,18 +753,20 @@ class FieldTestDryRun(unittest.TestCase):
             t = field_test.FieldTest(FakeBrain(), {"brain_port": 1, "bot_dir": str(tmp), "host_dir": str(tmp)}, args)
             t.log = field_test.BrainLog(log_path)
             t.build_course()
-            for part in ("legs", "talk", "goals", "events"):
+            for part in ("hands", "talk", "goals", "events"):
                 getattr(t, "part_" + part)()
             t.take_down()
             report = t.write().read_text(encoding="utf-8")
         finally:
             field_test.time, field_test.REPORT_DIR = old
         marks = {r[1]: r[2] for r in t.results}
-        self.assertEqual(marks["flat"], "✅")
+        self.assertEqual(marks["идти (forward+sprint 3 с)"], "✅")
+        self.assertEqual(marks["сломать блок (left hold)"], "✅")
+        self.assertEqual(marks["поставить блок (right click)"], "✅")
         self.assertEqual(marks["тиммейт: включился?"], "✅")
         self.assertEqual(marks["английский"], "✅")
         self.assertEqual(marks["ночь"], "✅")
-        self.assertIn("| ноги | ladder | ✅ |", report)
+        self.assertIn("| руки | бежать к командиру (track) | ✅ |", report)
         self.assertIn("## config.json", report)
 
 

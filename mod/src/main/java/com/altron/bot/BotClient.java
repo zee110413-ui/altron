@@ -221,8 +221,7 @@ public class BotClient {
         }
 
         tickTasks();
-        autoBehaviour(p);
-        idleLook(p);
+        autoBehaviour(p);   // news for the AI only; the head and the hands move only when the AI moves them
         if (ticks % 20 == 0) Bot.send(Info.state());
     }
 
@@ -365,15 +364,6 @@ public class BotClient {
         }
         deadTicks = 0;
         if (mc.screen instanceof PauseScreen) mc.setScreen(null);
-        // Close stray container screens when no task needs them
-        if (mc.screen instanceof AbstractContainerScreen<?> && currentTask() == null) {
-            if (++idleTicks > 20 * 60) {
-                p.closeContainer();
-                idleTicks = 0;
-            }
-        } else {
-            idleTicks = 0;
-        }
     }
 
     private void autoConnect(Minecraft mc) {

@@ -97,6 +97,15 @@ public final class Actions {
         return BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0));
     }
 
+    /** Where control should move the mouse: x y z; whole numbers are a block, so the middle of it; no y — eye level. */
+    private static Vec3 aimPoint(JsonObject a) {
+        if (!J.has(a, "x") || !J.has(a, "z")) return null;
+        double x = J.dbl(a, "x", 0), z = J.dbl(a, "z", 0);
+        double y = J.has(a, "y") ? J.dbl(a, "y", 0) : Bot.player().getEyeY();
+        return new Vec3(x == Math.floor(x) ? x + 0.5 : x, J.has(a, "y") && y == Math.floor(y) ? y + 0.5 : y,
+                z == Math.floor(z) ? z + 0.5 : z);
+    }
+
     private static List<String> list(JsonObject a, String key) {
         List<String> out = new ArrayList<>();
         JsonElement e = a.get(key);
@@ -525,7 +534,9 @@ public final class Actions {
                 }
                 return start(new com.altron.bot.tasks.ControlTask(keys, J.num(a, "ticks", 5), (float) J.dbl(a, "turn", 0),
                         (float) J.dbl(a, "tilt", 0), J.has(a, "pitch") ? (float) J.dbl(a, "pitch", 0) : null,
-                        J.str(a, "left", ""), J.str(a, "right", ""), J.num(a, "slot", 0)));
+                        J.str(a, "left", ""), J.str(a, "right", ""), J.num(a, "slot", 0), aimPoint(a),
+                        J.str(a, "track", "").isBlank() ? null : Combat.filterFor(J.str(a, "track", ""), BotClient.owner),
+                        J.str(a, "track", "")));
             }
             case "view":
                 return ok(com.altron.bot.tasks.ControlTask.view());

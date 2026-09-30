@@ -1,11 +1,11 @@
-"""Altron's field test: a course for his legs, talks with the AI, events of the world — and everything he did, said
+"""Altron's field test: his hands on the keyboard and the mouse, talks with the AI, events of the world — and everything he did, said
 and thought written into one report, test-reports/field_test_<date>.md, for a person or the Claude session working
 on Altron to read.
 
 It needs a running session: the brain, the game and Altron's body. Best in a COPY of a world (session.py makes one):
     window 1:  .venv\\Scripts\\python.exe session.py "My World"
     window 2:  .venv\\Scripts\\python.exe field_test.py
-Parts (all by default, about 25 minutes):  --only legs,talk,goals,events
+Parts (all by default, about 25 minutes):  --only hands,talk,goals,events
 The course is a set of glass-walled lanes built high in the air above the commander (y 230): it replaces whatever is
 in that box, moves Altron and the commander there and takes it all down at the end (--keep-course leaves it).
 """
@@ -24,7 +24,6 @@ from launcher import BRAIN_DIR, rel
 
 ROOT = BRAIN_DIR.parent
 REPORT_DIR = ROOT / "test-reports"
-ENDLESS = {"follow", "guard", "vehicle_gunner"}
 Y = 230                      # the course floor stands at Y-1
 LANES = ["flat", "steps", "door", "ladder", "water"]
 SECRET_KEYS = ("llm_api_key", "game_key")
@@ -131,7 +130,7 @@ class FieldTest:
         while time.time() - t0 < timeout:
             st = self.b.state()
             working = st["busy"] or st["requests"] > 0 or st["speaking"] or \
-                (st["running"] is not None and st["running"][1] not in ENDLESS)
+                st["running"] is not None
             if working:
                 started = True
                 quiet = None
@@ -240,45 +239,56 @@ class FieldTest:
         time.sleep(2.5)   # the body sees the new place, the chunks come
 
     # ------------------------------------------------------------------ parts
-    def part_legs(self):
+    def control(self, **args):
+        """One move of his hands straight through the body, the way the AI makes it (the tool control)."""
+        return self.b.task("control", args, 30)
+
+    def block_at(self, x, y, z):
+        return (self.b.probe(blocks=[[x, y, z]]).get("blocks") or {}).get("%d,%d,%d" % (x, y, z), "?")
+
+    def part_hands(self):
+        """The keyboard and the mouse alone, no AI in between: walk, jump onto a block, break it, put it back."""
         ox, _ = self.origin
-        for i, lane in enumerate(LANES):
-            self.put(i, 2)
-            goal = [ox + 29, Y, self.lane_z(i)]
-            self.log.mark()
-            t0 = time.time()
-            res = self.b.task("goto", {"x": goal[0], "y": goal[1], "z": goal[2]}, 150)
-            took = time.time() - t0
-            bot, _, _ = self.where()
-            d = dist(bot, [goal[0] + 0.5, goal[1], goal[2] + 0.5]) if bot else 99
-            lines = self.log.since_mark()
-            verdict = "ok" if d <= 2.5 else ("warn" if d <= 8 else "fail")
-            self.add("ноги", lane, verdict, took, "до цели %.1f бл.; результат: %s" % (d, str(res)[:200]),
-                     "\n".join(lines[-40:]))
-        # come: to the commander standing at the far end
-        self.put(0, 2, host_x=28)
+        c = self.lane_z(0)
+        self.put(0, 2)
+        before, _, _ = self.where()
         t0 = time.time()
-        res = self.b.task("come", {}, 120)
+        res = self.control(x=ox + 29, z=c, keys=["forward", "sprint"], ticks=60)
+        after, _, _ = self.where()
+        moved = dist(before, after) if before and after else 0
+        self.add("руки", "идти (forward+sprint 3 с)", "ok" if moved >= 10 else ("warn" if moved >= 3 else "fail"),
+                 time.time() - t0, "прошёл %.1f бл.; %s" % (moved, str(res)[:300]))
+        c = self.lane_z(1)
+        self.put(1, 6)
+        t0 = time.time()
+        res = self.control(x=ox + 8, y=Y, z=c, keys=["forward", "jump"], ticks=20)
+        after, _, _ = self.where()
+        up = after[1] - Y if after else -1
+        self.add("руки", "запрыгнуть на блок", "ok" if up >= 0.9 else "fail", time.time() - t0,
+                 "поднялся на %.1f бл.; %s" % (up, str(res)[:300]))
+        # break the step with a pickaxe and put it back: slot 1 the pickaxe, slot 2 the stone
+        self.put(1, 6)
+        self.b.probe(clear_bot=True, give_bot=[["minecraft:iron_pickaxe", 1], ["minecraft:stone", 8]])
+        time.sleep(1)
+        t0 = time.time()
+        res = self.control(x=ox + 8, y=Y, z=c, slot=1, left="hold", ticks=40)
+        got = self.block_at(ox + 8, Y, c)
+        self.add("руки", "сломать блок (left hold)", "ok" if "air" in got else "fail", time.time() - t0,
+                 "на месте блока: %s; %s" % (got, str(res)[:300]))
+        t0 = time.time()
+        res = self.control(x=ox + 8, y=Y - 1, z=c, slot=2, right="click", ticks=5)
+        got = self.block_at(ox + 8, Y, c)
+        self.add("руки", "поставить блок (right click)", "ok" if "stone" in got else "fail", time.time() - t0,
+                 "на месте блока: %s; %s" % (got, str(res)[:300]))
+        # the mouse follows the commander: he stands at the end of the flat lane, Altron runs to him
+        c = self.lane_z(0)
+        self.put(0, 2, host_x=16)
+        t0 = time.time()
+        res = self.control(track="player:" + (self.b.state().get("owner") or ""), keys=["forward", "sprint"], ticks=50)
         bot, host, _ = self.where()
         d = dist(bot, host) if bot and host else 99
-        self.add("ноги", "come", "ok" if d <= 4 else "fail", time.time() - t0, "до командира %.1f бл.; %s" % (d, str(res)[:160]))
-        # follow: the commander moves along the lane in jumps, Altron keeps up
-        self.put(0, 2, host_x=6)
-        self.b.task("follow", {}, 0)
-        t0 = time.time()
-        worst = 0
-        for x in (10, 14, 18, 22, 26, 29):
-            self.b.probe(tp_host=[ox + x + 0.5, Y, self.lane_z(0) + 0.5])
-            time.sleep(5)
-            bot, host, _ = self.where()
-            if bot and host:
-                worst = max(worst, dist(bot, host))
-        time.sleep(4)
-        bot, host, _ = self.where()
-        end = dist(bot, host) if bot and host else 99
-        self.b.task("stop", {}, 5)
-        self.add("ноги", "follow", "ok" if end <= 5 else ("warn" if end <= 10 else "fail"), time.time() - t0,
-                 "в конце в %.1f бл. от командира, самое большое отставание %.1f бл." % (end, worst))
+        self.add("руки", "бежать к командиру (track)", "ok" if d <= 4 else ("warn" if d <= 8 else "fail"), time.time() - t0,
+                 "до командира %.1f бл.; %s" % (d, str(res)[:300]))
 
     def check_talk(self, name, phrase, want_tools=(), want_speech=True, part="разговор", english=False, timeout=150):
         r = self.talk(phrase, timeout)
@@ -307,7 +317,7 @@ class FieldTest:
         self.check_talk("вкусы", "Альтрон, а что ты любишь больше всего в этом мире?")
         self.put(0, 3, host_x=20)
         r = self.check_talk("иди ко мне", "Альтрон, иди ко мне", want_tools=(), want_speech=False)
-        time.sleep(8)
+        self.wait_idle(120)   # he walks with his own keys: move after move
         bot, host, _ = self.where()
         d = dist(bot, host) if bot and host else 99
         self.add("разговор", "иди ко мне: дошёл?", "ok" if d <= 5 else "fail", 0,
@@ -473,7 +483,7 @@ BrainLog.since_start = _since_start
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--only", default="legs,talk,goals,events")
+    ap.add_argument("--only", default="hands,talk,goals,events")
     ap.add_argument("--keep-course", action="store_true")
     ap.add_argument("--port", type=int, default=0)
     a = ap.parse_args(argv)

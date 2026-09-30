@@ -39,10 +39,11 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
 - **Work with any mod** (Forge 1.20.1 packs): reads every mod's items, recipes and manuals from the pack's files,
   opens and clicks any mod window and loads machines himself, looks things up on the web when the pack's data is not
   enough.
-- **Play**: walk with his own pathfinding (steps, jumps, drops, ladders, swimming, doors), follow, guard, fight (bows,
-  swords and mod guns), mine like a player (no x-ray), smelt in a furnace, craft, build multiblocks, drive vehicles
-  and man their guns, get downed players up, gesture (nod, wave, bow, dance), set reminders, plan a house, shelter,
-  wall, tower, platform or bridge from a description and place it block by block.
+- **Play — with the keyboard and the mouse only**: everything he does in the world is keys held and mouse moves and
+  clicks the AI chooses (`control`: keys, look at a point or keep the crosshair on a creature, left/right button,
+  hotbar slot) and clicks in windows (`gui`, `click_slot`). Walking, following, fighting, mining, building, smelting,
+  crafting in the grid, driving — all planned move by move by the AI. The brain can plan a house, wall, tower or
+  bridge and read a mod's multiblock blueprint; the blocks are placed by his hands.
 - **Remember**: places, chests and their contents, what you said — across restarts.
 
 ## Requirements
@@ -153,10 +154,11 @@ Apache License 2.0 — see [LICENSE](LICENSE).
   дообучается — см. [TRAINING.md](TRAINING.md).
 - **Работать с любыми модами** (сборки Forge 1.20.1): читает предметы, рецепты и руководства всех модов из файлов
   сборки, открывает и нажимает окна любых модов и сам загружает машины, ищет в интернете, если в сборке нет ответа.
-- **Играть**: ходить своими ногами (свой поиск пути: шаги, прыжки, спуски, лестницы, вода, двери), следовать,
-  охранять, воевать (лук, меч, оружие модов), копать как игрок (без рентгена), плавить в печи, крафтить, строить
-  многоблочные машины, водить технику и стрелять из неё, поднимать раненых, делать жесты, напоминать, строить по
-  описанию дом, укрытие, стену, башню, площадку или мост — план даёт мозг, блоки ставит сам.
+- **Играть — только клавиатурой и мышью**: всё, что он делает в мире, — нажатые клавиши, движения и клики мыши,
+  которые выбирает нейросеть (`control`: клавиши, взгляд на точку или прицел на существо, левая/правая кнопка, слот)
+  и клики в окнах (`gui`, `click_slot`). Ходить, следовать, драться, копать, строить, плавить, крафтить в сетке,
+  водить технику — нейросеть делает сама, движение за движением. Мозг может дать план дома, стены, башни или моста и
+  чертёж многоблочной машины мода, а блоки ставят его руки.
 - **Помнить** места, сундуки и их содержимое, твои слова — и после перезапуска.
 
 ## Установка в один клик (Windows)

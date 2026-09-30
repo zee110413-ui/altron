@@ -183,7 +183,7 @@ class TTS:
         self._voice(None)   # the fallback voice loads now: a broken path shows at start, not at the first word
 
     def use(self, settings):
-        """Switch the manner of speaking: {"style", "voices": {lang: path}, "speed", "pitch", "band"}. A voice file
+        """Switch the manner of speaking: {"style", "voices": {lang: path}, "speed", "pitch", "band", "crush", "flat"}. A voice file
         that is not there (not downloaded yet) is skipped: that language is said with the common voice."""
         style = str(settings.get("style", "robot")).lower()
         pitch, comb, chorus, drive, hall = self.STYLES.get(style, self.STYLES["robot"])
@@ -194,7 +194,7 @@ class TTS:
         self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
         self.band = tuple(settings.get("band") or self.BANDS.get(style, ())) or None
         self.crush = int(settings.get("crush", self.CRUSH.get(style, 0)) or 0)
-        self.flat = self.FLAT.get(style)
+        self.flat = tuple(settings.get("flat") or self.FLAT.get(style) or ()) or None
         self.speed = max(0.5, float(settings.get("speed", 1.0)) * float(self.cfg.get("tts_speed", 1.0)))
         self.paths = {}
         for k, v in (settings.get("voices") or {}).items():
