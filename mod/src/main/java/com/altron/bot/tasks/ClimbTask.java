@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Task;
 import net.minecraft.core.BlockPos;
@@ -21,7 +21,7 @@ import java.util.List;
  * above it), step exactly into its column, then hold forward+jump to go up, or let go to slide down. A closed hatch
  * (trapdoor) over the shaft is opened on the way, like a player does.
  * Works with any climbable block of any mod (EnderIO, Immersive Engineering covered ladders, SecurityCraft...):
- * Baritone walks only to an ordinary standing spot next to it, since it knows vanilla ladders only.
+ * His legs walk only to an ordinary standing spot next to it.
  */
 public class ClimbTask extends Task {
     private static final Direction[] SIDES = {Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
@@ -289,21 +289,21 @@ public class ClimbTask extends Task {
             }
             phase = 1;
             walk = 0;
-            if (horizontal(stand) > 0.45 || Math.abs(p.getY() - stand.getY()) > 0.6) Baritone.gotoNear(stand, 0);
+            if (horizontal(stand) > 0.45 || Math.abs(p.getY() - stand.getY()) > 0.6) Nav.gotoNear(stand, 0);
             return Status.RUNNING;
         }
         if (phase == 1) {   // walking to the spot next to it
             if (p.onClimbable() && up && Math.abs(p.getY() - entry.getY()) < 0.6) {
                 // walked onto the rungs on the way: still line up in the column first (a head over the edge of the
                 // shaft bumps into the floor above)
-                Baritone.cancel();
+                Nav.cancel();
                 phase = 2;
                 walk = 0;
                 return Status.RUNNING;
             }
             boolean there = horizontal(stand) < 0.5 && Math.abs(p.getY() - stand.getY()) < 0.6;
-            if (there || (walk > 20 && !Baritone.busy())) {
-                Baritone.cancel();
+            if (there || (walk > 20 && !Nav.busy())) {
+                Nav.cancel();
                 if (!there && horizontal(stand) > 1.6) {
                     if (++tries > 2) return fail("не смог подойти к лестнице в " + Bot.pos(column));
                     phase = 0;   // look again from here
@@ -431,6 +431,6 @@ public class ClimbTask extends Task {
     public void stop() {
         if (helper != null) helper.stop();
         release();
-        Baritone.cancel();
+        Nav.cancel();
     }
 }

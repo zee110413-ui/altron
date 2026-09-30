@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Inv;
 import com.altron.bot.Task;
@@ -44,12 +44,16 @@ public class BreakTask extends Task {
         if (phase == 0) {
             // Walk there first: the bot only learns what is there when it can see it up close
             if (Bot.eyeDistTo(pos) > 4.2) {
-                if (walkTicks == 0) Baritone.gotoNear(pos, 2);
+                if (walkTicks == 0) Nav.gotoNear(pos, 2);
                 if (++walkTicks > 20 * 120) return fail("не смог подойти к блоку " + Bot.pos(pos));
-                if (walkTicks > 20 && walkTicks % 20 == 0 && !Baritone.busy()) Baritone.gotoNear(pos, 1);
+                if (walkTicks > 40 && !Nav.busy() && !com.altron.bot.Legs.lastFailure().isEmpty()) {
+                    // no way to walk up to it (inside the rock, behind a wall): the AI decides how to get there
+                    return fail("не могу подойти к блоку " + Bot.pos(pos) + ": " + com.altron.bot.Legs.lastFailure());
+                }
+                if (walkTicks > 20 && walkTicks % 20 == 0 && !Nav.busy()) Nav.gotoNear(pos, 1);
                 return Status.RUNNING;
             }
-            Baritone.cancel();
+            Nav.cancel();
             BlockState state = Bot.level().getBlockState(pos);
             if (state.isAir()) return done("там уже пусто");
             if (state.getDestroySpeed(Bot.level(), pos) < 0) return fail("этот блок неразрушим");
@@ -98,7 +102,7 @@ public class BreakTask extends Task {
     @Override
     public void stop() {
         if (phase == 1) Bot.mc().gameMode.stopDestroyBlock();
-        else Baritone.cancel();
+        else Nav.cancel();
     }
 
     @Override

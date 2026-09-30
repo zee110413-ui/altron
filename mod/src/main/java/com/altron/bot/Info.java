@@ -48,7 +48,7 @@ public final class Info {
                 "hp", Math.round(p.getHealth()), "food", p.getFoodData().getFoodLevel(),
                 "held", Bot.describe(p.getMainHandItem()),
                 "task", t == null ? "" : t.name(), "progress", t == null ? "" : t.progress(),
-                "busy", Baritone.busy());
+                "busy", Nav.busy());
         Player o = BotClient.owner.isBlank() ? null : Bot.findPlayer(BotClient.owner);
         if (o != null) {
             s.add("owner_pos", J.arr(o.getX(), o.getY(), o.getZ()));

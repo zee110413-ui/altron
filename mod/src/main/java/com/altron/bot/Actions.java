@@ -55,7 +55,6 @@ public final class Actions {
         if (type.equals("config")) {
             BotClient.owner = J.str(msg, "owner", BotClient.owner);
             BotClient.worldName = J.str(msg, "world", BotClient.worldName);
-            Legs.mode = J.str(msg, "legs", Legs.mode);   // own legs, or Baritone as before
             return;
         }
         if (!type.equals("cmd")) return;
@@ -414,7 +413,7 @@ public final class Actions {
             case "stop":
                 leaveBed();
                 BotClient.setTask(null);
-                Baritone.cancel();
+                Nav.cancel();
                 Input.releaseAll();
                 Guns.ceaseFire();
                 return ok("остановился");
@@ -566,7 +565,13 @@ public final class Actions {
                             BuiltInRegistries.BLOCK.get(id).defaultBlockState(), null));
                     if (list.size() > 3000) return err("слишком большая постройка (больше 3000 блоков)");
                 }
-                return start(new com.altron.bot.tasks.BuildPlanTask(list, J.has(a, "x") ? pos(a) : null, J.str(a, "what", "постройку")));
+                // where it fits and what is missing; the AI puts the blocks in place with its own hands
+                BlockPos[] at = new BlockPos[1];
+                String why = com.altron.bot.tasks.BuildPlanTask.site(list, J.has(a, "x") ? pos(a) : null, at);
+                if (!why.isEmpty()) return err(J.str(a, "what", "постройка") + ": " + why);
+                JsonObject r = ok("место для " + J.str(a, "what", "постройки") + ": угол в " + Bot.pos(at[0]));
+                r.add("origin", J.arr(at[0].getX(), at[0].getY(), at[0].getZ()));
+                return r;
             }
             case "drive":
                 // "езжай за мной": follow a player (the commander by default) instead of a point
@@ -649,12 +654,20 @@ public final class Actions {
             case "chat":
                 Bot.chat(J.str(a, "text", ""));
                 return ok("отправил");
-            case "baritone": {
-                String cmd = J.str(a, "command", "").replaceFirst("^#", "");
-                String unfair = Baritone.checkFair(cmd);
-                if (unfair != null) return err(unfair);
-                return Baritone.command(cmd) ? ok("baritone: " + cmd) : err("baritone не принял команду: " + cmd);
+            // ---------- the AI's own hands: keyboard and mouse ----------
+            case "control": {
+                List<KeyMapping> keys = new ArrayList<>();
+                for (String k : list(a, "keys")) {
+                    KeyMapping km = Input.find(k);
+                    if (km == null) return err("нет такой клавиши: " + k);
+                    keys.add(km);
+                }
+                return start(new com.altron.bot.tasks.ControlTask(keys, J.num(a, "ticks", 5), (float) J.dbl(a, "turn", 0),
+                        (float) J.dbl(a, "tilt", 0), J.has(a, "pitch") ? (float) J.dbl(a, "pitch", 0) : null,
+                        J.str(a, "left", ""), J.str(a, "right", ""), J.num(a, "slot", 0)));
             }
+            case "view":
+                return ok(com.altron.bot.tasks.ControlTask.view());
             default:
                 return err("неизвестная команда: " + name);
         }

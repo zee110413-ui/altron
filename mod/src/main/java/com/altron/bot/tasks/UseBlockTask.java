@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Info;
 import com.altron.bot.Input;
@@ -60,9 +60,9 @@ public class UseBlockTask extends Task {
         var p = p();
         if (phase == 0) {
             if (repoTicks > 0) {   // walking to a spot with a clear view
-                if (--repoTicks > 0 && (repoTicks > 180 || Baritone.busy())) return Status.RUNNING;
+                if (--repoTicks > 0 && (repoTicks > 180 || Nav.busy())) return Status.RUNNING;
                 repoTicks = 0;
-                Baritone.cancel();
+                Nav.cancel();
             }
             if (Bot.eyeDistTo(pos) > 4.2) {
                 // walking there the smart way: up mod ladders, through iron doors by their buttons
@@ -77,12 +77,12 @@ public class UseBlockTask extends Task {
                     return Status.RUNNING;   // one more try from where he got to
                 }
             }
-            Baritone.cancel();
+            Nav.cancel();
             if (Bot.level().getBlockState(pos).isAir()) return fail("в " + Bot.pos(pos) + " пусто. " + around(pos));
             if (!Bot.canSee(pos)) {
                 // like a player: no clicking through walls, walk around to get a clear view
                 if (++reposition > 3) return fail("не вижу " + Bot.pos(pos) + " — он за стеной, сначала нужен проход");
-                Baritone.gotoNear(pos, reposition == 1 ? 1 : 0);
+                Nav.gotoNear(pos, reposition == 1 ? 1 : 0);
                 repoTicks = 200;
                 return Status.RUNNING;
             }
@@ -169,6 +169,6 @@ public class UseBlockTask extends Task {
         Bot.mc().options.keyShift.setDown(false);
         if (holdTicks > 0) Input.release(Bot.mc().options.keyUse.getKey());
         if (walker != null) walker.stop();
-        if (phase == 0 && walkTicks > 0) Baritone.cancel();
+        if (phase == 0 && walkTicks > 0) Nav.cancel();
     }
 }

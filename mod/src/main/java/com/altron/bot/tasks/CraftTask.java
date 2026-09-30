@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Info;
 import com.altron.bot.Inv;
@@ -271,7 +271,7 @@ public class CraftTask extends Task {
     @Override
     public void stop() {
         if (sub != null) sub.stop();
-        Baritone.cancel();
+        Nav.cancel();
     }
 
     @Override

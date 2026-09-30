@@ -4,7 +4,6 @@ import com.altron.AltronMod;
 import com.altron.Config;
 import com.altron.J;
 import com.altron.bot.tasks.AttackTask;
-import com.altron.bot.tasks.EatTask;
 import com.altron.bot.tasks.FollowTask;
 import com.altron.net.BrainLink;
 import com.google.gson.JsonObject;
@@ -197,7 +196,6 @@ public class BotClient {
         mc.setWindowActive(true);
         if (!joined) {
             joined = true;
-            Baritone.setup();
             Memory.onJoin();
             // the world key lets the brain keep its own memories (places, facts) per world too
             Bot.send(J.obj("type", "event", "event", "joined", "world", Memory.worldKey(),
@@ -270,24 +268,28 @@ public class BotClient {
             Bot.event("low_health", "У меня мало здоровья: " + Math.round(hp) + "/20");
         }
         lastHp = hp;
-        if (interrupt != null || ticks % 10 != 0) return;
-        if (p.containerMenu != p.inventoryMenu) return;
+        // What happens to his body goes to the AI as news; whether to fight back, run, eat or carry on is its call
+        if (ticks % 10 != 0) return;
         boolean fighting = task instanceof AttackTask || (task instanceof FollowTask ft && ft.name().equals("guard"));
-        // Fight back if a hostile mob is right next to us
-        if (!fighting) {
+        if (!fighting && now - lastThreatEvent > 15000) {
             List<Entity> close = Info.entities(6, e -> Info.isHostile(e) && p.hasLineOfSight(e));
             if (!close.isEmpty()) {
-                interrupt(new AttackTask("hostile", 10, 30));
-                return;
+                lastThreatEvent = now;
+                Entity e = close.get(0);
+                Bot.event("threat", "Рядом враг: " + e.getName().getString() + " в " + Math.round(e.distanceTo(p)) + " бл."
+                        + (close.size() > 1 ? " (всего врагов рядом: " + close.size() + ")" : "")
+                        + ", здоровье у меня " + Math.round(hp) + "/20");
             }
         }
-        // Eat when hungry; ask the player for food if there is none
         int food = p.getFoodData().getFoodLevel();
-        if (food <= 8 || (task == null && food <= 14)) {
-            if (Inv.find(p, s -> s.getItem().getFoodProperties(s, p) != null) >= 0) interrupt(new EatTask());
-            else if (food <= 8) need("food", "Я голоден (сытость " + food + "/20), а еды у меня нет.");
+        if (food <= 8 && now - lastHungerEvent > 60000) {
+            lastHungerEvent = now;
+            boolean has = Inv.find(p, s -> s.getItem().getFoodProperties(s, p) != null) >= 0;
+            Bot.event("hungry", "Я голоден: сытость " + food + "/20" + (has ? " (еда в инвентаре есть)" : ", еды у меня нет"));
         }
     }
+
+    private long lastThreatEvent, lastHungerEvent;
 
     // ---------------------------------------------------------------- idle life: where he looks when he has nothing to do
     private static String attentionTo = "";
@@ -310,17 +312,17 @@ public class BotClient {
         if (attentionTicks > 0) attentionTicks--;
         if (Bot.turnedOnRequest()) return;   // he was asked to look somewhere: keep looking there
         // following the commander and standing next to him: look at him, not wherever the last step pointed
-        // (only right next to him, and only while Baritone is not leading anywhere: turning the head while it wants to
-        // set off kept Altron standing still — "иду за тобой" and not a step)
+        // (only right next to him, and only while his legs are not leading anywhere: turning the head while they want
+        // to set off kept Altron standing still — "иду за тобой" and not a step)
         if (currentTask() instanceof FollowTask) {
             Player who = Bot.findPlayer(attentionTicks > 0 && !attentionTo.isBlank() ? attentionTo : owner);
-            if (who != null && who.distanceTo(p) < 4.5 && !Baritone.pathing()
+            if (who != null && who.distanceTo(p) < 4.5 && !Nav.pathing()
                     && p.getDeltaMovement().horizontalDistanceSqr() < 0.003 && p.hasLineOfSight(who)) {
                 Bot.lookAndHold(who, 10);
             }
             return;
         }
-        if (currentTask() != null || p.containerMenu != p.inventoryMenu || p.isPassenger() || Baritone.busy()) {
+        if (currentTask() != null || p.containerMenu != p.inventoryMenu || p.isPassenger() || Nav.busy()) {
             glanceTicks = 0;
             return;
         }
@@ -408,7 +410,7 @@ public class BotClient {
 
     private static synchronized void rememberServerMessage(String text) {
         text = text.replaceAll("§.", "").trim();
-        if (text.isEmpty() || text.startsWith("[Baritone]")) return;
+        if (text.isEmpty()) return;
         SERVER_MESSAGES.addLast(new Object[]{System.currentTimeMillis(), text});
         while (SERVER_MESSAGES.size() > 20) SERVER_MESSAGES.pollFirst();
     }

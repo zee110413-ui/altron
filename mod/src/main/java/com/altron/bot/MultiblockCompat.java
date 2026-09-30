@@ -1,18 +1,12 @@
 package com.altron.bot;
 
-import net.minecraft.SharedConstants;
-import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.NbtIo;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -22,7 +16,7 @@ import java.util.Map;
 
 /**
  * Immersive Engineering multiblocks (also used by Immersive Petroleum: pumpjack, distillation tower...).
- * Reads the real blueprint from the mod, writes it as a schematic for Baritone to build.
+ * Reads the real blueprint from the mod: what goes where, and whether it all stands in place.
  */
 public final class MultiblockCompat {
     private MultiblockCompat() {
@@ -88,46 +82,6 @@ public final class MultiblockCompat {
         Map<net.minecraft.world.item.Item, Integer> need = new LinkedHashMap<>();
         for (StructureTemplate.StructureBlockInfo b : blocks) need.merge(b.state().getBlock().asItem(), 1, Integer::sum);
         return need;
-    }
-
-    /** Write a Sponge (.schem v2) schematic that Baritone's "build" command understands. */
-    public static void writeSchematic(List<StructureTemplate.StructureBlockInfo> blocks, File file) throws Exception {
-        int w = 1, h = 1, l = 1;
-        for (StructureTemplate.StructureBlockInfo b : blocks) {
-            w = Math.max(w, b.pos().getX() + 1);
-            h = Math.max(h, b.pos().getY() + 1);
-            l = Math.max(l, b.pos().getZ() + 1);
-        }
-        Map<String, Integer> palette = new HashMap<>();
-        palette.put("minecraft:air", 0);
-        int[] data = new int[w * h * l];
-        for (StructureTemplate.StructureBlockInfo b : blocks) {
-            String key = BlockStateParser.serialize(b.state());
-            int id = palette.computeIfAbsent(key, k -> palette.size());
-            BlockPos p = b.pos();
-            data[p.getX() + p.getZ() * w + p.getY() * w * l] = id;
-        }
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        for (int v : data) {
-            while ((v & ~0x7F) != 0) {
-                bytes.write((v & 0x7F) | 0x80);
-                v >>>= 7;
-            }
-            bytes.write(v);
-        }
-        CompoundTag root = new CompoundTag();
-        root.putInt("Version", 2);
-        root.putInt("DataVersion", SharedConstants.getCurrentVersion().getDataVersion().getVersion());
-        root.putShort("Width", (short) w);
-        root.putShort("Height", (short) h);
-        root.putShort("Length", (short) l);
-        CompoundTag pal = new CompoundTag();
-        palette.forEach(pal::putInt);
-        root.put("Palette", pal);
-        root.putInt("PaletteMax", palette.size());
-        root.putByteArray("BlockData", bytes.toByteArray());
-        file.getParentFile().mkdirs();
-        NbtIo.writeCompressed(root, file);
     }
 
     /** True if every blueprint block is in place at origin (non-rotated build). */

@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Inv;
 import com.altron.bot.Task;
@@ -61,17 +61,17 @@ public class PlaceTask extends Task {
         }
         if (phase == 1) {
             if (repoTicks > 0) {   // stepping aside to see the support block
-                if (--repoTicks > 0 && (repoTicks > 180 || Baritone.busy())) return Status.RUNNING;
+                if (--repoTicks > 0 && (repoTicks > 180 || Nav.busy())) return Status.RUNNING;
                 repoTicks = 0;
             }
             double d = Bot.eyeDistTo(pos);
             boolean inside = p().getBoundingBox().intersects(new AABB(pos));
             if (d > 4.2 || inside) {
-                if (walkTicks == 0 || (walkTicks % 40 == 0 && !Baritone.busy())) Baritone.gotoNear(pos.relative(Direction.NORTH, inside ? 2 : 0), 2);
+                if (walkTicks == 0 || (walkTicks % 40 == 0 && !Nav.busy())) Nav.gotoNear(pos.relative(Direction.NORTH, inside ? 2 : 0), 2);
                 if (++walkTicks > 20 * 120) return fail("не смог подойти к " + Bot.pos(pos));
                 return Status.RUNNING;
             }
-            Baritone.cancel();
+            Nav.cancel();
             Bot.closeContainer();
             Inv.holdMatching(p(), s -> s.is(item));
             Bot.mc().options.keyShift.setDown(true); // don't open chests/machines we click on
@@ -106,7 +106,7 @@ public class PlaceTask extends Task {
                 phase = 1;
                 walkTicks = 1;
                 repoTicks = 200;
-                Baritone.gotoNear(pos, reposition == 1 ? 1 : 3);
+                Nav.gotoNear(pos, reposition == 1 ? 1 : 3);
                 return Status.RUNNING;
             }
             return fail(anySupport ? "не вижу, к чему прислонить блок в " + Bot.pos(pos) : "не к чему прислонить блок в " + Bot.pos(pos));
@@ -120,6 +120,6 @@ public class PlaceTask extends Task {
     @Override
     public void stop() {
         Bot.mc().options.keyShift.setDown(false);
-        if (phase == 1) Baritone.cancel();
+        if (phase == 1) Nav.cancel();
     }
 }

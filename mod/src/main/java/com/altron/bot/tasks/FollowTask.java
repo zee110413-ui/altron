@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Combat;
 import com.altron.bot.Info;
@@ -35,7 +35,7 @@ public class FollowTask extends Task {
     }
 
     private void startFollow() {
-        following = Baritone.follow(who);
+        following = Nav.follow(who);
     }
 
     @Override
@@ -49,7 +49,7 @@ public class FollowTask extends Task {
             boolean engaged = combat.tick();
             if (engaged && !fighting) {
                 fighting = true;
-                Baritone.cancel();
+                Nav.cancel();
             } else if (!engaged && fighting) {
                 fighting = false;
                 combat.stop();
@@ -72,16 +72,16 @@ public class FollowTask extends Task {
                 if (++lost > 15) return fail("потерял игрока " + who + " из виду");
             } else {
                 lost = 0;
-                // Baritone follows, but he is not getting closer (a ladder or a door Baritone cannot use)
+                // his legs follow, but he is not getting closer (a ladder or a door they cannot use)
                 double dist = o.distanceTo(p());
                 behind = dist > 5 && dist > lastDist - 0.5 ? behind + 1 : 0;
                 lastDist = dist;
                 if (behind >= 3) {
-                    Baritone.cancel();
+                    Nav.cancel();
                     walker = new GotoTask("follow", o.blockPosition(), 2, who);
                     return Status.RUNNING;
                 }
-                if (!Baritone.busy()) startFollow();
+                if (!Nav.busy()) startFollow();
             }
         }
         return Status.RUNNING;
@@ -91,12 +91,12 @@ public class FollowTask extends Task {
     public void stop() {
         if (walker != null) walker.stop();
         combat.stop();
-        Baritone.cancel();
+        Nav.cancel();
     }
 
     @Override
     public void pause() {
-        Baritone.cancel();
+        Nav.cancel();
     }
 
     @Override

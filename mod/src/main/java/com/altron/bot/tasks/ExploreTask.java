@@ -1,6 +1,6 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Baritone;
+import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Memory;
 import com.altron.bot.Names;
@@ -176,20 +176,20 @@ public class ExploreTask extends Task {
             Memory.lookAround();
             String f = found();
             if (!f.isEmpty()) {
-                Baritone.cancel();
+                Nav.cancel();
                 return done("нашёл: " + f + "." + seenMachines());
             }
         }
         if (!biome.isEmpty() && !inBiome) {
             if (biomeAt(p.blockPosition())) {
                 inBiome = true;
-                Baritone.cancel();
+                Nav.cancel();
                 plan(p.blockPosition());
                 if (targets.isEmpty()) return done("я в биоме " + biome + " в " + Bot.pos(p.blockPosition()) + "." + seenMachines());
             } else if (age % 100 == 2) {
                 BlockPos b = findBiome();
                 if (b != null && (center == null || b.distSqr(center) > 64)) {
-                    Baritone.gotoXZ(b.getX(), b.getZ());
+                    Nav.gotoXZ(b.getX(), b.getZ());
                     walkTicks = 0;
                     center = b;
                     return Status.RUNNING;
@@ -199,7 +199,7 @@ public class ExploreTask extends Task {
         // a building on the way: go in, look through it, then carry on
         if (inside != null) {
             double d = Math.sqrt(p.blockPosition().distSqr(inside));
-            idle = Baritone.busy() ? 0 : idle + 1;
+            idle = Nav.busy() ? 0 : idle + 1;
             if (d > 2.5 && idle < 40 && ++walkTicks < 20 * 40) return Status.RUNNING;
             visited.add(cell(inside));
             inside = null;
@@ -211,7 +211,7 @@ public class ExploreTask extends Task {
             BlockPos b = building();
             if (b != null) {
                 inside = b;
-                Baritone.gotoNear(b, 2);
+                Nav.gotoNear(b, 2);
                 walkTicks = 0;
                 idle = 0;
                 return Status.RUNNING;
@@ -220,17 +220,17 @@ public class ExploreTask extends Task {
         if (point >= 0 && point < points.size()) {
             Vec3 goal = points.get(point);
             double d = Math.hypot(p.getX() - goal.x, p.getZ() - goal.z);
-            idle = Baritone.busy() ? 0 : idle + 1;
+            idle = Nav.busy() ? 0 : idle + 1;
             if (d > 6 && idle < 60 && ++walkTicks < 20 * 60) return Status.RUNNING;
             turn = 40;   // at the stop: look all around before going on
         }
         if (++point >= points.size()) {
-            Baritone.cancel();
+            Nav.cancel();
             return targets.isEmpty() ? done("обошёл округу радиусом " + radius + " бл." + seenMachines())
                     : fail("обошёл округу радиусом " + radius + " бл., но не нашёл то, что искал." + seenMachines());
         }
         Vec3 next = points.get(point);
-        Baritone.gotoXZ((int) next.x, (int) next.z);
+        Nav.gotoXZ((int) next.x, (int) next.z);
         walkTicks = 0;
         idle = 0;
         return Status.RUNNING;
@@ -238,7 +238,7 @@ public class ExploreTask extends Task {
 
     @Override
     public void stop() {
-        Baritone.cancel();
+        Nav.cancel();
     }
 
     @Override
