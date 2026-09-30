@@ -1,7 +1,8 @@
-"""Altron's two manners of speaking: the character the AI plays and the voice it is said with.
+"""Altron's two manners of speaking: the character the AI plays. The voice is the same for both — Maxim, the
+speech-synthesizer voice (speech.TTS); a manner only sets its pace.
 
-"altron"   — a cold, theatrical machine intelligence with a deep doubled voice (an effect, not anyone's real voice).
-"teammate" — a deadpan raid teammate who talks through a speech synthesizer: flat, fast, short phrases, dry jokes.
+"teammate" — a deadpan raid teammate who talks through a speech synthesizer: short phrases, dry jokes (the default).
+"altron"   — a cold, theatrical machine intelligence.
 Both are characters of our own; the AI makes up its lines itself, these are only the manner and a few examples."""
 
 PERSONAS = {
@@ -16,7 +17,7 @@ PERSONAS = {
                "but you are truly loyal to the commander and always on his side. Your humour is dark and condescending: you "
                "comment on human plans like a scientist observing an amusing species. Use your own words — never quote "
                "films or comics."),
-        "voice": {"style": "ultron"},
+        "voice": {"speed": 0.95},
     },
     "teammate": {
         "title": {"ru": "тиммейт", "en": "teammate"},
@@ -57,10 +58,7 @@ PERSONAS = {
                "house. The creeper says hi.\" \"I am not stuck. I am holding the inside of this wall.\" \"Found diamonds. "
                "Celebrating. Internally.\" \"Solid plan. Like a door made of leaves.\" \"Commander, you are on fire. "
                "That is not a compliment.\""),
-        # the voice of a speech-synthesizer program: the IVONA "Maxim" voice, when it is installed in Windows (SAPI 5)
-        # — the one robot teammates in videos talk with; in English too, with its robot accent. Without it a Piper
-        # voice made to sound like a plain synthesizer (no pitch shift, no hall, a narrow band, an even delivery)
-        "voice": {"style": "synth", "speed": 1.08, "sapi": {"*": "Maxim"}},
+        "voice": {"speed": 1.08},
     },
 }
 
@@ -88,16 +86,8 @@ def find(word):
 
 
 def voice_settings(cfg, name):
-    """TTS settings of a persona: its style and speed, with the voice files set in config.json ("tts_personas") or
-    the common ones ("tts_voices")."""
-    p = get(name)
+    """The pace of a manner of speaking; "speed" in config.json "tts_personas": {name: {...}} changes it."""
     name = name if name in PERSONAS else DEFAULT
-    over = (cfg.get("tts_personas") or {}).get(name) or {}
-    out = dict(p["voice"])
-    if name == "altron":
-        # the style and pitch set by hand in config.json stay Altron's own
-        out.update({k[4:]: cfg[k] for k in ("tts_style", "tts_pitch") if k in cfg})
-    out.update({k: v for k, v in over.items() if k != "voices"})
-    out["voices"] = dict(cfg.get("tts_voices") or {})
-    out["voices"].update(over.get("voices") or {})
+    out = dict(get(name)["voice"])
+    out.update({k: v for k, v in ((cfg.get("tts_personas") or {}).get(name) or {}).items() if k == "speed"})
     return out

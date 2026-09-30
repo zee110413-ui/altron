@@ -214,14 +214,15 @@ class Hub:
         if self.owner:
             # the commander may answer without saying the name
             self.windows[self.owner] = time.time() + self.cfg.get("conversation_window_sec", 20) + 10
-        chat = self.cfg.get("chat_replies", False)
+        # without his voice (Maxim is not there) the words go to the game chat: no other voice says them
+        chat = self.cfg.get("chat_replies", False) or (self.tts is not None and not self.tts.ready)
         if chat and self.bot is not None:
             flat = re.sub(r"[*_#`]", "", re.sub(r"\s+", " ", text))
             for i in range(0, min(len(flat), 750), 250):   # chat lines are limited to 256 characters
                 self.send(self.bot, {"type": "cmd", "id": 0, "name": "chat", "args": {"text": flat[i:i + 250]}})
         elif chat and self.host is not None and self.bot is None:
             self.send(self.host, {"type": "notify", "text": text})
-        if self.tts is None or (self.host is None and self.recorder is None and not (self.remote and self.bot)):
+        if self.tts is None or not self.tts.ready or (self.host is None and self.recorder is None and not (self.remote and self.bot)):
             return
         spoken = text
         limit = SPEECH_CHARS if chat else SPEECH_CHARS_VOICE_ONLY
@@ -1308,7 +1309,7 @@ class Hub:
         return persona.find(name or self.cfg.get("persona", "")) or persona.DEFAULT
 
     def set_persona(self, name):
-        """«Говори как тиммейт» / «верни свой голос»: the character the AI plays and the voice it is said with."""
+        """«Говори как тиммейт» / «будь Альтроном»: the character the AI plays (the voice stays Maxim's)."""
         p = persona.find(name)
         if not p:
             return "ОШИБКА: манеры речи — %s" % ", ".join(persona.PERSONAS)
@@ -1318,17 +1319,11 @@ class Hub:
             self.persona_file().write_text(p, encoding="utf-8")
         except OSError:
             pass
-        settings = persona.voice_settings(self.cfg, p)
-        note = ""
         if self.tts is not None:
-            self.tts.use(settings)
-            self.acks.clear()   # the instant acknowledgements were made in the old voice
-            missing = [lang for lang in settings.get("voices", {}) if lang not in self.tts.paths]
-            if missing:
-                note = " (своего файла голоса для %s нет — звучит обычный голос в новой манере; установщик его докачает)" \
-                       % ", ".join(missing)
+            self.tts.use(persona.voice_settings(self.cfg, p))
+            self.acks.clear()   # the instant acknowledgements were made at the old pace
         self.log("(манера речи: %s)" % p)
-        return "манера речи и голос теперь: %s%s. Говори дальше в этой манере." % (persona.get(p)["title"]["ru"], note)
+        return "манера речи теперь: %s (голос тот же). Говори дальше в этой манере." % persona.get(p)["title"]["ru"]
 
     def agent_ru(self):
         return self.agent._prompt_lang() in RU_FAMILY
@@ -1860,6 +1855,8 @@ async def main():
         hub.log(ui("Справочник по сборке готов: %d рецептов.", "The pack reference is ready: %d recipes.") % len(hub.knowledge.recipes))
         hub.log(ui("Загружаю распознавание речи и голос...", "Loading speech recognition and the voice..."))
         hub.tts = TTS(cfg, persona.voice_settings(cfg, hub.persona))
+        hub.log(ui("Голос: %s", "Voice: %s") % hub.tts.describe()
+                + ("" if hub.tts.ready else ui(" — говорю в чат игры", " — I write in the game chat")))
         hub.stt = STT(cfg, hub.log)
         hub.log(ui("Слух и голос готовы (распознавание речи: %s).", "Hearing and voice are ready (speech recognition: %s).") % hub.stt.device)
 

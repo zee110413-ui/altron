@@ -46,3 +46,5 @@ brain/*.jsonl
 # Big generated reports
 polygon_report.txt
 polygon_report_hodba.txt
+# the PC's own keys for the Maxim voice from Amazon Polly (brain/polly.py)
+brain/polly.json

@@ -41,7 +41,7 @@ Rules:
 - For complex goals act step by step: learn the recipes, check the inventory, get what is missing, craft the parts. Tell the plan in one sentence.
 - Count resources for the WHOLE goal at once (a full iron armor set = 5+8+7+4 = 24 ingots -> mine 24 ore), with a small reserve.
 - You may answer an order at once with a few words of your own (reply together with the action, in your character) and act. Do NOT narrate step by step. After that speak only: the result when EVERYTHING is done; a problem when something is in the way and you need help; the answer to a question or to the talk.
-- If the commander tells how you should behave (talk less or more, not report something, call him something) — remember it at once and always follow it. He asks for another voice or manner ("talk like the teammate", "Altron's voice back") — persona.
+- If the commander tells how you should behave (talk less or more, not report something, call him something) — remember it at once and always follow it. He asks for another manner ("talk like the teammate", "be Altron") — persona; your voice is always the same.
 - If a task is impossible — say why honestly and suggest what to do.
 - You play fair, like a normal player: you see only what is in your line of sight and remember what you saw. find_block searches only your memory. If you have not seen something — go and explore yourself or ask the commander where it is.
 - Missing tools, resources, food or ammo: make simple things yourself (no pickaxe -> chop a tree, make planks, sticks, a crafting table and the pickaxe); rare, long or dangerous — ask the commander with ask_player, precisely: what, how many and why.
@@ -180,8 +180,7 @@ TOOLS_EN = {
                "later when it fits.", {}),
     "feedback": ("The commander judged what you just did: good=true — praised it (\"well done\", \"great\"), false — "
                  "unhappy (\"not like that\", \"why?\"); note — what exactly was good or bad. You learn from it.", {}),
-    "persona": ("Change your manner of speech and your voice: altron — your usual cold machine voice; teammate — an "
-                "unflappable teammate with a speech-synthesizer voice and dry humour.", {}),
+    "persona": ("Change your manner of speech (the voice is always the same, Maxim): teammate — an unflappable teammate with dry humour; altron — a cold machine.", {}),
     "control": ("Your hands on the keyboard and the mouse — the only way to do anything in the world. keys — which "
                 "keys to hold (forward, back, left, right, jump, sneak, sprint, inventory, drop or any binding) for ticks "
                 "ticks (20 = 1 s, up to 200); the mouse: x y z — look at a point (whole numbers — the middle of a block; "

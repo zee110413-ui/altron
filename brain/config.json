@@ -27,12 +27,9 @@
   "stt_device": "auto",
   "stt_threads": 4,
 
-  "tts_voice": "../models/piper/ru_RU-dmitri-medium.onnx",
-  "tts_voices": {"ru": "../models/piper/ru_RU-dmitri-medium.onnx", "en": "../models/piper/en_US-ryan-high.onnx"},
-  "tts_style": "ultron",
+  "voice": "Maxim",
   "tts_speed": 1.0,
   "persona": "teammate",
-  "tts_personas": {"teammate": {"voices": {"ru": "../models/piper/ru_RU-denis-medium.onnx", "en": "../models/piper/en_US-danny-low.onnx"}}},
   "idle_think_minutes": 4,
   "observe_every_sec": 45,
   "instant_ack": false,

@@ -44,6 +44,7 @@ async def main(argv):
         from speech import STT, TTS
         hub.knowledge = Knowledge.load(cfg, hub.log)
         hub.tts = TTS(cfg, persona.voice_settings(cfg, hub.persona))
+        hub.log("Голос: %s" % hub.tts.describe() + ("" if hub.tts.ready else " — говорю в чат игры"))
         hub.stt = STT(cfg, hub.log)
         hub.log("Слух и голос готовы (распознавание речи: %s)." % hub.stt.device)
 

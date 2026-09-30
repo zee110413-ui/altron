@@ -1,4 +1,4 @@
-"""Speech: Whisper speech-to-text and Piper text-to-speech (both offline)."""
+"""Speech: Whisper speech-to-text and the voice Altron speaks with (Maxim: Windows or Amazon Polly)."""
 import re
 
 import numpy as np
@@ -146,155 +146,89 @@ def clean_for_speech(text):
 
 
 class TTS:
-    """Piper voices, one per language. The manner of speaking (persona.py) picks the style and the voices:
-    "robot" — a light metallic helmet; "ultron" — a lower, doubled, cold synthetic voice with a metal resonance and a
-    short hall (an effect on any voice model, not a copy of anyone's real voice); "synth" — a plain, narrow voice like
-    an old text-to-speech program."""
+    """Altron's one voice: Maxim — the speech-synthesizer voice the robot teammate Kava talks with in videos, in every
+    language (English with its robot accent). It comes from Windows when it is installed there (SAPI 5, IVONA Maxim),
+    otherwise from Amazon Polly, the same voice from Amazon's service (the PC's keys in brain/polly.json). There is no
+    other voice: without Maxim Altron does not speak aloud and writes what he says in the game chat."""
 
-    STYLES = {
-        # pitch factor, metal comb, chorus depth, drive, hall
-        "plain": (1.0, 0.0, 0.0, 0.0, 0.0),
-        "robot": (1.0, 0.25, 0.0, 0.0, 0.0),
-        "ultron": (0.84, 0.35, 0.55, 0.6, 0.22),
-        "synth": (1.0, 0.0, 0.0, 0.15, 0.0),
-    }
-    BANDS = {"synth": (300, 5000)}   # Hz kept: a speech synthesizer of old sounds narrow, like through a small speaker
-    CRUSH = {"synth": 16000}         # Hz: held samples give the slight digital grit of a text-to-speech program
-    # Piper's variation of the voice and of the length of sounds (its defaults: 0.667, 0.8): lower is the even,
-    # monotonous delivery of a speech synthesizer, the same whatever it says — which is what makes the jokes land
-    FLAT = {"synth": (0.3, 0.35)}
-
-    # how a mood changes the delivery: pace, pitch, loudness (on top of the style)
+    VOICE = "Maxim"
+    # how a mood changes the delivery: pace and loudness (the voice itself stays Maxim's)
     MOODS = {
-        "alert": (1.15, 1.05, 1.0),     # danger, a fight: faster and higher
-        "excited": (1.07, 1.03, 1.0),   # an exclamation, good news
-        "sad": (0.9, 0.96, 0.85),       # sympathy, a loss: slower, lower, quieter
-        "cold": (0.96, 0.97, 0.95),     # annoyed, offended: measured and a little lower
-        "bored": (0.93, 0.98, 0.88),    # nothing to do: drawn out and quiet
+        "alert": (1.15, 1.0),     # danger, a fight: faster
+        "excited": (1.07, 1.0),   # an exclamation, good news
+        "sad": (0.9, 0.85),       # sympathy, a loss: slower and quieter
+        "cold": (0.96, 0.95),     # annoyed, offended: measured
+        "bored": (0.93, 0.88),    # nothing to do: drawn out and quiet
     }
 
     def __init__(self, cfg, settings=None):
-        from piper import SynthesisConfig
-        self._config = SynthesisConfig
         self.cfg = cfg
-        self.voices = {}     # voice file -> loaded voice
         self.moods = bool(cfg.get("tts_moods", True))
-        self.use(settings or {"style": cfg.get("tts_style", "robot"), "voices": cfg.get("tts_voices") or {}})
-        self._voice(None)   # the fallback voice loads now: a broken path shows at start, not at the first word
+        self.engine, self.voice, self.why = self.find(str(cfg.get("voice") or self.VOICE))
+        self.failed_at = 0.0
+        self.use(settings or {})
+
+    @staticmethod
+    def find(name):
+        """("sapi", the installed voice) / ("polly", name) / (None, None, why not) — where Maxim can be taken from."""
+        import sapi
+        installed = sapi.find(name)
+        if installed:
+            return "sapi", installed, ""
+        import polly
+        if polly.credentials():
+            return "polly", name, ""
+        return None, None, ("голоса «%s» нет: он не установлен в Windows (SAPI 5) и нет ключей Amazon Polly "
+                            "(brain/polly.json)" % name)
+
+    @property
+    def ready(self):
+        return self.engine is not None
+
+    def describe(self):
+        if self.engine == "sapi":
+            return "%s (Windows)" % self.voice
+        if self.engine == "polly":
+            return "%s (Amazon Polly)" % self.voice
+        return "нет — " + self.why
 
     def use(self, settings):
-        """Switch the manner of speaking: {"style", "voices": {lang: path}, "speed", "pitch", "band", "crush", "flat"}. A voice file
-        that is not there (not downloaded yet) is skipped: that language is said with the common voice."""
-        style = str(settings.get("style", "robot")).lower()
-        pitch, comb, chorus, drive, hall = self.STYLES.get(style, self.STYLES["robot"])
-        if "tts_robot" in self.cfg and style == "robot":
-            comb = float(self.cfg["tts_robot"])
-        self.style = style
-        self.pitch = float(settings.get("pitch", pitch))
-        self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
-        self.band = tuple(settings.get("band") or self.BANDS.get(style, ())) or None
-        self.crush = int(settings.get("crush", self.CRUSH.get(style, 0)) or 0)
-        self.flat = tuple(settings.get("flat") or self.FLAT.get(style) or ()) or None
+        """The pace of the manner of speaking (persona.py): {"speed": 1.08}."""
         self.speed = max(0.5, float(settings.get("speed", 1.0)) * float(self.cfg.get("tts_speed", 1.0)))
-        # a voice installed in Windows says this language, when it is there (SAPI 5: {"ru": "Maxim"}); it is a
-        # speech synthesizer already, so it goes out as it is, without the effects that imitate one
-        self.sapi = dict(settings.get("sapi") or {})
-        self.sapi_effects = bool(settings.get("sapi_effects", False))
-        self.paths = {}
-        for k, v in (settings.get("voices") or {}).items():
-            if v and rel(v).exists():
-                self.paths[k.lower()] = v
         return self
 
-    def _voice(self, lang):
-        path = self.paths.get(lang) or self.cfg["tts_voice"]
-        if path not in self.voices:
-            from piper import PiperVoice
-            self.voices[path] = PiperVoice.load(str(rel(path)))
-        return self.voices[path]
+    def _say(self, text, pace):
+        if self.engine == "sapi":
+            import math
+            import sapi
+            # Windows counts the pace from -10 to 10, about three times faster or slower at the ends
+            return sapi.speak(self.voice, text, round(10 * math.log(max(0.3, self.speed * pace)) / math.log(3)))
+        import polly
+        return polly.speak(self.voice, text, round(100 * self.speed * pace))
 
-    def _effects(self, y, sr):
-        if self.band:
-            low, high = self.band
-            y = np.convolve(y, _lowpass(63, high / sr), mode="same")
-            y = y - np.convolve(y, _lowpass(255, low / sr), mode="same")
-        if 0 < self.crush < sr:
-            step = int(round(sr / self.crush))
-            y = np.repeat(y[::step], step)[:len(y)]
-        out = y.copy()
-        if self.chorus > 0:
-            # a second, slightly wandering copy of the voice (5-11 ms): the "many voices in one" of a machine
-            n = np.arange(len(y), dtype=np.float32)
-            delay = sr * (0.008 + 0.003 * np.sin(2 * np.pi * 0.6 * n / sr))
-            out += self.chorus * np.interp(n - delay, n, y, left=0.0)
-        if self.comb > 0:
-            # metallic resonance from two short echoes (no amplitude modulation: that made the voice choppy)
-            for delay_ms, gain in ((3.1, 0.9), (7.3, 0.5)):
-                d = int(sr * delay_ms / 1000)
-                out[d:] += gain * self.comb * y[:-d]
-        if self.drive > 0:
-            peak = float(np.max(np.abs(out))) or 1.0
-            out = np.tanh(out / peak * (1 + 3 * self.drive)) / np.tanh(1 + 3 * self.drive)
-        if self.hall > 0:
-            tail = out.copy()
-            for delay_ms, gain in ((43, 0.55), (71, 0.4), (113, 0.28), (167, 0.18)):
-                d = int(sr * delay_ms / 1000)
-                if d < len(out):
-                    tail[d:] += gain * self.hall * out[:-d]
-            out = tail
-        return out
-
-    def _sapi_voice(self, lang):
-        table = getattr(self, "sapi", None) or {}
-        name = table.get((lang or "").lower()) or table.get("*")   # "*": the same voice for every language
-        if not name:
-            return None
-        import sapi
-        return sapi.find(name)
-
-    def _finish(self, y, loud):
+    @staticmethod
+    def _finish(y, loud):
         peak = float(np.max(np.abs(y))) if len(y) else 0.0
         if peak > 0:
             y = y * (0.85 * loud / peak)
         y = np.concatenate([np.zeros(2400, dtype=np.float32), y, np.zeros(2400, dtype=np.float32)])
         return (y * 32767).astype("<i2").tobytes()
 
-    def _synth_sapi(self, voice, text, pitch, pace, loud):
-        import math
-        import sapi
-        # Windows counts the pace from -10 to 10, about three times faster or slower at the ends
-        rate = round(10 * math.log(max(0.3, self.speed * pace)) / math.log(3))
+    def synth(self, text, lang=None, mood=None):
+        """Yields 48 kHz mono s16le PCM chunks, one per sentence (nothing without the voice)."""
+        text = clean_for_speech(text)
+        if not text or not self.ready:
+            return
+        pace, loud = self.MOODS.get(mood, (1.0, 1.0)) if self.moods else (1.0, 1.0)
         for sentence in re.split(r"(?<=[.!?…])\s+", text):
             if not sentence.strip():
                 continue
-            pcm, sr = sapi.speak(voice, sentence, rate)
-            a = pcm.astype(np.float32) / 32768.0
-            y = resample(a, sr * pitch, 48000)
-            if self.sapi_effects:
-                y = self._effects(y, 48000)
-            yield self._finish(y, loud)
-
-    def synth(self, text, lang=None, mood=None):
-        """Yields 48 kHz mono s16le PCM chunks, one per sentence."""
-        text = clean_for_speech(text)
-        if not text:
-            return
-        pace, rise, loud = self.MOODS.get(mood, (1.0, 1.0, 1.0)) if self.moods else (1.0, 1.0, 1.0)
-        voice = self._sapi_voice(lang)
-        if voice:
             try:
-                yield from self._synth_sapi(voice, text, rise if self.sapi_effects else 1.0, pace, loud)
+                pcm, sr = self._say(sentence, pace)
+            except Exception as e:   # no other voice to fall back on: the words stay in the log and the chat
+                import time
+                if time.time() - self.failed_at > 60:
+                    self.failed_at = time.time()
+                    print("Голос %s не ответил: %s" % (self.describe(), e))
                 return
-            except Exception as e:   # the Windows voice broke: the Piper voice says it
-                self.sapi = {}
-                print("Голос Windows «%s» не сработал (%s): говорю голосом Piper" % (voice, e))
-        pitch = self.pitch * rise
-        # lowering the pitch slows the voice down: speak that much faster first, so the pace stays the same
-        flat = dict(zip(("noise_scale", "noise_w_scale"), self.flat)) if self.flat else {}
-        syn = self._config(length_scale=pitch / (self.speed * pace), volume=1.0, **flat)
-        for chunk in self._voice(lang).synthesize(text, syn):
-            a = np.asarray(chunk.audio_int16_array, dtype=np.float32).reshape(-1) / 32768.0
-            # read at a lower rate than it was made: the whole voice goes down by the pitch factor
-            y = resample(a, chunk.sample_rate * pitch, 48000)
-            y = self._effects(y, 48000)
-            yield self._finish(y, loud)
+            yield self._finish(resample(pcm.astype(np.float32) / 32768.0, sr, 48000), loud)

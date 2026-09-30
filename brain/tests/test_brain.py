@@ -195,78 +195,88 @@ class Install(unittest.TestCase):
 
 
 class Voice(unittest.TestCase):
-    def test_styles_and_moods(self):
-        t = speech.TTS.__new__(speech.TTS)
-        t.pitch, t.comb, t.chorus, t.drive, t.hall = speech.TTS.STYLES["ultron"]
-        t.speed, t.moods, t.band, t.crush, t.flat = 1.0, True, None, 0, None
-        configs = []
-        t._config = lambda **k: configs.append(k) or k
+    """One voice, Maxim: from Windows when it is installed, otherwise from Amazon Polly; no other voice at all."""
 
-        class Chunk:
-            sample_rate = 22050
-            audio_int16_array = (np.sin(np.arange(22050) / 10) * 8000).astype(np.int16)
-
-        class Voice_:
-            def synthesize(self, text, syn):
-                yield Chunk()
-
-        t._voice = lambda _lang: Voice_()
-        calm = b"".join(t.synth("Test.", None, None))
-        alert = b"".join(t.synth("Test.", None, "alert"))
-        self.assertTrue(np.isfinite(np.frombuffer(calm, "<i2")).all())
-        self.assertLess(configs[1]["length_scale"], configs[0]["length_scale"])   # faster when alert
-        self.assertGreater(len(calm), 0)
-        self.assertGreater(len(alert), 0)
-        t.cfg = {"tts_voice": "none.onnx", "tts_speed": 1.0}
-        t.use(persona.voice_settings({"tts_voices": {"ru": "none.onnx"}}, "teammate"))
-        self.assertEqual((t.style, t.pitch, t.band), ("synth", 1.0, (300, 5000)))   # the plain, narrow synthesizer
-        self.assertEqual(t.paths, {})                     # a voice file that is not there: the common voice is used
-        synth = np.frombuffer(b"".join(t.synth("Test.", None, "cold")), "<i2")
-        self.assertTrue(len(synth) and np.isfinite(synth).all())
-        self.assertLess(configs[-1]["noise_scale"], 0.667)   # the even, monotonous delivery of a synthesizer
-
-    def test_a_windows_voice_says_russian(self):
+    def fake(self, windows=None, polly_keys=None):
+        import polly
         import sapi
-        t = speech.TTS.__new__(speech.TTS)
-        t.cfg, t.moods = {"tts_voice": "none.onnx", "tts_speed": 1.0}, True
-        t.use(persona.voice_settings({}, "teammate"))
         said = []
-        old = sapi.find, sapi.speak
-        sapi.find = lambda name: "IVONA 2 Maxim" if name == "Maxim" else None
-        sapi.speak = lambda voice, text, rate=0: said.append((voice, text, rate)) or (
-            (np.sin(np.arange(2205) / 5) * 8000).astype(np.int16), 22050)
-        try:
-            chunks = list(t.synth("Докладываю. У нас минус дом!", "ru"))
-            self.assertEqual([v for v, _, _ in said], ["IVONA 2 Maxim", "IVONA 2 Maxim"])   # sentence by sentence
-            self.assertEqual(said[0][2], 1)                  # 1.08 of the pace is +1 on Windows' scale
-            self.assertEqual(len(chunks), 2)
+        saved = sapi.find, sapi.speak, polly.credentials, polly.speak
+        self.addCleanup(lambda: [setattr(sapi, "find", saved[0]), setattr(sapi, "speak", saved[1]),
+                                 setattr(polly, "credentials", saved[2]), setattr(polly, "speak", saved[3])])
+        tone = (np.sin(np.arange(2205) / 5) * 8000).astype(np.int16)
+        sapi.find = lambda name: windows if windows and name.lower() in windows.lower() else None
+        sapi.speak = lambda voice, text, rate=0: said.append(("sapi", voice, text, rate)) or (tone, 22050)
+        polly.credentials = lambda: polly_keys
+        polly.speak = lambda voice, text, rate=100: said.append(("polly", voice, text, rate)) or (tone, 16000)
+        return said
 
-            self.assertEqual(t._sapi_voice("en"), "IVONA 2 Maxim")   # English too, with Maxim's robot accent
-            sapi.find = lambda name: None
-            self.assertIsNone(t._sapi_voice("ru"))            # not installed: the Piper synthesizer voice says it
-        finally:
-            sapi.find, sapi.speak = old
+    def test_maxim_from_windows_sentence_by_sentence(self):
+        said = self.fake(windows="IVONA 2 Maxim")
+        t = speech.TTS({}, persona.voice_settings({}, "teammate"))
+        self.assertEqual(t.describe(), "IVONA 2 Maxim (Windows)")
+        chunks = list(t.synth("Докладываю. У нас минус дом!", "ru"))
+        self.assertEqual([(e, v) for e, v, _, _ in said], [("sapi", "IVONA 2 Maxim")] * 2)
+        self.assertEqual(said[0][3], 1)                    # 1.08 of the pace is +1 on Windows' scale
+        self.assertEqual(len(chunks), 2)
+        list(t.synth("Report: we are down one house.", "en"))
+        self.assertEqual(said[-1][1], "IVONA 2 Maxim")     # English too: the same voice
+        alert = list(t.synth("Враг!", "ru", "alert"))
+        self.assertTrue(alert and said[-1][3] > 1)          # faster in a fight, still Maxim
+
+    def test_maxim_from_polly_when_windows_has_none(self):
+        said = self.fake(polly_keys=("AK", "SK", "eu-central-1"))
+        t = speech.TTS({}, persona.voice_settings({}, "teammate"))
+        self.assertEqual(t.describe(), "Maxim (Amazon Polly)")
+        pcm = np.frombuffer(b"".join(t.synth("Алмазы нашёл.", "ru")), "<i2")
+        self.assertTrue(len(pcm) and np.isfinite(pcm).all())
+        self.assertEqual(said[0][:2], ("polly", "Maxim"))
+        self.assertEqual(said[0][3], 108)
+
+    def test_no_other_voice(self):
+        self.fake(windows="Microsoft Irina Desktop - Russian")
+        t = speech.TTS({}, {})
+        self.assertFalse(t.ready)                            # Irina is not Maxim, and there is no Piper to fall back on
+        self.assertEqual(list(t.synth("Привет.", "ru")), [])
+        self.assertIn("Maxim", t.describe())
+
+    def test_polly_signature(self):
+        import datetime
+        import polly
+        # AWS Signature V4, checked against AWS's own examples: the signing key and the get-vanilla canonical request
+        k = polly._hmac(polly._hmac(polly._hmac(polly._hmac(b"AWS4wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", "20120215"),
+                                                "us-east-1"), "iam"), "aws4_request")
+        self.assertEqual(k.hex(), "f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d")
+        auth = polly.sign("GET", "example.amazonaws.com", "/", {"host": "example.amazonaws.com", "x-amz-date": "20150830T123600Z"},
+                          b"", "AKIDEXAMPLE", "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLE", "us-east-1", "service",
+                          datetime.datetime(2015, 8, 30, 12, 36))
+        self.assertTrue(auth.startswith("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20150830/us-east-1/service/aws4_request, "
+                                        "SignedHeaders=host;x-amz-date, Signature="))
 
     def test_personas(self):
         self.assertEqual(persona.find("говори как тиммейт"), "teammate")
         self.assertEqual(persona.find("верни обычный голос"), "altron")
-        cfg = {"tts_style": "robot", "tts_voices": {"ru": "a.onnx"}, "tts_personas": {"teammate": {"voices": {"ru": "b.onnx"}}}}
-        self.assertEqual(persona.voice_settings(cfg, "altron")["style"], "robot")    # config.json's own style stays
-        self.assertEqual(persona.voice_settings(cfg, "teammate")["voices"]["ru"], "b.onnx")
-        self.assertEqual(persona.voice_settings(cfg, "")["style"], "synth")          # the teammate talks by default
+        cfg = {"tts_personas": {"teammate": {"speed": 1.2, "voices": {"ru": "b.onnx"}}}}
+        self.assertEqual(persona.voice_settings(cfg, "teammate"), {"speed": 1.2})   # only the pace: one voice
+        self.assertEqual(persona.voice_settings({}, "")["speed"], 1.08)             # the teammate by default
 
 
 class VoicePreview(unittest.TestCase):
-    def test_writes_the_phrases_and_keeps_the_tuning(self):
+    def test_writes_the_phrases_and_keeps_the_pace(self):
         import voice_preview
         tmp = pathlib.Path(tempfile.mkdtemp())
         (tmp / "brain").mkdir()
-        (tmp / "brain" / "config.json").write_text(json.dumps({"tts_voice": "a.onnx"}), encoding="utf-8")
+        (tmp / "brain" / "config.json").write_text(json.dumps({"persona": "teammate"}), encoding="utf-8")
         seen = []
 
         class FakeTTS:
+            ready = True
+
             def __init__(self, cfg, settings):
                 seen.append(settings)
+
+            def describe(self):
+                return "IVONA 2 Maxim (Windows)"
 
             def synth(self, text, lang):
                 yield b"\x00\x00" * 480
@@ -274,11 +284,11 @@ class VoicePreview(unittest.TestCase):
         old = voice_preview.BRAIN_DIR, speech.TTS
         voice_preview.BRAIN_DIR, speech.TTS = tmp / "brain", FakeTTS
         try:
-            voice_preview.main(["--persona", "teammate", "--speed", "1.2", "--crush", "11025", "--save", "--no-play"])
+            voice_preview.main(["--speed", "1.2", "--save", "--no-play"])
         finally:
             voice_preview.BRAIN_DIR, speech.TTS = old
-        self.assertEqual((seen[0]["style"], seen[0]["speed"], seen[0]["crush"]), ("synth", 1.2, 11025))
-        self.assertEqual(len(list((tmp / "test-reports" / "voice").glob("teammate_*.wav"))), 3)
+        self.assertEqual(seen[0]["speed"], 1.2)
+        self.assertEqual(len(list((tmp / "test-reports" / "voice").glob("teammate_ru_*.wav"))), 3)
         cfg = json.loads((tmp / "brain" / "config.json").read_text(encoding="utf-8"))
         self.assertEqual(cfg["tts_personas"]["teammate"]["speed"], 1.2)
 
@@ -450,12 +460,28 @@ class Companion(unittest.TestCase):
         spoken = []
 
         class Tts:
+            ready = True
+
             def synth(self, text, lang=None, mood=None):
                 spoken.append(text)
                 yield b"\x00\x00"
         hub.tts, hub.host = Tts(), type("W", (), {"write": lambda self, b: None, "drain": lambda self: asyncio.sleep(0)})()
         run(hub.say("[Наблюдение] Командир смотрит на снег."))
         self.assertEqual(spoken, ["Командир смотрит на снег."])
+
+    def test_without_maxim_the_words_go_to_the_chat(self):
+        hub = make_hub()
+        hub.bot, sent = object(), []
+        hub.send = lambda to, msg: sent.append(msg)
+
+        class NoVoice:
+            ready = False
+
+            def synth(self, *a, **k):
+                raise AssertionError("no other voice may speak")
+        hub.tts = NoVoice()
+        run(hub.say("Докладываю: у нас минус дом."))
+        self.assertEqual([m["args"]["text"] for m in sent if m.get("name") == "chat"], ["Докладываю: у нас минус дом."])
 
     def test_stop_is_a_reflex_and_the_words_are_his(self):
         hub = make_hub()
@@ -514,6 +540,8 @@ class Companion(unittest.TestCase):
                 pass
 
         class Tts:
+            ready = True
+
             def synth(self, text, lang=None, mood=None):
                 for _ in range(3):
                     yield b"\x00\x00" * 48000
@@ -611,8 +639,8 @@ class InnerLife(unittest.TestCase):
         self.assertIn("ОШИБКА", hub.set_persona("клоун"))
         r = hub.set_persona("teammate")
         self.assertEqual(hub.persona, "teammate")
-        self.assertEqual(hub.tts.settings["style"], "synth")
-        self.assertIn("нет", r)                                # its voice files are not downloaded here
+        self.assertEqual(hub.tts.settings, {"speed": 1.08})    # a manner sets the pace only: the voice is Maxim's
+        self.assertIn("голос тот же", r)
         self.assertEqual(make_hub(memory_dir=hub.cfg["memory_dir"]).persona, "teammate")   # remembered
 
 

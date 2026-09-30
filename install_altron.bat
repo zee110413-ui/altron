@@ -25,9 +25,6 @@ $LlmRepos = @('unsloth/Qwen3.5-9B-GGUF', 'unsloth/Qwen3-VL-8B-Instruct-GGUF', 'u
 $LlmQuant = 'Q4_K_M'
 $WhisperGpu = @('mobiuslabsgmbh/faster-whisper-large-v3-turbo', 'deepdml/faster-whisper-large-v3-turbo-ct2')
 $WhisperCpu = @('Systran/faster-whisper-small')
-$Voices = [ordered]@{ ru = 'ru_RU-dmitri-medium'; en = 'en_US-ryan-high' }
-# the second manner of speaking ("teammate", a speech-synthesizer voice): its own voices
-$TeammateVoices = [ordered]@{ ru = 'ru_RU-denis-medium'; en = 'en_US-danny-low' }
 $UA = @{ 'User-Agent' = 'altron-installer'; 'Accept' = 'application/json' }
 
 function Say($ru, $en) { Write-Host "`n== $ru" -ForegroundColor Cyan; Write-Host "   $en" -ForegroundColor DarkCyan }
@@ -219,28 +216,24 @@ Step 'whisper' {
     Ok 'Whisper готов / ready'
 }
 
-function Get-PiperVoice($name) {
-    $p = $name -split '-'
-    $loc = $p[0]; $speaker = ($p[1..($p.Count - 2)]) -join '-'; $q = $p[-1]
-    $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/$($loc.Split('_')[0])/$loc/$speaker/$q/$name"
-    Get-File "$base.onnx" (Join-Path $Root "models\piper\$name.onnx")
-    Get-File "$base.onnx.json" (Join-Path $Root "models\piper\$name.onnx.json")
-    return "../models/piper/$name.onnx"
-}
-
-Step 'voices' {
-    Say 'Голоса (Piper)' 'Voices (Piper)'
-    $map = @{}
-    foreach ($lang in $Voices.Keys) { $map[$lang] = Get-PiperVoice $Voices[$lang] }
-    $global:Updates.tts_voices = $map
-    $global:Updates.tts_voice = $map[@($Voices.Keys)[0]]
-}
-
-Step 'teammate voices' {
-    Say 'Голос тиммейта (вторая манера речи)' 'The teammate voice (the second manner of speaking)'
-    $map = @{}
-    foreach ($lang in $TeammateVoices.Keys) { $map[$lang] = Get-PiperVoice $TeammateVoices[$lang] }
-    $global:Updates.tts_personas = @{ teammate = @{ voices = $map } }
+# Altron's one voice is Maxim (the speech-synthesizer voice of Kava's videos): from Windows, or from Amazon Polly
+Step 'voice' {
+    Say 'Голос: Максим' 'The voice: Maxim'
+    Add-Type -AssemblyName System.Speech
+    $names = @((New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name })
+    $maxim = $names | Where-Object { $_ -match 'Maxim' } | Select-Object -First 1
+    if ($maxim) { Ok "голос Windows / Windows voice: $maxim"; return }
+    $keys = Join-Path $Root 'brain\polly.json'
+    if (Test-Path $keys) { Ok 'ключи Amazon Polly есть / Polly keys present'; return }
+    Warn 'Голоса Maxim в Windows нет. Тот же голос даёт Amazon Polly: нужен ключ AWS с правом polly:SynthesizeSpeech.'
+    Warn 'No Maxim voice in Windows. Amazon Polly has it: an AWS key allowed polly:SynthesizeSpeech. Enter - skip.'
+    $ak = Read-Host '   AWS Access Key ID'
+    if (-not $ak) { Warn 'без голоса: Альтрон будет писать в чат игры / no voice: Altron writes in the game chat'; return }
+    $sk = Read-Host '   AWS Secret Access Key'
+    $rg = Read-Host '   AWS region [eu-central-1]'
+    if (-not $rg) { $rg = 'eu-central-1' }
+    @{ access_key = $ak.Trim(); secret_key = $sk.Trim(); region = $rg.Trim() } | ConvertTo-Json | Set-Content -Encoding UTF8 $keys
+    Ok 'ключи сохранены / keys saved: brain\polly.json'
 }
 
 # ------------------------------------------------------------------------------------------------ Java

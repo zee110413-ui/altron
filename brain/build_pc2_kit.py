@@ -58,14 +58,14 @@ copy_tree(BRAIN / ".venv", KIT / "venv", skip=("__pycache__",))
 done()
 
 step("мозг и его долгая память...")
-for f in list(BRAIN.glob("*.py")) + [p for p in (BRAIN / "knowledge_cache.json",) if p.exists()]:
+for f in list(BRAIN.glob("*.py")) + [p for p in (BRAIN / "knowledge_cache.json", BRAIN / "polly.json") if p.exists()]:
     copy_file(f, KIT / "brain" / f.name)
 if (BRAIN / "memory").exists():
     copy_tree(BRAIN / "memory", KIT / "brain" / "memory")
 done()
 
 step("модели речи и голоса...")
-for name in ("whisper-large-v3-turbo", "whisper-small", "piper"):
+for name in ("whisper-large-v3-turbo", "whisper-small"):
     copy_tree(ALTRON / "models" / name, KIT / "models" / name, skip=(".cache",))
 done()
 
