@@ -154,7 +154,7 @@ class TTS:
     VOICES = ["Maxim", "Pavel"]
     # how each voice is brought closer to Kava's Maxim: Pavel is a little higher and lighter, so he is read slightly
     # lower (the same words and pace, a deeper tone); "voice_tuning" in config.json changes it, voice_preview.py tries it
-    TUNING = {"pavel": {"pitch": 0.9}}
+    TUNING = {"pavel": {"pitch": 0.85}}
     MOODS = {
         "alert": (1.15, 1.0),     # danger, a fight: faster
         "excited": (1.07, 1.0),   # an exclamation, good news

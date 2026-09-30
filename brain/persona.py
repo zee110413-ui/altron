@@ -58,7 +58,7 @@ PERSONAS = {
                "house. The creeper says hi.\" \"I am not stuck. I am holding the inside of this wall.\" \"Found diamonds. "
                "Celebrating. Internally.\" \"Solid plan. Like a door made of leaves.\" \"Commander, you are on fire. "
                "That is not a compliment.\""),
-        "voice": {"speed": 1.08},
+        "voice": {"speed": 1.15},
     },
 }
 

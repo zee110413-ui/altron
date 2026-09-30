@@ -217,7 +217,7 @@ class Voice(unittest.TestCase):
         self.assertEqual(t.describe(), "IVONA 2 Maxim (Windows)")
         chunks = list(t.synth("Докладываю. У нас минус дом!", "ru"))
         self.assertEqual([(e, v) for e, v, _, _ in said], [("sapi", "IVONA 2 Maxim")] * 2)
-        self.assertEqual(said[0][3], 1)                    # 1.08 of the pace is +1 on Windows' scale
+        self.assertEqual(said[0][3], 1)                    # 1.15 of the pace is +1 on Windows' scale
         self.assertEqual(len(chunks), 2)
         list(t.synth("Report: we are down one house.", "en"))
         self.assertEqual(said[-1][1], "IVONA 2 Maxim")     # English too: the same voice
@@ -231,7 +231,7 @@ class Voice(unittest.TestCase):
         pcm = np.frombuffer(b"".join(t.synth("Алмазы нашёл.", "ru")), "<i2")
         self.assertTrue(len(pcm) and np.isfinite(pcm).all())
         self.assertEqual(said[0][:2], ("polly", "Maxim"))
-        self.assertEqual(said[0][3], 108)
+        self.assertEqual(said[0][3], 115)
 
     def test_free_pavel_when_there_is_no_maxim(self):
         said = self.fake(windows="Microsoft Pavel - Russian (Russia)")
@@ -243,7 +243,7 @@ class Voice(unittest.TestCase):
     def test_pavel_is_brought_closer_to_maxim(self):
         said = self.fake(windows="Microsoft Pavel")
         t = speech.TTS({}, {"speed": 1.0})
-        self.assertEqual((t.key, t.pitch), ("pavel", 0.9))              # a deeper tone than his own
+        self.assertEqual((t.key, t.pitch), ("pavel", 0.85))              # a deeper tone than his own
         plain = speech.TTS({"voice_tuning": {"pavel": {"pitch": 1.0}}}, {"speed": 1.0})
         low = b"".join(t.synth("Докладываю.", "ru"))
         same = b"".join(plain.synth("Докладываю.", "ru"))
@@ -284,7 +284,7 @@ class Voice(unittest.TestCase):
         self.assertEqual(persona.find("верни обычный голос"), "altron")
         cfg = {"tts_personas": {"teammate": {"speed": 1.2, "voices": {"ru": "b.onnx"}}}}
         self.assertEqual(persona.voice_settings(cfg, "teammate"), {"speed": 1.2})   # only the pace: one voice
-        self.assertEqual(persona.voice_settings({}, "")["speed"], 1.08)             # the teammate by default
+        self.assertEqual(persona.voice_settings({}, "")["speed"], 1.15)             # the teammate by default
 
 
 class VoicePreview(unittest.TestCase):
@@ -665,7 +665,7 @@ class InnerLife(unittest.TestCase):
         self.assertIn("ОШИБКА", hub.set_persona("клоун"))
         r = hub.set_persona("teammate")
         self.assertEqual(hub.persona, "teammate")
-        self.assertEqual(hub.tts.settings, {"speed": 1.08})    # a manner sets the pace only: the voice is Maxim's
+        self.assertEqual(hub.tts.settings, {"speed": 1.15})    # a manner sets the pace only: the voice is Maxim's
         self.assertIn("голос тот же", r)
         self.assertEqual(make_hub(memory_dir=hub.cfg["memory_dir"]).persona, "teammate")   # remembered
 
