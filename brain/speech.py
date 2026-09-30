@@ -152,6 +152,9 @@ class TTS:
     free Microsoft Pavel that Windows has. There is no other voice: without them Altron writes in the game chat."""
 
     VOICES = ["Maxim", "Pavel"]
+    # how each voice is brought closer to Kava's Maxim: Pavel is a little higher and lighter, so he is read slightly
+    # lower (the same words and pace, a deeper tone); "voice_tuning" in config.json changes it, voice_preview.py tries it
+    TUNING = {"pavel": {"pitch": 0.9}}
     MOODS = {
         "alert": (1.15, 1.0),     # danger, a fight: faster
         "excited": (1.07, 1.0),   # an exclamation, good news
@@ -164,7 +167,12 @@ class TTS:
         self.cfg = cfg
         self.moods = bool(cfg.get("tts_moods", True))
         want = cfg.get("voice") or self.VOICES
-        self.engine, self.voice, self.why = self.find([want] if isinstance(want, str) else list(want))
+        names = [want] if isinstance(want, str) else list(want)
+        self.engine, self.voice, self.why = self.find(names)
+        self.key = next((n.lower() for n in names if self.voice and n.lower() in self.voice.lower()), "")
+        tuning = dict(self.TUNING.get(self.key, {}))
+        tuning.update((cfg.get("voice_tuning") or {}).get(self.key) or {})
+        self.pitch = min(1.5, max(0.6, float(tuning.get("pitch", 1.0))))
         self.failed_at = 0.0
         self.use(settings or {})
 
@@ -200,6 +208,8 @@ class TTS:
         return self
 
     def _say(self, text, pace):
+        # a lower tone is read slower (see synth): the voice speaks that much faster first, so the pace stays
+        pace = pace / self.pitch
         if self.engine == "sapi":
             import math
             import sapi
@@ -233,4 +243,5 @@ class TTS:
                     self.failed_at = time.time()
                     print("Голос %s не ответил: %s" % (self.describe(), e))
                 return
-            yield self._finish(resample(pcm.astype(np.float32) / 32768.0, sr, 48000), loud)
+            # read at a rate lower than it was made: the whole voice goes down by the pitch factor
+            yield self._finish(resample(pcm.astype(np.float32) / 32768.0, sr * self.pitch, 48000), loud)

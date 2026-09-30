@@ -240,6 +240,19 @@ class Voice(unittest.TestCase):
         list(t.synth("Report: we are down one house.", "en"))
         self.assertEqual(said[0][:2], ("sapi", "Microsoft Pavel - Russian (Russia)"))   # English too, the same voice
 
+    def test_pavel_is_brought_closer_to_maxim(self):
+        said = self.fake(windows="Microsoft Pavel")
+        t = speech.TTS({}, {"speed": 1.0})
+        self.assertEqual((t.key, t.pitch), ("pavel", 0.9))              # a deeper tone than his own
+        plain = speech.TTS({"voice_tuning": {"pavel": {"pitch": 1.0}}}, {"speed": 1.0})
+        low = b"".join(t.synth("Докладываю.", "ru"))
+        same = b"".join(plain.synth("Докладываю.", "ru"))
+        self.assertGreater(len(low), len(same))                          # read slower = lower...
+        self.assertGreater(said[0][3], said[1][3])                       # ...so he speaks faster first: same pace
+        maxim = self.fake(windows="IVONA 2 Maxim")
+        self.assertEqual(speech.TTS({}, {}).pitch, 1.0)                  # Maxim himself as he is
+        self.assertEqual(maxim, [])
+
     def test_maxim_first_when_both_are_there(self):
         import sapi
         self.fake()
