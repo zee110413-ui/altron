@@ -1107,7 +1107,10 @@ class Hub:
                 self.log("Перезапускаю клиент Альтрона со всеми модами сборки.")
                 self.stop_bot()
                 await asyncio.sleep(3)
-                self.bot_proc = launch_bot(self.cfg, self.bot_server, self.log, lite=False)
+                try:
+                    self.bot_proc = launch_bot(self.cfg, self.bot_server, self.log, lite=False)
+                except Exception as e:   # said aloud in the log, not lost in an asyncio task
+                    self.log("Не смог перезапустить клиент Альтрона: %s" % e)
         elif ev == "need":
             await self.requests.put(("event", "", "[Событие] Для того, что ты делаешь, не хватает: %s" % msg.get("msg", "")
                                      + self.EVENT_TAIL))

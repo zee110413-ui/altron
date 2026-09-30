@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import uuid
 from pathlib import Path
@@ -339,9 +340,25 @@ def prepare_bot_dir(cfg, log=print, game_dir=None, voice=False, options=None, li
         except OSError:
             shutil.copy2(src, dst)
 
+    skipped = []
+
+    def copy_config(src, dst):
+        # plain contents, not the file's flags: copy2 carried a read-only flag over the first time and Windows then
+        # refused to overwrite the file on the next launch (Permission denied), which stopped Altron's client
+        try:
+            if os.path.exists(dst) and not os.access(dst, os.W_OK):
+                os.chmod(dst, stat.S_IWRITE | stat.S_IREAD)
+            shutil.copyfile(src, dst)
+        except OSError as e:
+            skipped.append("%s (%s)" % (os.path.relpath(src, pack), e.strerror or e))
+        return dst
+
     for d in ("config", "defaultconfigs"):
         if (pack / d).exists():
-            shutil.copytree(pack / d, bot / d, dirs_exist_ok=True)
+            shutil.copytree(pack / d, bot / d, dirs_exist_ok=True, copy_function=copy_config)
+    if skipped:
+        log("Не скопировал в клиент Альтрона %d файл(ов) настроек сборки (занят или закрыт): %s"
+            % (len(skipped), "; ".join(skipped[:3])))
     if (pack / "tacz").exists() and not (bot / "tacz").exists():
         shutil.copytree(pack / "tacz", bot / "tacz")
 

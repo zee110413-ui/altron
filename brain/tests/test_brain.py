@@ -287,6 +287,30 @@ class Voice(unittest.TestCase):
         self.assertEqual(persona.voice_settings({}, "")["speed"], 1.15)             # the teammate by default
 
 
+class BotClient(unittest.TestCase):
+    def test_a_read_only_pack_file_does_not_stop_the_second_launch(self):
+        # the pack's config/euphoria_patcher/.data.json is read-only: copy2 carried the flag into Altron's client and
+        # on the next launch (the full client after a mod mismatch) Windows refused to overwrite it
+        import stat
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        pack = tmp / ".minecraft" / "versions" / "P"
+        (pack / "mods").mkdir(parents=True)
+        (pack / "config" / "euphoria_patcher").mkdir(parents=True)
+        f = pack / "config" / "euphoria_patcher" / ".data.json"
+        f.write_text("{}")
+        os.chmod(f, 0o444)
+        cfg = {"minecraft_dir": str(tmp / ".minecraft"), "pack_version": "P", "bot_dir": str(tmp / "bot")}
+        launcher.prepare_bot_dir(cfg, log=lambda *a: None)
+        copy = tmp / "bot" / "config" / "euphoria_patcher" / ".data.json"
+        self.assertTrue(copy.stat().st_mode & stat.S_IWUSR)        # the flag is not carried into the client
+        f.chmod(0o644)
+        f.write_text('{"new": 1}')
+        f.chmod(0o444)
+        launcher.prepare_bot_dir(cfg, log=lambda *a: None)
+        self.assertEqual(copy.read_text(), '{"new": 1}')
+        self.assertTrue(copy.stat().st_mode & stat.S_IWUSR)        # the client's copy stays writable
+
+
 class VoicePreview(unittest.TestCase):
     def test_writes_the_phrases_and_keeps_the_pace(self):
         import voice_preview
