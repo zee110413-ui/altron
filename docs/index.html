@@ -330,7 +330,7 @@
         </div>
         <div class="ability">
           <h3 data-i18n="ab.h7">Живой</h3>
-          <p data-i18n="ab.p7">Своё настроение — его слышно в голосе. Своё отношение к каждому игроку, которое копится от поступков. Свои вкусы и общие с тобой воспоминания. Голос один — Максим, как у Кавы в роликах; манер две: невозмутимый тиммейт с очень сухим юмором (по умолчанию) и холодная машина.</p>
+          <p data-i18n="ab.p7">Своё настроение — его слышно в голосе. Своё отношение к каждому игроку, которое копится от поступков. Свои вкусы и общие с тобой воспоминания. Голос один — синтезатор, как у Кавы в роликах (Павел или Максим); манер две: невозмутимый тиммейт с очень сухим юмором (по умолчанию) и холодная машина.</p>
           <div class="say" data-i18n="ab.say7"><span>что ты любишь?</span><span>помнишь наш первый дом?</span><span>говори как тиммейт</span></div>
         </div>
         <div class="ability">
@@ -352,9 +352,9 @@
         <div class="stage" data-i18n="how.stage2"><span class="k">речь → текст</span><b>Whisper</b><span>сам определяет язык фразы</span></div>
         <div class="stage" data-i18n="how.stage3"><span class="k">мысль</span><b>llama.cpp</b><span>локальная модель ИИ с инструментами</span></div>
         <div class="stage" data-i18n="how.stage4"><span class="k">тело</span><b>Мод Альтрона</b><span>второй игрок: клавиатура и мышь нейросети</span></div>
-        <div class="stage voice" data-i18n="how.stage5"><span class="k">голос</span><b>Максим</b><span>голос синтезатора речи, как у Кавы: из Windows или Amazon Polly</span></div>
+        <div class="stage voice" data-i18n="how.stage5"><span class="k">голос</span><b>Павел / Максим</b><span>голос синтезатора речи, как у Кавы: бесплатный Microsoft Pavel из Windows или IVONA Максим</span></div>
       </div>
-      <p class="pipe-note" data-i18n="how.1">Голос у Альтрона один — Максим (IVONA, теперь Amazon Polly), на всех языках. Альтрон его не распространяет: берёт голос, установленный в Windows, или говорит через Amazon Polly по твоему ключу AWS. Без Максима он пишет в чат игры.</p>
+      <p class="pipe-note" data-i18n="how.1">Голос у Альтрона один, на всех языках: бесплатный Microsoft Pavel, который есть в Windows, или IVONA Максим (голос самого Кавы), если он установлен. Альтрон голоса не распространяет — берёт установленные. Без голоса он пишет в чат игры.</p>
     </section>
 
     <section id="install">
@@ -411,7 +411,7 @@
               <tbody>
                 <tr><td><code>language</code></td><td><code>auto</code> — на языке командира, или код: <code>en</code>, <code>de</code>…</td></tr>
                 <tr><td><code>languages</code></td><td>какие языки слушать при <code>auto</code></td></tr>
-                <tr><td><code>voice</code></td><td><code>Maxim</code> — единственный голос (из Windows или Amazon Polly)</td></tr>
+                <tr><td><code>voice</code></td><td><code>["Maxim", "Pavel"]</code> — голос, первый найденный в Windows</td></tr>
                 <tr><td><code>persona</code></td><td><code>teammate</code> (по умолчанию) или <code>altron</code> — манера речи (голос тот же)</td></tr>
                 <tr><td><code>idle_think_minutes</code></td><td>как часто в тишине он думает, не сказать ли что-то; <code>0</code> — только когда к нему обращаются</td></tr>
                 <tr><td><code>max_steps</code></td><td>сколько действий нейросеть может сделать за один ход (40)</td></tr>
@@ -473,7 +473,7 @@
     'ab.p6': 'Obeys you and your friends, is polite to strangers but does not take their orders. While you are away he finds work himself and tells you what he did. Builds houses, walls, towers and bridges from a description.',
     'ab.say6': '<span>Vasya is my friend</span><span>live on your own while I am away</span><span>build a 7 by 7 house</span>',
     'ab.h7': 'Alive',
-    'ab.p7': 'A mood of his own that you hear in his voice. An attitude to every player, built up by what they do. Tastes of his own and memories you share. One voice — Maxim, as in Kava’s videos; two manners: a deadpan teammate with very dry humour (the default) and a cold machine.',
+    'ab.p7': 'A mood of his own that you hear in his voice. An attitude to every player, built up by what they do. Tastes of his own and memories you share. One voice — a synthesizer like Kava’s (Pavel or Maxim); two manners: a deadpan teammate with very dry humour (the default) and a cold machine.',
     'ab.say7': '<span>what do you like?</span><span>remember our first house?</span><span>talk like the teammate</span>',
     'ab.h8': 'Learns',
     'ab.p8': 'Every turn he takes is logged, and your praise or complaint is its rating. The good turns fine-tune the same AI, so he decides better in your own game.',
@@ -486,8 +486,8 @@
     'how.stage2': '<span class="k">speech → text</span><b>Whisper</b><span>detects the language of each phrase</span>',
     'how.stage3': '<span class="k">thinking</span><b>llama.cpp</b><span>a local AI model with tools</span>',
     'how.stage4': '<span class="k">body</span><b>The Altron mod</b><span>a second player: the AI’s keyboard and mouse</span>',
-    'how.stage5': '<span class="k">voice</span><b>Maxim</b><span>the speech-synthesizer voice of Kava’s videos: from Windows or Amazon Polly</span>',
-    'how.1': 'Altron has one voice — Maxim (IVONA, now Amazon Polly), in every language. Altron does not ship it: it uses the voice installed in Windows or speaks through Amazon Polly with your own AWS key. Without Maxim he writes in the game chat.',
+    'how.stage5': '<span class="k">voice</span><b>Pavel / Maxim</b><span>a speech-synthesizer voice like Kava’s: the free Microsoft Pavel from Windows or IVONA Maxim</span>',
+    'how.1': 'Altron has one voice, in every language: the free Microsoft Pavel that Windows has, or IVONA Maxim (Kava’s own voice) when it is installed. Altron ships no voice — it uses the installed ones. Without a voice he writes in the game chat.',
     'install.eyebrow': 'Install',
     'install.h2': 'One file, and he is in the game',
     'inst.h1': 'Download and run the installer',
@@ -509,7 +509,7 @@
     'set.t2': '<thead><tr><th>Key</th><th>What it does</th></tr></thead><tbody>' +
       '<tr><td><code>language</code></td><td><code>auto</code> answers in the commander’s language, or a code: <code>en</code>, <code>de</code>…</td></tr>' +
       '<tr><td><code>languages</code></td><td>languages to listen for with <code>auto</code></td></tr>' +
-      '<tr><td><code>voice</code></td><td><code>Maxim</code>: the one voice (from Windows or Amazon Polly)</td></tr>' +
+      '<tr><td><code>voice</code></td><td><code>["Maxim", "Pavel"]</code>: the voice, the first one found in Windows</td></tr>' +
       '<tr><td><code>persona</code></td><td><code>teammate</code> (default) or <code>altron</code>: the manner of speaking (the same voice)</td></tr>' +
       '<tr><td><code>idle_think_minutes</code></td><td>how often in a quiet moment he thinks whether to say something; <code>0</code> — only when spoken to</td></tr>' +
       '<tr><td><code>max_steps</code></td><td>how many actions the AI may take in one turn (40)</td></tr>' +

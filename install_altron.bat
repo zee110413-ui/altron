@@ -216,24 +216,18 @@ Step 'whisper' {
     Ok 'Whisper готов / ready'
 }
 
-# Altron's one voice is Maxim (the speech-synthesizer voice of Kava's videos): from Windows, or from Amazon Polly
+# Altron's one voice: a speech-synthesizer voice like Kava's - Maxim when installed, else the free Microsoft Pavel
 Step 'voice' {
-    Say 'Голос: Максим' 'The voice: Maxim'
+    Say 'Голос: Максим или Павел (Windows)' 'The voice: Maxim or Pavel (Windows)'
     Add-Type -AssemblyName System.Speech
     $names = @((New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name })
-    $maxim = $names | Where-Object { $_ -match 'Maxim' } | Select-Object -First 1
-    if ($maxim) { Ok "голос Windows / Windows voice: $maxim"; return }
-    $keys = Join-Path $Root 'brain\polly.json'
-    if (Test-Path $keys) { Ok 'ключи Amazon Polly есть / Polly keys present'; return }
-    Warn 'Голоса Maxim в Windows нет. Тот же голос даёт Amazon Polly: нужен ключ AWS с правом polly:SynthesizeSpeech.'
-    Warn 'No Maxim voice in Windows. Amazon Polly has it: an AWS key allowed polly:SynthesizeSpeech. Enter - skip.'
-    $ak = Read-Host '   AWS Access Key ID'
-    if (-not $ak) { Warn 'без голоса: Альтрон будет писать в чат игры / no voice: Altron writes in the game chat'; return }
-    $sk = Read-Host '   AWS Secret Access Key'
-    $rg = Read-Host '   AWS region [eu-central-1]'
-    if (-not $rg) { $rg = 'eu-central-1' }
-    @{ access_key = $ak.Trim(); secret_key = $sk.Trim(); region = $rg.Trim() } | ConvertTo-Json | Set-Content -Encoding UTF8 $keys
-    Ok 'ключи сохранены / keys saved: brain\polly.json'
+    $names += @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens' -ErrorAction SilentlyContinue |
+        ForEach-Object { (Get-ItemProperty $_.PSPath).'(default)' })
+    $voice = $names | Where-Object { $_ -match 'Maxim|Pavel' } | Select-Object -First 1
+    if ($voice) { Ok "голос / voice: $voice"; return }
+    Warn 'Бесплатного голоса Microsoft Pavel нет. Открою настройки: Речь -> Добавить голоса -> Русский. Потом запусти установщик ещё раз.'
+    Warn 'No Microsoft Pavel voice. Opening the settings: Speech -> Add voices -> Russian. Then run the installer again.'
+    Start-Process 'ms-settings:speech'
 }
 
 # ------------------------------------------------------------------------------------------------ Java

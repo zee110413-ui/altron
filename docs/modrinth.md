@@ -11,8 +11,8 @@ brain, a local AI model, Whisper, Java 17 and Simple Voice Chat, and builds this
 
 ## What he does
 - **Talks** in the language you speak, in his own words, with a mood of his own and memories you share. His one voice
-  is **Maxim** — the speech-synthesizer voice of Kava's videos, in every language — taken from Windows (SAPI 5) or
-  from Amazon Polly with your own AWS key; without it he writes in the chat. Two manners: a deadpan teammate with very
+  is a speech-synthesizer voice like Kava's in videos, in every language: the free **Microsoft Pavel** from Windows,
+  or IVONA **Maxim** (Kava's own voice) when it is installed; without a voice he writes in the chat. Two manners: a deadpan teammate with very
   dry humour (the default) or a cold machine.
 - **Plays with his hands only**: walks, follows, fights, digs, places blocks, uses chests, furnaces, crafting tables
   and mod machines, drives vehicles — all as keys, mouse moves and clicks the AI chooses.
@@ -43,8 +43,8 @@ Source, instructions and settings: **https://github.com/zee110413-ui/altron** ·
 **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)**.
 
 - **Говорит** на твоём языке, своими словами, со своим настроением и общими воспоминаниями. Голос один —
-  **Максим**, как у Кавы в роликах, на всех языках: из Windows (SAPI 5) или из Amazon Polly по твоему ключу AWS; без
-  него Альтрон пишет в чат. Манеры две: невозмутимый тиммейт с очень сухим юмором (по умолчанию) и холодная машина.
+  голос синтезатора, как у Кавы в роликах, на всех языках: бесплатный **Microsoft Pavel** из Windows или IVONA
+  **Максим** (голос самого Кавы), если он установлен; без голоса Альтрон пишет в чат. Манеры две: невозмутимый тиммейт с очень сухим юмором (по умолчанию) и холодная машина.
 - **Играет только руками**: ходит, следует, дерётся, копает, ставит блоки, пользуется сундуками, печами, верстаками и
   машинами модов, водит технику — клавишами, мышью и кликами, которые выбирает нейросеть.
 - **Знает твою сборку**, **играет честно** (видит только то, что в прямой видимости), **помнит** места, сундуки и

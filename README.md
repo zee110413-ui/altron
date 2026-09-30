@@ -5,29 +5,30 @@ things between chests and machines, uses the GUIs of any mod, remembers your bas
 in your language. The code gives him senses and skills; **every decision — what to do, what to say, or to keep quiet
 — is made by the AI itself**.
 
-It runs **on your PC**: a local LLM (llama.cpp) and Whisper for speech recognition. His one voice is **Maxim** — the
-speech-synthesizer voice the robot teammate Kava talks with in videos: from Windows when it is installed there (SAPI 5),
-otherwise from Amazon Polly (the same voice, online, with your own AWS key).
+It runs **on your PC**: a local LLM (llama.cpp) and Whisper for speech recognition. His one voice is a speech-synthesizer
+voice like the robot teammate Kava's in videos, free and ready after install: **Microsoft Pavel**, which Windows has
+(Settings -> Speech -> add the Russian voice if it is missing); if IVONA **Maxim**, Kava's own voice, is installed in
+Windows (or you have Amazon Polly keys), it is used instead.
 
 **Website:** https://zee110413-ui.github.io/altron/
 
-> Altron is a fan project and is not affiliated with Marvel, Disney or any YouTube channel. Maxim is a commercial
-> text-to-speech voice (IVONA, now Amazon Polly); Altron does not ship it — it uses the one on your PC or your Polly key.
+> Altron is a fan project and is not affiliated with Marvel, Disney or any YouTube channel. Altron ships no voice:
+> it uses the ones Windows has (Microsoft Pavel is free; Maxim is a commercial IVONA / Amazon Polly voice).
 
 *Русская версия — ниже.*
 
 ## What he can do
 
-- **Talk**: in any language Whisper knows (Maxim reads every language with his robot accent). He answers in the language you speak (and thinks in
+- **Talk**: in any language Whisper knows (the voice reads every language with its robot accent). He answers in the language you speak (and thinks in
   it: Russian or English instructions), in his own words — nothing he says is canned, except a shout when a creeper
   is about to blow up. He starts speaking while the AI is still writing the answer, stops when you talk over him.
 - **Feel and remember**: he has a mood of his own that you hear in his voice, an attitude to every player built up by
   what they did (saved him, gave him diamonds, hit him), opinions and tastes he keeps, and shared moments he brings up
   later ("remember when the creeper took our first house?"). In quiet moments he decides himself whether to say
   something, ask, joke or stay silent.
-- **One voice, two manners**: the voice is always Maxim; the manner is `teammate` (default: a deadpan raid teammate
+- **One voice, two manners**: the voice is always the same (Pavel, or Maxim when installed); the manner is `teammate` (default: a deadpan raid teammate
   with very dry humour) or `altron` (a cold, theatrical machine). Say "be Altron" or "talk like the teammate". Without
-  Maxim he does not speak aloud at all — he writes in the game chat.
+  such a voice he does not speak aloud at all — he writes in the game chat.
 - **Notice what happens**: dangers, players badly hurt or downed, deaths, advancements, players joining, night and
   storms reach the AI as facts, and it decides what to do about them.
 - **Several players**: obeys the commander and his friends ("Vasya is my friend, obey him"), talks to strangers but
@@ -59,9 +60,9 @@ otherwise from Amazon Polly (the same voice, online, with your own AWS key).
   - `tools/llama/llama-server.exe` — [llama.cpp](https://github.com/ggml-org/llama.cpp) server;
   - `models/*.gguf` — a chat model with tool calling (e.g. a Qwen 7-9B GGUF) and, for vision, its `mmproj` file;
   - `models/whisper-large-v3-turbo` (and `whisper-small` for CPU) — faster-whisper models;
-  - the **Maxim** voice: installed in Windows (SAPI 5, IVONA Maxim), or an AWS key for Amazon Polly in
-    `brain/polly.json` — `{"access_key": "...", "secret_key": "...", "region": "eu-central-1"}` (the key needs
-    `polly:SynthesizeSpeech`).
+  - the voice: **Microsoft Pavel** (free, in Windows: Settings -> Time & Language -> Speech -> Add voices -> Russian),
+    or IVONA **Maxim** if you have it (SAPI 5), or Maxim from Amazon Polly with your own key in `brain/polly.json`
+    (`{"access_key": "...", "secret_key": "...", "region": "eu-central-1"}`).
 
 ## Quick install (Windows)
 
@@ -104,8 +105,8 @@ on your gaming PC just play and type `/altron`.
 | --- | --- |
 | `language` | `"auto"` (answers in the language you speak) or a fixed code: `"en"`, `"ru"`, `"de"`... |
 | `languages` | languages to recognize with `"auto"`, e.g. `["en", "de"]` |
-| `voice` | `"Maxim"` — the one voice (a part of the Windows voice's name, or the Polly voice); `tts_speed` — the pace |
-| `persona` | `"teammate"` (default: a deadpan teammate with very dry humour) or `"altron"` (a cold machine); the voice is Maxim for both; `tts_personas.<name>.speed` — its pace |
+| `voice` | `["Maxim", "Pavel"]` — the voices it may be, the first one found wins (a part of the Windows voice's name); `tts_speed` — the pace |
+| `persona` | `"teammate"` (default: a deadpan teammate with very dry humour) or `"altron"` (a cold machine); the same voice for both; `tts_personas.<name>.speed` — its pace |
 | `idle_think_minutes` | in a quiet moment this often he thinks whether to say something; `0` — only when spoken to |
 | `instant_ack` | a canned "Yes, commander" before the AI has thought (off: he answers in his own words) |
 | `dataset` | log every AI turn for fine-tuning (see TRAINING.md) |
@@ -130,23 +131,24 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 между сундуками и машинами, пользуется окнами любых модов, помнит твою базу, болтает с тобой — на твоём языке.
 Код даёт ему органы чувств и умения, а **все решения — что делать, что сказать или промолчать — принимает сама
 нейросеть**.
-Всё работает **на твоём ПК**: локальная нейросеть (llama.cpp) и Whisper для распознавания речи. Голос у него один —
-**Максим**, голос синтезатора речи, которым говорит робот-тиммейт Кава в роликах: из Windows, если он там установлен
-(SAPI 5), иначе — из Amazon Polly (тот же голос, онлайн, по твоему ключу AWS).
+Всё работает **на твоём ПК**: локальная нейросеть (llama.cpp) и Whisper для распознавания речи. Голос у него один — голос
+синтезатора речи, как у робота-тиммейта Кавы в роликах, бесплатный и сразу после установки: **Microsoft Pavel** из
+Windows (если его нет: Параметры -> Время и язык -> Речь -> добавить голос «Русский»). Если в Windows установлен
+IVONA **Максим** — голос самого Кавы — или есть ключи Amazon Polly, говорит он.
 
-> Проект фанатский и не связан с Marvel/Disney и каким-либо YouTube-каналом. Максим — коммерческий голос синтеза речи
-> (IVONA, теперь Amazon Polly); Альтрон его не распространяет — берёт установленный у тебя или по твоему ключу Polly.
+> Проект фанатский и не связан с Marvel/Disney и каким-либо YouTube-каналом. Альтрон не распространяет голоса:
+> берёт те, что есть в Windows (Microsoft Pavel бесплатный; Максим — коммерческий голос IVONA / Amazon Polly).
 
 ## Что умеет
 
-- **Общаться** на любом языке, который знает Whisper (Максим читает любой язык со своим роботным акцентом): отвечает на языке, на котором ты говоришь
+- **Общаться** на любом языке, который знает Whisper (голос читает любой язык со своим роботным акцентом): отвечает на языке, на котором ты говоришь
   (и думает на нём), своими словами — заготовленных фраз нет, кроме крика «крипер рядом!». Начинает говорить, пока
   ИИ ещё дописывает ответ, замолкает, если ты его перебил.
 - **Чувствовать и помнить**: у него своё настроение (его слышно в голосе), своё отношение к каждому игроку — копится
   от поступков (спас, подарил алмазы, ударил), свои вкусы и мнения, общие воспоминания, которые он вспоминает к месту
   («помнишь, как крипер снёс наш первый дом?»). В тишине сам решает — заговорить, спросить, пошутить или промолчать.
-- **Один голос, две манеры**: голос всегда Максим; манера — `teammate` (по умолчанию: невозмутимый тиммейт с очень
-  сухим юмором) или `altron` (холодная театральная машина). «Будь Альтроном» / «говори как тиммейт». Без Максима он
+- **Один голос, две манеры**: голос всегда один (Павел или Максим, если установлен); манера — `teammate` (по умолчанию: невозмутимый тиммейт с очень
+  сухим юмором) или `altron` (холодная театральная машина). «Будь Альтроном» / «говори как тиммейт». Без такого голоса он
   вслух не говорит вообще — пишет в чат игры.
 - **Замечать, что происходит**: опасность, раненые и упавшие игроки, смерти, достижения, зашедшие игроки, ночь и
   гроза приходят нейросети как факты, а что с ними делать — решает она.

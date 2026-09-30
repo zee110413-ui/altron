@@ -27,7 +27,7 @@
   "stt_device": "auto",
   "stt_threads": 4,
 
-  "voice": "Maxim",
+  "voice": ["Maxim", "Pavel"],
   "tts_speed": 1.0,
   "persona": "teammate",
   "idle_think_minutes": 4,

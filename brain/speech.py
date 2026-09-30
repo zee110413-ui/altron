@@ -146,13 +146,12 @@ def clean_for_speech(text):
 
 
 class TTS:
-    """Altron's one voice: Maxim — the speech-synthesizer voice the robot teammate Kava talks with in videos, in every
-    language (English with its robot accent). It comes from Windows when it is installed there (SAPI 5, IVONA Maxim),
-    otherwise from Amazon Polly, the same voice from Amazon's service (the PC's keys in brain/polly.json). There is no
-    other voice: without Maxim Altron does not speak aloud and writes what he says in the game chat."""
+    """Altron's one voice: a speech-synthesizer program's voice, the same in every language (English with its robot
+    accent), like the robot teammate Kava in videos. "voice" in config.json lists the voices it may be, the first one
+    found wins: Maxim (IVONA, Kava's own voice) when it is installed in Windows or there are Amazon Polly keys, else the
+    free Microsoft Pavel that Windows has. There is no other voice: without them Altron writes in the game chat."""
 
-    VOICE = "Maxim"
-    # how a mood changes the delivery: pace and loudness (the voice itself stays Maxim's)
+    VOICES = ["Maxim", "Pavel"]
     MOODS = {
         "alert": (1.15, 1.0),     # danger, a fight: faster
         "excited": (1.07, 1.0),   # an exclamation, good news
@@ -164,22 +163,25 @@ class TTS:
     def __init__(self, cfg, settings=None):
         self.cfg = cfg
         self.moods = bool(cfg.get("tts_moods", True))
-        self.engine, self.voice, self.why = self.find(str(cfg.get("voice") or self.VOICE))
+        want = cfg.get("voice") or self.VOICES
+        self.engine, self.voice, self.why = self.find([want] if isinstance(want, str) else list(want))
         self.failed_at = 0.0
         self.use(settings or {})
 
     @staticmethod
-    def find(name):
-        """("sapi", the installed voice) / ("polly", name) / (None, None, why not) — where Maxim can be taken from."""
-        import sapi
-        installed = sapi.find(name)
-        if installed:
-            return "sapi", installed, ""
+    def find(names):
+        """("sapi", the installed voice) / ("polly", name) / (None, None, why not): the first of the names that can
+        speak — a voice installed in Windows by a part of its name, or Maxim from Amazon Polly when the PC has keys."""
         import polly
-        if polly.credentials():
-            return "polly", name, ""
-        return None, None, ("голоса «%s» нет: он не установлен в Windows (SAPI 5) и нет ключей Amazon Polly "
-                            "(brain/polly.json)" % name)
+        import sapi
+        for name in names:
+            installed = sapi.find(name)
+            if installed:
+                return "sapi", installed, ""
+            if name.lower() == "maxim" and polly.credentials():
+                return "polly", "Maxim", ""
+        return None, None, ("нет голоса %s: в Windows не установлен (Параметры -> Время и язык -> Речь -> добавить "
+                            "голос «Русский», в нём Павел)" % " / ".join(names))
 
     @property
     def ready(self):

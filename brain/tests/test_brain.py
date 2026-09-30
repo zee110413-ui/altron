@@ -233,12 +233,25 @@ class Voice(unittest.TestCase):
         self.assertEqual(said[0][:2], ("polly", "Maxim"))
         self.assertEqual(said[0][3], 108)
 
+    def test_free_pavel_when_there_is_no_maxim(self):
+        said = self.fake(windows="Microsoft Pavel - Russian (Russia)")
+        t = speech.TTS({"voice": ["Maxim", "Pavel"]}, persona.voice_settings({}, "teammate"))
+        self.assertEqual(t.describe(), "Microsoft Pavel - Russian (Russia) (Windows)")
+        list(t.synth("Report: we are down one house.", "en"))
+        self.assertEqual(said[0][:2], ("sapi", "Microsoft Pavel - Russian (Russia)"))   # English too, the same voice
+
+    def test_maxim_first_when_both_are_there(self):
+        import sapi
+        self.fake()
+        sapi.find = lambda name: {"maxim": "IVONA 2 Maxim", "pavel": "Microsoft Pavel"}.get(name.lower())
+        self.assertEqual(speech.TTS({}, {}).voice, "IVONA 2 Maxim")
+
     def test_no_other_voice(self):
         self.fake(windows="Microsoft Irina Desktop - Russian")
         t = speech.TTS({}, {})
         self.assertFalse(t.ready)                            # Irina is not Maxim, and there is no Piper to fall back on
         self.assertEqual(list(t.synth("Привет.", "ru")), [])
-        self.assertIn("Maxim", t.describe())
+        self.assertIn("Maxim / Pavel", t.describe())
 
     def test_polly_signature(self):
         import datetime
