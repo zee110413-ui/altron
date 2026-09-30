@@ -12,11 +12,9 @@ import com.altron.bot.tasks.EatTask;
 import com.altron.bot.tasks.FollowTask;
 import com.altron.bot.tasks.GiveTask;
 import com.altron.bot.tasks.GotoTask;
-import com.altron.bot.tasks.HoldKeyTask;
 import com.altron.bot.tasks.MachineTask;
 import com.altron.bot.tasks.MineTask;
 import com.altron.bot.tasks.PlaceTask;
-import com.altron.bot.tasks.SmeltTask;
 import com.altron.bot.tasks.TaczCraftTask;
 import com.altron.bot.tasks.TransportTask;
 import com.altron.bot.tasks.UseBlockTask;
@@ -42,7 +40,6 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.function.Predicate;
 
 /** Commands from the brain: {"type":"cmd","id":1,"name":"mine","args":{...}}. */
@@ -134,44 +131,6 @@ public final class Actions {
                 JsonObject items = new JsonObject();
                 Inv.snapshot(p).forEach(items::addProperty);
                 return J.obj("ok", true, "msg", "инвентарь", "items", items, "creative", Creative.on());
-            }
-            case "creative_take": {
-                // creative mode: take from the creative menu what a player there would take instead of mining it
-                if (!Creative.on()) return err("я не в творческом режиме — из меню брать нельзя, это нужно добыть");
-                Item it = item(a);
-                if (it == null) return err("не знаю предмет " + J.str(a, "item", ""));
-                int n = Creative.take(it, Math.max(1, J.num(a, "count", 1)));
-                return n > 0 ? ok("взял из творческого меню " + n + "x " + Bot.id(it)) : err("инвентарь полон — некуда взять " + Bot.id(it));
-            }
-            case "machine": {
-                // make an item in a mod machine standing in the world (HBM press, HBM assembly machine...)
-                Item product = item(a);
-                if (product == null) return err("не знаю предмет " + J.str(a, "item", ""));
-                Set<Block> ms = new HashSet<>();
-                for (String id : list(a, "machines")) {
-                    ResourceLocation rl = ResourceLocation.tryParse(id);
-                    if (rl != null && BuiltInRegistries.BLOCK.containsKey(rl)) ms.add(BuiltInRegistries.BLOCK.get(rl));
-                }
-                if (ms.isEmpty()) return err("не знаю машины: " + list(a, "machines"));
-                List<MachineTask.Input> ins = new ArrayList<>();
-                if (a.has("inputs") && a.get("inputs").isJsonArray()) {
-                    for (JsonElement e : a.getAsJsonArray("inputs")) {
-                        JsonObject o = e.getAsJsonObject();
-                        Item it = Names.item(J.str(o, "item", ""));
-                        if (it == null) return err("не знаю предмет " + J.str(o, "item", ""));
-                        Set<Item> alts = new HashSet<>();
-                        if (o.has("alts") && o.get("alts").isJsonArray()) {
-                            for (JsonElement x : o.getAsJsonArray("alts")) {
-                                Item alt = Names.item(x.getAsString());
-                                if (alt != null) alts.add(alt);
-                            }
-                        }
-                        ins.add(new MachineTask.Input(it, J.num(o, "count", 1), J.num(o, "slot", -1),
-                                !o.has("back") || o.get("back").getAsBoolean(), alts));
-                    }
-                }
-                String rid = J.str(a, "recipe", "");
-                return start(new MachineTask(ms, product, J.num(a, "count", 1), rid.isBlank() ? null : ResourceLocation.tryParse(rid), ins));
             }
             case "nearby":
                 return ok(Info.nearby(J.num(a, "radius", 32)));
@@ -274,87 +233,6 @@ public final class Actions {
                 if (!list(a, "blocks").isEmpty()) r = Math.max(r, 150);
                 return start(new com.altron.bot.tasks.ExploreTask(list(a, "blocks"), J.str(a, "biome", ""), r));
             }
-            case "known_blocks": {
-                // machines and stores he has seen around (for learning a base): id, name, where
-                int radius = Math.min(J.num(a, "radius", 64), 256);
-                Set<Block> kinds = new HashSet<>();
-                // walls, wires and belts that happen to have a block entity (a SecurityCraft base is hundreds of
-                // reinforced blocks) would crowd out the machines and chests
-                java.util.regex.Pattern junk = java.util.regex.Pattern.compile(
-                        "reinforced|connector|relay|cable|wire|conveyor|disguise|fence|lamp|light|sign|banner|bed$|door|"
-                                + "camera|scanner|_part$|dummy|pipe|conduit|duct|skull|head$|candle|pot$|spawner");
-                for (Block b : BuiltInRegistries.BLOCK) {
-                    var st = b.defaultBlockState();
-                    if (st.hasBlockEntity() && Memory.interesting(st) && !junk.matcher(Bot.id(b)).find()) kinds.add(b);
-                }
-                com.google.gson.JsonArray out = new com.google.gson.JsonArray();
-                // around a given spot (the commander's base), not only around where he happens to stand
-                BlockPos center = J.has(a, "x") ? BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0)) : p.blockPosition();
-                for (BlockPos bp : Memory.find(kinds, radius + (int) Math.sqrt(p.blockPosition().distSqr(center)), J.num(a, "limit", 120) * 3)) {
-                    if (bp.distSqr(center) > (double) radius * radius) continue;
-                    boolean loaded = Bot.level().hasChunkAt(bp) && !Bot.level().getBlockState(bp).isAir();
-                    var st = loaded ? Bot.level().getBlockState(bp) : null;
-                    Block b = loaded ? st.getBlock() : Memory.remembered(bp);   // far away now: as he remembers it
-                    if (b == null || !kinds.contains(b)) continue;   // gone since
-                    // does it open a window (a machine or a store), or is it a conveyor, a cable, a wall block...
-                    // (not known for a part of the world not loaded now: the brain decides by its kind)
-                    Object gui = !loaded ? null : (Object) (Bot.level().getBlockEntity(bp) instanceof net.minecraft.world.MenuProvider
-                            || st.getMenuProvider(Bot.level(), bp) != null);
-                    JsonObject o = J.obj("id", Bot.id(b), "name", b.getName().getString(), "pos", J.arr(bp.getX(), bp.getY(), bp.getZ()),
-                            "dist", Math.round(Bot.distTo(bp)));
-                    if (gui != null) o.addProperty("gui", (Boolean) gui);
-                    out.add(o);
-                    if (out.size() >= J.num(a, "limit", 120)) break;
-                }
-                return J.obj("ok", true, "msg", "знаю " + out.size() + " машин и хранилищ рядом", "blocks", out);
-            }
-            case "production_map": {
-                // how a base is laid out, as he has seen it: everything that holds, makes or moves things (machines,
-                // chests, hoppers, conveyors, droppers, pipes), which way each one faces, and whether it opens a window
-                int radius = Math.min(J.num(a, "radius", 48), 128);
-                BlockPos center = J.has(a, "x") ? BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0)) : p.blockPosition();
-                java.util.regex.Pattern skip = java.util.regex.Pattern.compile(
-                        "reinforced|disguise|sign|banner|bed$|door|lamp|light|camera|scanner|skull|head$|candle|pot$|spawner|"
-                                + "fence|_ore$|log$|leaves|grass|sand$|gravel|glass|concrete|brick|stair|slab|wall$|carpet|wool");
-                java.util.regex.Pattern mover = java.util.regex.Pattern.compile("hopper|conveyor|chute|pipe|duct|conduit|dropper|dispenser|"
-                        + "funnel|belt|tube|cable|wire|connector");
-                com.google.gson.JsonArray out = new com.google.gson.JsonArray();
-                for (BlockPos bp : Memory.around(center, radius)) {
-                    boolean loaded = Bot.level().hasChunkAt(bp);
-                    var st = loaded ? Bot.level().getBlockState(bp) : null;
-                    Block b = loaded ? st.getBlock() : Memory.remembered(bp);
-                    if (b == null || b.defaultBlockState().isAir()) continue;
-                    String id = Bot.id(b);
-                    boolean be = b.defaultBlockState().hasBlockEntity();
-                    if (skip.matcher(id).find() || !(be || mover.matcher(id).find())) continue;
-                    JsonObject o = J.obj("id", id, "name", b.getName().getString(), "pos", J.arr(bp.getX(), bp.getY(), bp.getZ()));
-                    if (loaded) {
-                        // which way it faces (hoppers, conveyors, droppers push that way), and the rest of its look
-                        JsonObject props = new JsonObject();
-                        for (var prop : st.getProperties()) {
-                            String pn = prop.getName();
-                            if (pn.matches("facing|horizontal_facing|axis|type|half|shape|direction|mode|enabled|powered|north|south|east|west|up|down")) {
-                                props.addProperty(pn, st.getValue(prop).toString());
-                            }
-                        }
-                        if (props.size() > 0) o.add("props", props);
-                        var bent = Bot.level().getBlockEntity(bp);
-                        if (bent != null) {
-                            // IE conveyors keep their direction in the block entity
-                            try {
-                                Object f = bent.getClass().getMethod("getFacing").invoke(bent);
-                                if (f != null) o.addProperty("be_facing", f.toString());
-                            } catch (Exception ignored) {
-                            }
-                            ProductionLook.describe(bent, o);   // pipes' channels, machine sides, tanks
-                        }
-                        o.addProperty("gui", bent instanceof net.minecraft.world.MenuProvider || st.getMenuProvider(Bot.level(), bp) != null);
-                    }
-                    out.add(o);
-                    if (out.size() >= 1500) break;
-                }
-                return J.obj("ok", true, "msg", "схема: " + out.size() + " блоков", "blocks", out);
-            }
             case "open_block": {
                 // open a chest or a machine (by any side of it he can see) and leave its window open
                 BlockPos at = BlockPos.containing(J.dbl(a, "x", 0), J.dbl(a, "y", 0), J.dbl(a, "z", 0));
@@ -381,18 +259,6 @@ public final class Actions {
                 StringBuilder sb = new StringBuilder("Нашёл " + ids(blocks) + ":\n");
                 for (BlockPos bp : found) sb.append("- ").append(Bot.pos(bp)).append(" (").append(Math.round(Bot.distTo(bp))).append(" бл.)\n");
                 return ok(sb.toString().trim());
-            }
-            case "stations": {
-                // work blocks the bot remembers nearby (furnace, crafting table...): the planner does not build new ones
-                JsonObject found = new JsonObject();
-                int radius = Math.min(J.num(a, "radius", 96), 400);   // mod machines seen far away are worth walking back to
-                for (String id : list(a, "blocks")) {
-                    ResourceLocation rl = ResourceLocation.tryParse(id);
-                    if (rl == null || !BuiltInRegistries.BLOCK.containsKey(rl)) continue;
-                    List<BlockPos> at = Info.findBlocks(Set.of(BuiltInRegistries.BLOCK.get(rl)), radius, 1);
-                    if (!at.isEmpty()) found.addProperty(id, Math.round(Bot.distTo(at.get(0))));
-                }
-                return J.obj("ok", true, "msg", "станки рядом: " + found, "found", found);
             }
             case "recipe": {
                 String q = J.str(a, "item", "");
@@ -521,12 +387,7 @@ public final class Actions {
                     if (!tacz.isEmpty()) return start(new TaczCraftTask(tacz.get(0), J.num(a, "count", 1)));
                 }
                 if (it == null) return err("не знаю предмет " + q);
-                return start(new CraftTask(it, J.num(a, "count", 1), 0));
-            }
-            case "smelt": {
-                Item it = item(a);
-                if (it == null) return err("не знаю предмет " + J.str(a, "item", ""));
-                return start(new SmeltTask(it, J.num(a, "count", 1)));
+                return start(new CraftTask(it, J.num(a, "count", 1)));
             }
             case "eat":
                 return start(new EatTask());

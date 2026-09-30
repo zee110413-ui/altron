@@ -159,6 +159,10 @@ class TTS:
         "synth": (1.0, 0.0, 0.0, 0.15, 0.0),
     }
     BANDS = {"synth": (300, 5000)}   # Hz kept: a speech synthesizer of old sounds narrow, like through a small speaker
+    CRUSH = {"synth": 16000}         # Hz: held samples give the slight digital grit of a text-to-speech program
+    # Piper's variation of the voice and of the length of sounds (its defaults: 0.667, 0.8): lower is the even,
+    # monotonous delivery of a speech synthesizer, the same whatever it says — which is what makes the jokes land
+    FLAT = {"synth": (0.3, 0.35)}
 
     # how a mood changes the delivery: pace, pitch, loudness (on top of the style)
     MOODS = {
@@ -189,6 +193,8 @@ class TTS:
         self.pitch = float(settings.get("pitch", pitch))
         self.comb, self.chorus, self.drive, self.hall = comb, chorus, drive, hall
         self.band = tuple(settings.get("band") or self.BANDS.get(style, ())) or None
+        self.crush = int(settings.get("crush", self.CRUSH.get(style, 0)) or 0)
+        self.flat = self.FLAT.get(style)
         self.speed = max(0.5, float(settings.get("speed", 1.0)) * float(self.cfg.get("tts_speed", 1.0)))
         self.paths = {}
         for k, v in (settings.get("voices") or {}).items():
@@ -208,6 +214,9 @@ class TTS:
             low, high = self.band
             y = np.convolve(y, _lowpass(63, high / sr), mode="same")
             y = y - np.convolve(y, _lowpass(255, low / sr), mode="same")
+        if 0 < self.crush < sr:
+            step = int(round(sr / self.crush))
+            y = np.repeat(y[::step], step)[:len(y)]
         out = y.copy()
         if self.chorus > 0:
             # a second, slightly wandering copy of the voice (5-11 ms): the "many voices in one" of a machine
@@ -239,7 +248,8 @@ class TTS:
         pace, rise, loud = self.MOODS.get(mood, (1.0, 1.0, 1.0)) if self.moods else (1.0, 1.0, 1.0)
         pitch = self.pitch * rise
         # lowering the pitch slows the voice down: speak that much faster first, so the pace stays the same
-        syn = self._config(length_scale=pitch / (self.speed * pace), volume=1.0)
+        flat = dict(zip(("noise_scale", "noise_w_scale"), self.flat)) if self.flat else {}
+        syn = self._config(length_scale=pitch / (self.speed * pace), volume=1.0, **flat)
         for chunk in self._voice(lang).synthesize(text, syn):
             a = np.asarray(chunk.audio_int16_array, dtype=np.float32).reshape(-1) / 32768.0
             # read at a lower rate than it was made: the whole voice goes down by the pitch factor

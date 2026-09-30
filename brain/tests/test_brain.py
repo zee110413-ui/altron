@@ -136,6 +136,19 @@ class Buildings(unittest.TestCase):
             structures.plan_args({"kind": "castle"})
 
 
+    def test_the_plan_is_told_to_his_hands(self):
+        plan = structures.plan("wall", 3, 1, 2, "minecraft:cobblestone")
+        text = structures.describe(plan, (100, 64, -5))
+        self.assertEqual(text, "y 64, cobblestone: z -5 x 100..102\ny 65, cobblestone: z -5 x 100..102")
+
+
+class Hands(unittest.TestCase):
+    def test_no_scripted_routines_only_hands(self):
+        names = {t["function"]["name"] for t in agent.TOOLS}
+        self.assertTrue({"control", "view"} <= names)
+        self.assertFalse(names & {"baritone", "obtain", "smelt", "fetch", "stash", "autonomy", "assist", "sleep"})
+
+
 class Planner(unittest.TestCase):
     def setUp(self):
         k = knowledge.Knowledge()
@@ -146,17 +159,9 @@ class Planner(unittest.TestCase):
                       "out": [["thermal:iron_dust", 2]]}]
         self.k = k
 
-    def test_a_seen_machine_of_any_mod_is_used(self):
-        _, steps, unresolved = self.k.acquire("thermal:iron_dust", 4, {"minecraft:raw_iron": 2},
-                                              stations={"thermal:machine_pulverizer"})
-        self.assertEqual(unresolved, [])
-        self.assertEqual(steps[0][0], "machine")
-        self.assertEqual(steps[0][1]["machines"], ["thermal:machine_pulverizer"])
-
-    def test_an_unseen_machine_is_asked_for(self):
-        _, steps, unresolved = self.k.acquire("thermal:iron_dust", 4, {"minecraft:raw_iron": 2}, stations=set())
-        self.assertEqual(steps, [])
-        self.assertTrue(unresolved)
+    def test_a_machine_of_any_mod_is_known(self):
+        # the machine's recipes are knowledge for the AI: which block makes iron dust
+        self.assertEqual(self.k.machine("thermal:pulverizer")["blocks"], ["thermal:machine_pulverizer"])
 
 
 class Install(unittest.TestCase):
@@ -190,7 +195,7 @@ class Voice(unittest.TestCase):
     def test_styles_and_moods(self):
         t = speech.TTS.__new__(speech.TTS)
         t.pitch, t.comb, t.chorus, t.drive, t.hall = speech.TTS.STYLES["ultron"]
-        t.speed, t.moods, t.band = 1.0, True, None
+        t.speed, t.moods, t.band, t.crush, t.flat = 1.0, True, None, 0, None
         configs = []
         t._config = lambda **k: configs.append(k) or k
 
@@ -215,6 +220,7 @@ class Voice(unittest.TestCase):
         self.assertEqual(t.paths, {})                     # a voice file that is not there: the common voice is used
         synth = np.frombuffer(b"".join(t.synth("Test.", None, "cold")), "<i2")
         self.assertTrue(len(synth) and np.isfinite(synth).all())
+        self.assertLess(configs[-1]["noise_scale"], 0.667)   # the even, monotonous delivery of a synthesizer
 
     def test_personas(self):
         self.assertEqual(persona.find("говори как тиммейт"), "teammate")
@@ -222,6 +228,7 @@ class Voice(unittest.TestCase):
         cfg = {"tts_style": "robot", "tts_voices": {"ru": "a.onnx"}, "tts_personas": {"teammate": {"voices": {"ru": "b.onnx"}}}}
         self.assertEqual(persona.voice_settings(cfg, "altron")["style"], "robot")    # config.json's own style stays
         self.assertEqual(persona.voice_settings(cfg, "teammate")["voices"]["ru"], "b.onnx")
+        self.assertEqual(persona.voice_settings(cfg, "")["style"], "synth")          # the teammate talks by default
 
 
 class Streaming(unittest.TestCase):
@@ -333,12 +340,12 @@ class Companion(unittest.TestCase):
                           "msg": "для постройки стену не хватает: 20x minecraft:cobblestone"}))
         self.assertIn("не хватает", run(hub.requests.get())[2])   # the AI hears it and can tell the commander
 
-    def test_death_becomes_his_goal(self):
+    def test_death_is_told_not_decided(self):
         hub = make_hub()
         hub.joined, hub.bot = True, object()
         run(hub.after_death([10, 64, -16], ""))
-        self.assertIn("10 64 -16", hub.goals_text())          # the goal is in front of the AI at every turn
-        self.assertIn("реши сам", run(hub.requests.get())[2])  # how to get the things back is its own decision
+        self.assertEqual(hub.goals_text(), "")                 # no goal made for him: whether to go back is his call
+        self.assertIn("10 64 -16", run(hub.requests.get())[2])  # he hears where his things lie
 
     def test_goals(self):
         hub = make_hub()

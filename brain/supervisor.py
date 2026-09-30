@@ -8,7 +8,7 @@ already running) and watches it:
   * the brain hangs (no "I am alive" for 90 s)            -> killed and started again the same way
   * the brain asked for it (the AI failed, exit code 3)   -> the AI server is restarted too
 The game window and Altron's body stay open all the time; they connect to the new brain by themselves in a few
-seconds, and Altron carries on with what he was doing (keeping the production, watching the lines...).
+seconds, and Altron carries on with what he was doing.
 It stops when the game window is closed, or after too many restarts in a row (then something needs a person).
 """
 import json

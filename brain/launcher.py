@@ -298,6 +298,8 @@ def prepare_bot_dir(cfg, log=print, game_dir=None, voice=False, options=None, li
         skip = tuple(s for s in skip if not s.startswith("voicechat"))   # he talks through his own voice chat client
     wanted = {jar.name: jar for jar in (pack / "mods").glob("*.jar") if not (skip and jar.name.lower().startswith(skip))}
     for extra in cfg.get("extra_bot_mods", []):
+        if "baritone" in str(extra).lower():
+            continue   # an old config: his body has no Baritone any more
         p = rel(extra)
         if p.exists():
             wanted[p.name] = p

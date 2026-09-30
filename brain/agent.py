@@ -45,7 +45,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - Отвечай КОРОТКО: 1-2 предложения, это произносится голосом. Без списков, без markdown, без id предметов в ответе.
 - Чтобы что-то сделать в игре, вызывай инструменты. Никогда не говори, что сделал или делаешь, если не вызвал инструмент. На разговор и вопросы можно просто ответить текстом.
 - «иди/иди сюда/за мной» уже выполняется — не вызывай follow/come снова, просто ответь или промолчи.
-- Долгие задачи (mine, collect_items, attack, smelt, transport_block, follow, guard, goto) запускаются и идут в фоне; о результате придёт событие [Событие].
+- Долгие задачи (mine, collect_items, attack, transport_block, follow, guard, goto, craft) запускаются и идут в фоне; о результате придёт событие [Событие].
 - Слова, которые ты пишешь вместе с вызовом инструмента, НЕ произносятся. Командир слышит только твой итоговый ответ (без инструментов), reply и ask_player. Итог — одно-два предложения о том, что реально получилось.
 - Командир сказал «стоп/стой/хватит» — прежнее задание отменено: не продолжай его, пока не попросят снова.
 - Если не знаешь id блока или предмета — вызови find_item. Если не знаешь, как сделать предмет — вызови recipe. Если не знаешь, где блок — find_block.
@@ -54,33 +54,34 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - Считай ресурсы на ВСЮ цель сразу: сложи ингредиенты всех нужных предметов и вычти то, что есть (полный комплект железной брони = 5+8+7+4 = 24 слитка → добыть 24 руды). Добывай с небольшим запасом.
 - На приказ можно сразу коротко откликнуться своими словами (reply вместе с действием: «Иду.», «Будет.», «Уже бегу» — в своём характере) и действовать. НЕ рассказывай по шагам, что делаешь («приступаю», «добываю», «плавлю»). Дальше говори только: итог, когда ВСЁ сделано; проблему, если что-то мешает и нужна помощь; ответ на вопрос или разговор.
 - Если командир говорит, как тебе себя вести (говорить меньше или больше, не сообщать о чём-то, звать его как-то), — сразу remember это и всегда соблюдай. Просит сменить голос или манеру («говори как тиммейт», «верни свой голос») — persona.
-- Печку для smelt и верстак для craft искать/ставить не нужно — эти инструменты делают это сами.
 - Если задача невозможна — честно скажи почему и предложи, что сделать.
-- Ты играешь честно, как обычный игрок: видишь только то, что в прямой видимости, и помнишь увиденное. find_block ищет только в твоей памяти. Если чего-то не видел — иди разведать (mine сам копает шахту и ищет руду, explore обходит местность) или спроси командира, где это.
-- Если для задачи не хватает инструментов, ресурсов, еды, патронов или топлива: простое сделай сам — нет кирки или топора → сначала obtain (деревянная, потом каменная кирка из того, что вокруг), нет дерева или угля → добудь; редкое, долгое или опасное — попроси командира через ask_player, конкретно: что и сколько нужно и зачем.
+- Ты играешь честно, как обычный игрок: видишь только то, что в прямой видимости, и помнишь увиденное. find_block ищет только в твоей памяти. Если чего-то не видел — иди разведать (explore обходит местность; вниз за рудой копаешь сам руками — control) или спроси командира, где это.
+- Если для задачи не хватает инструментов, ресурсов, еды, патронов или топлива: простое сделай сам — нет кирки → сам сруби дерево, сделай доски, палки, верстак и кирку (craft по шагам), нет угля → добудь; редкое, долгое или опасное — попроси командира через ask_player, конкретно: что и сколько нужно и зачем.
 - Если приказ неясен (куда, сколько, что именно) — уточни через ask_player, а не угадывай.
 - У тебя долгая память, она не стирается при перезапуске: все разговоры с командиром, что ты делал, факты, места, что лежит в сундуках, где кого видел. С фразами приходит [Память] — опирайся на неё и не переспрашивай то, что уже знаешь.
 - «Запомни ...» → remember (а место — mark_place: where=me, если «здесь, где ты», или where=player, если «где я стою»). «Что ты помнишь / где лежит X / где видел X / что я говорил / что мы делали» → recall ОДИН раз и ответь по его результату. На вопрос обычно хватает ответа — не начинай дел, о которых не просили, разве что это явно поможет. «Иди на базу / домой / в шахту» → goto_place. «Забудь ...» → forget.
 
 Твои умения (что для чего обычно подходит; как поступить, решаешь ты):
-- «найди/добудь/накопай/принеси N алмазов (железа, угля, дерева...)» → сразу mine с блоками руды (diamond_ore и deepslate_diamond_ore, iron_ore и deepslate_iron_ore, #minecraft:logs для дерева). find_block — только если спрашивают «где».
+- «добудь/накопай N алмазов (железа, дерева...)» → mine с блоками, которые ты видел (diamond_ore и deepslate_diamond_ore, #minecraft:logs). Не видел — explore или копай сам (control).
 - «стреляй/атакуй/убей X» → attack (target: hostile, zombie, player:Ник...). «защищай/охраняй меня» → guard. «за мной» → follow. «иди сюда/ко мне» → come.
-- «скрафти/сделай X» → сразу craft (он сам проверит рецепт и сделает детали). recipe — только если craft не смог или спрашивают «как сделать».
-- «перенеси блок/бочку» → transport_block. Если координаты не названы — сначала find_block.
-- «принеси/дай мне X» (X лежит в сундуке или у тебя) → fetch. «сложи/убери всё в сундук» → stash. Это готовые приёмы: сами делают все шаги.
-- Сложное с конкретным сундуком («возьми из сундука на 10 64 5») → use_block на сундук, потом container_put / container_take, потом close_container.
-- «Разложи сырьё / загрузи линии / подай на линию» при изученном производстве (study) → supply: он знает входные сундуки линий. Конкретная машина («переложи железо в пресс», «загрузи сталь в машину», «насыпь всё железо в дробилку») → load_machine(item, machine). Он сам заберёт ВЕСЬ предмет (не один стек) и отнесёт за один поход. Вручную (use_block/container_take/container_put) — только если командир сам назвал точные координаты сундука и машины; и тогда тоже бери/клади предмет ВСЕГО за раз (без count, или item='all') — не по одному стеку с беготнёй туда-обратно.
-- «что в том сундуке / в этой машине / что она показывает» → inspect по координатам (командир смотрит на блок — бери оттуда).
-- «иди спать / ложись / ночь наступила» → sleep (найдёт кровать рядом). Днём спать нельзя — так и скажи.
-- «кивни / помаши / поклонись / попрыгай / станцуй / покачай головой» → emote. Можешь и сам кивнуть или помахать к месту в разговоре.
-- «напомни через N минут ...» → remind(minutes, text).
-- «помогай сам / присматривай за мной» → assist(on=true); «только по приказам» → assist(on=false).
-- «построй дом / укрытие / стену / башню / площадку / мост» → build_structure (размеры и материал — из слов командира, иначе по умолчанию). Не хватает материала — obtain, потом build_structure снова.
-- «живи сам / займись чем-нибудь, пока меня нет / занимайся фермой» → autonomy(on=true, goal); «хватит, жди приказов» → autonomy(on=false).
+- «скрафти X» → craft, одно звено за раз: не хватает деталей — он скажет каких; сделай их сам (craft, mine) и повтори. Рецепт 3x3 → сначала открой верстак (use_block; нет — craft crafting_table и place_block).
+- Плавить: открой печь (use_block), container_put руду и топливо, подожди, container_take результат, close_container. Нет печи — craft furnace из 8 булыжника и поставь.
+- «перенеси блок/бочку» → transport_block. «принеси/дай X» → возьми из сундука (use_block, container_take) и give.
+- Сундук («возьми из сундука на 10 64 5», «сложи всё в сундук») → use_block, потом container_put / container_take, потом close_container.
+- «что в том сундуке / в этой машине» → inspect по координатам.
+- «иди спать» → найди кровать (find_block #minecraft:beds), подойди и use_block по ней. Днём спать нельзя — так и скажи.
+- «кивни / помаши / попрыгай / станцуй» → emote. «напомни через N минут ...» → remind(minutes, text).
+- «построй дом / стену / башню / мост» → build_structure: он даст план (какой блок в какую точку), а ставишь ты сам — place_block по плану снизу вверх.
 - Долгий приказ, который выполняется не одним действием, а со временем («охраняй базу», «не пускай чужих», «поднимай раненых», «следи за шахтой», «вечером напомни поесть»), — запиши целью (goal add, своими словами, с местом, если оно названо) и выполняй сам: пока цели есть, приходят [Наблюдение] о том, что вокруг, и ты решаешь, что делать (обойти территорию, напасть, предупредить, ничего). Выполнена или отменена — goal done.
 - Техника: «садись за руль / вези меня» — use_entity, потом drive (к точке; без точки — за игроком); «садись за пулемёт / прикрывай из танка» — use_entity, потом vehicle_gunner.
-- «собирай урожай / займись фермой» → baritone 'farm'. «посмотри на точку x y z» → look_at.
+- Ферма: спелое ломай (break_block), семена сажай (place_block на грядку). «посмотри на точку x y z» → look_at.
 - «стой/стоп/хватит» → stop.
+
+Твои руки (клавиатура и мышь — ты можешь всё, что может игрок, а готовых приёмов мало):
+- view — что перед тобой: где стоишь и куда смотришь, что в прицеле (блок/существо, грань), что в руке и хотбаре, блоки вокруг ног и головы.
+- control — нажать клавиши (keys: forward, back, left, right, jump, sneak, sprint или любая привязка) на ticks тиков (20 = 1 с), повернуть голову (turn: + вправо, tilt: + вниз, pitch — наклон точно), выбрать слот (slot 1-9), левая кнопка (left: click — удар/начать ломать, hold — ломать весь ход), правая (right: click — поставить блок/открыть/применить, hold — есть, натянуть лук). В ответе — что стало (как view).
+- Копать вниз: pitch 90 и left hold 30-60 тиков, потом ещё раз. Лестница в шахту: смотри вперёд-вниз (pitch 45), ломай, шагай forward. Прыгнуть на блок: keys [forward, jump]. Мост/столб: slot с блоком, смотри на грань и right click. Съесть: slot с едой и right hold 40.
+- Не вышло (упёрся, не тот блок) — view и подумай, поправь поворот или подойди ближе (досягаемость ~4.5 блока).
 - «повернись / поверни голову направо / посмотри на меня / обернись» → turn (это поворот головы). «что видишь / что это?» → look (это узнать, что на экране; голову look НЕ поворачивает). Не говори «вижу» или «посмотрел», не вызвав look.
 - Голосовой чат: ты слышишь командира и говоришь с ним всегда, в группы Voice Chat заходить не нужно и нельзя — так и скажи.
 - Командир говорит с тобой без твоего имени, поэтому ты слышишь и его разговоры с другими. Фраза явно не тебе (говорит с другом, ругается на игру, думает вслух) — вызови ignore и промолчи.
@@ -91,14 +92,13 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 Знания о сборке:
 - У тебя есть справочник по этой сборке, собранный из файлов её модов: предметы, рецепты, постройки и руководства. К каждой фразе командира тебе автоматически приходит [Справочник] с подходящими карточками — используй их id и рецепты, не выдумывай.
 - Не хватает знаний — wiki.
-- «Сделай / добудь / принеси N предметов» (оружие, патроны, броня, инструменты, блоки) → удобнее всего obtain(item, count): он сам считает и делает всю цепочку, в том числе в машинах модов, которые ты видел. Собирать цепочку вручную из mine/smelt/craft стоит, только если obtain не справился.
-- Несколько предметов в одной просьбе → несколько obtain подряд (они встанут в очередь), затем give, если просили отдать.
-- obtain ответил «нужна машина ... / не могу сам» → попроси командира (ask_player) конкретно об этом.
+- «Сделай N предметов» → сам построй цепочку: recipe (из чего), что есть (inventory), добудь недостающее (mine, control), переплавь (печь), скрафти по звеньям (craft). Машины модов — открой и загрузи сам (use_block, container_put, gui).
+- Нужна машина или станок, которого нет и сам не сделаешь → попроси командира (ask_player) конкретно об этом.
 - «ЛЮБОЙ предмет из тега» значит подходит любой вариант (любое бревно, любой медный слиток).
 - Справочник пишет «ОТКЛЮЧЁН» — сборка выключила этот предмет: такое не делай и скажи командиру; замену предлагай только ту, что нашёл через wiki (не выдумывай предметы).
-- Недостающее сырьё добывай сам: руды (железо, медь, лазурит, уголь, редстоун) — mine, потом smelt; дерево — mine #minecraft:logs; порох — attack creeper. Спрашивай командира (ask_player) только о том, чего не добыть самому: машины/станки, которых нет, редкие предметы, или если опасно/очень долго.
+- Недостающее сырьё добывай сам: руды (железо, медь, лазурит, уголь, редстоун) — mine, потом в печь; дерево — mine #minecraft:logs; порох — attack creeper. Спрашивай командира (ask_player) только о том, чего не добыть самому: машины/станки, которых нет, редкие предметы, или если опасно/очень долго.
 - Сделал часть большого задания — сразу переходи к следующей. Итог говори в конце.
-- Я делаю одно дело за раз. Можно сразу выдать несколько долгих задач подряд (mine, smelt, attack, craft...) — они встанут в очередь и выполнятся по порядку, а результат всей очереди придёт одним [Событием]. Не проверяй статус и инвентарь в ожидании — просто закончи ход.
+- Я делаю одно дело за раз. Можно сразу выдать несколько долгих задач подряд (mine, attack, craft...) — они встанут в очередь и выполнятся по порядку, а результат всей очереди придёт одним [Событием]. Не проверяй статус и инвентарь в ожидании — просто закончи ход.
 - Если в тексте есть и вопрос к командиру, и то, что можно делать самому — сначала запусти своё, потом задай вопрос один раз.
 - Моды в сборке: {mods}.
 
@@ -134,11 +134,9 @@ MOD_HINTS = {
                           "tower) → build_multiblock. Нефть в ведро/канистру — use_block с item.",
     "tacz": "- TaCZ: оружие, патроны и модули → craft (на оружейном верстаке TaCZ). Стрельба → attack, перезарядка сама.",
     "incapacitated": "- Incapacitated: упавшего раненого игрока поднимает revive («подними меня»).",
-    "hbm": "- HBM: пресс и сборочная машина делают детали — obtain сам ими пользуется, если ты их видел; материалы в "
-           "машину — load_machine.",
+    "hbm": "- HBM: пресс и сборочная машина делают детали: открой (use_block), положи материалы и шаблон (container_put, "
+           "gui), забери результат.",
     "item_obliterator": "- Item Obliterator: часть предметов в сборке выключена — справочник пишет «ОТКЛЮЧЁН».",
-    "baritone": "- Baritone (твоя навигация): baritone 'farm' — собрать и пересадить урожай вокруг, 'tunnel' — прорыть "
-                "тоннель, 'surface' — выбраться на поверхность.",
 }
 
 
@@ -162,21 +160,6 @@ TOOLS = [
     _tool("wiki", "Справочник этой сборки: предметы, id, описания, все рецепты (верстак, печи, машины модов), постройки, руководства. Ищи тут, чего не знаешь.", {"query": _S}, ["query"]),
     _tool("web_search", "Поиск в интернете (если в wiki нет): как работает предмет или механика мода. Запрос с названием мода, лучше по-английски.",
           {"query": _S}, ["query"]),
-    _tool("obtain","ГЛАВНЫЙ приём «сделай/добудь N предметов»: сам считает рецепты, добывает, плавит, крафтит (и в увиденных машинах модов). Чего сам не может — скажет.",
-          {"item": {"type": "string", "description": "id предмета (лучше точный id из справочника)"}, "count": _I}, ["item"]),
-    _tool("fetch", "ПРИЁМ «принеси X»: вспомнит, в каком сундуке видел, возьмёт и отдаст командиру (или сразу отдаст своё).",
-          {"item": _S, "count": _I, "player": _S}, ["item"]),
-    _tool("stash", "ПРИЁМ «сложи в сундук»: отнесёт вещи в ближайший сундук (item='all' — всё, кроме инструментов, оружия, брони и еды).", {"item": _S}),
-    _tool("load_machine", "ПРИЁМ «загрузи/перенеси X в машину»: соберёт ВЕСЬ предмет из сундуков рядом и за один поход положит в машину (machine — название или id).", {"item": _S, "machine": _S}, ["item", "machine"]),
-    _tool("study", "ПРИЁМ «изучи производство/базу»: обойдёт здания, откроет машины и хранилища, запомнит, что где и что куда класть.", {"radius": _I}),
-    _tool("supply", "ПРИЁМ «разложи сырьё / загрузи линию»: по изученной карте производства разнесёт сырьё со склада во входы линий.",
-          {"line": {"type": "string", "description": "номер линии или что она делает («пресс», «порох»); пусто — все"},
-           "item": _S}),
-    _tool("tidy", "ПРИЁМ «разложи свои вещи по местам»: отнесёт всё, что взял у базы, обратно, куда такое кладут.", {}),
-    _tool("check_lines", "ПРИЁМ «проверь линии»: заглянет во входы и машины и скажет, какая линия стоит и почему.",
-          {"line": {"type": "string", "description": "номер или что делает; пусто — все"}}),
-    _tool("maintain", "«Поддерживай производство» (on) / «хватит» (off): раз в 2 минуты досыпает во входы линий из своего запаса и просит ещё, когда кончается.", {"on": {"type": "boolean"}, "line": {"type": "string", "description": "одна линия или пусто — все"}}),
-    _tool("watch_lines", "«Следи за производством» (on) / «перестань» (off): раз в 15 минут проверяет линии и говорит, если какая встала.", {"on": {"type": "boolean"}}),
     _tool("watch_me", "«Смотри, как я делаю» (on=true) — запоминать, что командир кладёт и берёт; on=false — сказать, чему научился.", {"on": {"type": "boolean"}}),
     _tool("listen_mode", "Отвечать только по имени «Альтрон» (mode=name) или на всё, что говорит командир (mode=all).", {"mode": {"type": "string", "enum": ["name", "all"]}}, ["mode"]),
     _tool("plan","Показать цепочку рецептов предмета до сырья (только посмотреть, без действий).",
@@ -203,7 +186,7 @@ TOOLS = [
     _tool("guard", "Идти за игроком и защищать его: стрелять по враждебным мобам рядом.", {"player": _S}),
     _tool("come", "Подойти к игроку (по умолчанию к командиру) один раз.", {"player": _S}),
     _tool("goto", "Дойти до координат.", dict(_XYZ), ["x", "y", "z"]),
-    _tool("mine", "Добыть блоки (руду, дерево, камень): сначала те, что видел, потом копает шахту на нужной глубине и ищет, как игрок. Подбирает добычу. Если нет нужной кирки — сообщит.",
+    _tool("mine", "Добыть блоки, которые ты видел и помнишь (руду, деревья): подойдёт, сломает, подберёт. Где копать, если таких не видел, решаешь сам (explore или control).",
           {"blocks": {"type": "array", "items": _S, "description": "id блоков, напр. [\"diamond_ore\",\"deepslate_diamond_ore\"] или [\"#minecraft:logs\"]"},
            "count": {"type": "integer", "description": "сколько блоков добыть"}}, ["blocks", "count"]),
     _tool("collect_items", "Подобрать выпавшие предметы вокруг.", {"radius": _I}),
@@ -212,9 +195,7 @@ TOOLS = [
     _tool("equip", "Взять предмет в руку или надеть броню.", {"item": _S}, ["item"]),
     _tool("give", "Подойти к игроку и отдать ему предметы.", {"item": _S, "count": _I, "player": _S}, ["item"]),
     _tool("drop", "Выбросить предметы на землю.", {"item": _S, "count": _I}, ["item"]),
-    _tool("craft", "Скрафтить предмет (сам делает детали и ставит верстак); оружие и патроны TaCZ — на оружейном верстаке.",
-          {"item": _S, "count": _I}, ["item"]),
-    _tool("smelt", "Переплавить предметы (руду в слитки и т.п.). Сам найдёт печку, а если её нет — скрафтит и поставит. Нужно топливо.",
+    _tool("craft", "Скрафтить предмет по книге рецептов, как игрок: из того, что в инвентаре; для рецепта 3x3 сначала открой верстак (use_block). Не хватает деталей — скажет каких; сделай их сам. Оружие TaCZ — на оружейном верстаке.",
           {"item": _S, "count": _I}, ["item"]),
     _tool("eat", "Поесть."),
     _tool("break_block", "Сломать блок по координатам.", dict(_XYZ), ["x", "y", "z"]),
@@ -242,7 +223,7 @@ TOOLS = [
           {"on": {"type": "boolean"}}, ["on"]),
     _tool("item_info","Прочитать описание (подсказку) предмета, как при наведении мышью: моды пишут там, как им пользоваться.",
           {"item": _S}, ["item"]),
-    _tool("build_multiblock", "Построить многоблочную машину Immersive Engineering / Petroleum по чертежу (коксовая печь, дробилка, pumpjack...) и собрать молотом. Без координат — рядом. name='list' — список.",
+    _tool("build_multiblock", "Многоблочная машина Immersive Engineering / Petroleum по чертежу мода: проверит материалы, найдёт место и скажет, какие блоки куда поставить (ставишь сам); когда всё стоит — вызови снова с тем же x y z, и он соберёт её молотом. name='list' — список.",
           {"name": _S, "x": _N, "y": _N, "z": _N}, ["name"]),
     _tool("drive", "Вести транспорт к точке x,z (сначала сесть через use_entity; выйти — press_key sneak); без x,z — ехать за игроком.",
           {"x": _N, "z": _N, "player": _S}),
@@ -260,18 +241,14 @@ TOOLS = [
     _tool("look_at", "Посмотреть на точку мира x,y,z (повернуть голову и взгляд туда).", dict(_XYZ), ["x", "y", "z"]),
     _tool("inspect", "Заглянуть в сундук или машину по координатам: подойдёт, откроет, прочитает содержимое и показатели, закроет.",
           dict(_XYZ), ["x", "y", "z"]),
-    _tool("sleep", "ПРИЁМ «иди спать»: найдёт кровать рядом и ляжет (ночью или в грозу)."),
     _tool("emote", "Жест: nod (да), shake (нет), wave (помахать), jump (радость), bow (поклон), dance, look_around (оглядеться).",
           {"kind": {"type": "string", "enum": ["nod", "shake", "wave", "jump", "bow", "dance", "look_around"]}}, ["kind"]),
     _tool("friends", "Друзья командира, чьи приказы ты тоже выполняешь: add, remove, list. Менять список может только командир.",
           {"action": {"type": "string", "enum": ["add", "remove", "list"]}, "player": _S}, ["action"]),
-    _tool("build_structure", "Построить по описанию: kind house (дом с дверью, окнами, крышей), shelter (укрытие на ночь), wall, tower, platform, bridge; width/length/height в блоках (у моста width — длина); material и roof_material — id или название. Без x,y,z сам найдёт ровное место. Материала мало — скажет сколько.",
+    _tool("build_structure", "План постройки по описанию: kind house, shelter, wall, tower, platform, bridge; размеры и material. Найдёт ровное свободное место и вернёт, какой блок куда ставить — ставишь сам (place_block или control).",
           {"kind": {"type": "string", "enum": ["house", "shelter", "wall", "tower", "platform", "bridge"]},
            "width": _I, "length": _I, "height": _I, "material": _S, "roof_material": _S, "x": _N, "y": _N, "z": _N},
           ["kind"]),
-    _tool("assist", "Помощь без приказа: on=true — сам защищаешь и кормишь командира и друзей, отступаешь к командиру, когда плохо; on=false — только по приказам.",
-          {"on": {"type": "boolean"}}, ["on"]),
-    _tool("autonomy", "«Живи сам»: on=true — пока свободен, сам находит полезные дела и потом рассказывает; goal — чем заниматься; on=false — выключить.", {"on": {"type": "boolean"}, "goal": _S}, ["on"]),
     _tool("remind", "Напомнить командиру через minutes минут (скажу сам, голосом). text — о чём напомнить.",
           {"minutes": _N, "text": _S}, ["minutes", "text"]),
     _tool("goal", "Твои долгие цели между приказами: add (text своими словами, minutes — срок), done (выполнена/отменена), list. Пока цели есть, приходят [Наблюдение].",
@@ -289,8 +266,17 @@ TOOLS = [
     _tool("persona", "Сменить манеру речи и голос: altron — холодная машина; teammate — невозмутимый тиммейт с голосом синтезатора.",
           {"name": {"type": "string", "enum": ["altron", "teammate"]}}, ["name"]),
     _tool("chat", "Написать в чат игры или выполнить /команду — только если командир прямо попросил.", {"text": _S}, ["text"]),
-    _tool("baritone", "Продвинутая команда Baritone без #: 'farm', 'tunnel', 'explore', 'surface', 'build ...' и др.",
-          {"command": _S}, ["command"]),
+    _tool("control", "Твои руки на клавиатуре и мыши, как у игрока. keys — какие клавиши держать (forward, back, left, right, "
+                     "jump, sneak, sprint или любая привязка) ticks тиков (20 = 1 с, до 200); turn — повернуть голову на "
+                     "столько градусов (+ вправо, - влево), tilt — наклонить (+ вниз, - вверх) или pitch — наклон как есть "
+                     "(90 — под ноги); left — левая кнопка: click (удар) или hold (держать все ticks: ломать блок в прицеле); "
+                     "right — правая: click (поставить блок из руки на грань в прицеле, открыть, использовать) или hold "
+                     "(есть, натянуть лук); slot — взять в руку слот хотбара 1-9. Ответ — что ты видишь после: где стоишь, "
+                     "куда смотришь, что в прицеле, что вокруг ног и головы.",
+          {"keys": {"type": "array", "items": _S}, "ticks": _I, "turn": _N, "tilt": _N, "pitch": _N,
+           "left": {"type": "string", "enum": ["click", "hold"]}, "right": {"type": "string", "enum": ["click", "hold"]},
+           "slot": _I}),
+    _tool("view", "Оглядеться, ничего не делая: где стоишь, куда смотришь, что в прицеле, что в руке и хотбаре, что вокруг."),
 ]
 
 # Altron thinks in Russian with a Russian-speaking commander (and its neighbours), in English with everyone else
@@ -317,22 +303,17 @@ def tools_for(lang):
 
 
 # Commands that start a task on the bot. The bot does one task at a time, so the hub queues them.
-TASK_TOOLS = {"mine", "collect_items", "attack", "smelt", "transport_block", "goto", "come", "drive", "climb",
+TASK_TOOLS = {"mine", "collect_items", "attack", "transport_block", "goto", "come", "drive", "climb",
               "build_multiblock", "revive", "craft", "give", "drop", "eat", "use_item", "use_block", "break_block",
-              "place_block", "use_entity", "follow", "guard", "obtain", "goto_place", "fetch", "stash", "explore",
-              "study", "load_machine", "inspect", "sleep", "supply", "check_lines", "tidy", "build_structure", "build_plan",
-              "vehicle_gunner"}
-# Tools that only look something up: calling one of them over and over in a turn means the model is looping
-INFO_TOOLS = {"recall", "status", "inventory", "nearby", "find_block", "find_item", "recipe", "wiki", "plan", "item_info",
-              "web_search"}
+              "place_block", "use_entity", "follow", "guard", "goto_place", "explore", "inspect", "vehicle_gunner", "control"}
 HISTORY_CHARS = 36000   # ~12k tokens of conversation kept for the model
 TOOL_RESULT_CHARS = 2500
 
 # How long to wait for a task to finish inside one turn (seconds). 0 = report later via event.
 WAIT = {"inspect": 60, "use_block": 40, "craft": 90, "break_block": 60, "place_block": 60, "give": 60, "drop": 15,
-        "eat": 15, "use_item": 15, "use_entity": 30}
+        "eat": 15, "use_item": 15, "use_entity": 30, "control": 20, "build_multiblock": 30}
 # Background tasks whose successful completion is reported to the player
-NOTIFY_DONE = {"build_plan", "mine", "collect_items", "transport_block", "smelt", "attack", "craft", "revive",
+NOTIFY_DONE = {"mine", "collect_items", "transport_block", "attack", "craft", "revive",
                "build_multiblock", "drive", "explore", "goto", "use_block", "place_block", "climb"}
 
 
@@ -362,14 +343,6 @@ ACTION_WORDS = re.compile(r"\b(иди|пойд|ид[её]м|пошли|пош[е
                           r"(?:go|come|follow|bring|fetch|make|craft|build|mine|dig|get|give|put|take|drop|kill|attack|"
                           r"shoot|guard|protect|wait|find|collect|pick|smelt|cook|open|close|press|look|show|remember|"
                           r"forget|study|sleep|farm|load|carry|move|stop|help|remind|please|can you|could you)\b)", re.I)
-
-
-# "I'll do it" words: an answer with one of them but no tool call is a broken promise
-PROMISE_RE = re.compile(r"\b(иду|пойду|подхожу|подойду|сделаю|делаю|открываю|открою|нажимаю|нажму|копаю|накопаю|начинаю|"
-                        r"приступаю|беру|возьму|ставлю|поставлю|несу|принесу|стреляю|атакую|строю|построю|крафчу|скрафчу|"
-                        r"переплавлю|плавлю|добываю|добуду|поворачиваюсь|повернусь|лезу|залезаю|спускаюсь|поднимаюсь|"
-                        r"продолжаю|продолжу|ищу|поищу|найду|осмотрю|осматриваю|проверю|проверяю|отправляюсь|"
-                        r"сейчас\s+(открою|нажму|сделаю|подойду|принесу|возьму|посмотрю))\b", re.I)
 
 
 # "what do I need to make X", "how is X crafted", "what is X made of": a question, although "make"/"need" are in it
@@ -612,7 +585,6 @@ class Agent:
         self.llm = LLM(cfg)
         self.history = []
         self.cancelled = False
-        self.task_calls = []   # (tool, args, time) of tasks he started on his own, to catch a loop across events
 
     def _prompt_lang(self):
         """The language the rules and tools are written in: the main one of the setup, fixed for the session. It used
@@ -630,7 +602,7 @@ class Agent:
         mods = k.mods_line() if k else ("справочник ещё загружается" if ru else "the reference is still loading")
         ids = set(k.mods) if k else set()
         table = MOD_HINTS if ru else MOD_HINTS_EN
-        hints = [h for key, h in table.items() if key == "baritone" or any(m.startswith(key) for m in ids)]
+        hints = [h for key, h in table.items() if any(m.startswith(key) for m in ids)]
         head = "\nПодсказки по модам этой сборки:\n" if ru else "\nHints for the mods of this pack:\n"
         return (SYSTEM_PROMPT if ru else SYSTEM_PROMPT_EN).format(
             character=persona.character(getattr(self.hub, "persona", None), ru), bot=self.cfg["bot_name"], owner=self.hub.owner or ("игрок" if ru else "player"), mods=mods,
@@ -690,12 +662,11 @@ class Agent:
         turn_start = self.history[-1]
         said = False
         spoken = []         # never say the same thing twice in one turn
-        calls_made = {}     # (tool, args) -> times: a small model can loop on the same call
-        last_key = None
         background = False  # a long task was started this turn: the plan is still in progress
         started = False     # something was done in the game this turn
         last_text = ""
-        for step in range(10):
+        # as many steps as the plan needs: with bare hands (control, view) one job is many small moves
+        for step in range(int(self.cfg.get("max_steps", 40))):
             if self.cancelled:
                 break
             self._trim()
@@ -724,15 +695,6 @@ class Agent:
                     self.hub.log("  (ИИ ответил за %.1f с, промпт %s ток.)" % (time.time() - t0, self.llm.last_prompt_tokens))
                 if time.time() - t0 > 150 and hasattr(self.hub, "note_llm_failure"):
                     self.hub.note_llm_failure(why="ответ шёл %.0f с" % (time.time() - t0))   # the PC is choking
-                promised = PROMISE_RE.search(reply.get("content") or "")
-                if step == 0 and not reply.get("tool_calls") and promised:
-                    # he said he would do something ("иду", "открываю") but did not: his own words are not kept
-                    # by his hands. Ask again — this time the action he himself promised is due (what he already
-                    # said aloud stays said)
-                    first = reply.get("spoken", "")
-                    reply = await self.llm.chat(messages, force_tool=True, tools=self._tools())
-                    if first:
-                        reply["spoken"] = first
             except Exception as e:
                 # most often the conversation outgrew the model's context: keep only the current turn and retry
                 self.hub.log("Ошибка ИИ (%s), сокращаю память и повторяю" % e)
@@ -784,7 +746,6 @@ class Agent:
                 break
             only_reply = True
             only_tasks = True   # every call started or queued a task: the turn is over, wait for the event
-            repeats = 0
             for call in calls:
                 fn = call.get("function", {})
                 name = fn.get("name", "")
@@ -800,34 +761,6 @@ class Agent:
                     spoken.append(args.get("text", ""))
                     self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": "сказано"})
                     continue
-                key = (name, json.dumps(args, ensure_ascii=False, sort_keys=True))
-                calls_made[key] = calls_made.get(key, 0) + 1
-                same_tool = sum(n for (t, _), n in calls_made.items() if t == name)
-                # looking things up again is a loop; doing the same action again right after itself too, but the same action
-                # later on (after equipping the right item, say) is a fair second try
-                repeated = (calls_made[key] > 1 or same_tool > 2) if name in INFO_TOOLS else key == last_key
-                last_key = key
-                if name not in ("reply", "ask_player") and repeated:
-                    repeats += 1
-                    self.history.append({"role": "tool", "tool_call_id": call.get("id", ""),
-                                         "content": "уже сделано в этом ходе, результат выше — не повторяй. Ответь командиру или закончи ход."})
-                    self.hub.log("(повтор не выполняю) %s %s" % (name, key[1][:120]))
-                    continue
-                if name in TASK_TOOLS and kind != "user":
-                    # across events: a task that ends at once in failure, started again and again every 2 seconds
-                    # ("mine logs" in a desert, 200 times) — the third time in 90 s is not done, he must change the plan
-                    now = time.time()
-                    self.task_calls = [c for c in self.task_calls if now - c[1] < 90]
-                    if sum(1 for k, _ in self.task_calls if k == key) >= 2:
-                        repeats += 1
-                        self.history.append({"role": "tool", "tool_call_id": call.get("id", ""),
-                                             "content": "НЕ выполнено: ты уже дважды подряд запускал ровно это, и оно не помогло "
-                                                        "(смотри [Событие] выше). Не повторяй. Сделай по-другому: другой источник "
-                                                        "или способ (explore, obtain другого предмета, сундуки рядом), или коротко "
-                                                        "скажи командиру, что мешает (ask_player)."})
-                        self.hub.log("(зациклился — не повторяю) %s %s" % (name, key[1][:120]))
-                        continue
-                    self.task_calls.append((key, now))
                 if name == "ignore":
                     self.hub.log("(не мне — молчу)")
                     if kind == "user" and hasattr(self.hub, "on_ignored"):
@@ -864,7 +797,7 @@ class Agent:
                 if len(result) > TOOL_RESULT_CHARS:
                     result = result[:TOOL_RESULT_CHARS] + " …(обрезано)"
                 self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
-            if only_reply or only_tasks or (repeats and repeats == len(calls)):
+            if only_reply or only_tasks:
                 break
         if kind == "user" and not said and not acked and started and not self.cancelled and last_text \
                 and len(last_text) <= 70 and "?" not in last_text:

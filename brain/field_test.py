@@ -113,7 +113,6 @@ class FieldTest:
         self.origin = None     # the course's corner (x, z)
         self.home = None       # where the players stood before the test
         self.started = datetime.datetime.now()
-        self.legs_before = None
 
     def say_out(self, text):
         print(time.strftime("%H:%M:%S"), text, flush=True)
@@ -131,7 +130,7 @@ class FieldTest:
         started = False
         while time.time() - t0 < timeout:
             st = self.b.state()
-            working = st["busy"] or st["requests"] > 0 or st["speaking"] or st["macro"] or \
+            working = st["busy"] or st["requests"] > 0 or st["speaking"] or \
                 (st["running"] is not None and st["running"][1] not in ENDLESS)
             if working:
                 started = True
@@ -242,9 +241,6 @@ class FieldTest:
 
     # ------------------------------------------------------------------ parts
     def part_legs(self):
-        st = self.b.state()
-        self.legs_before = st.get("legs", "own")
-        self.b.set("legs", "own_only")   # his own legs alone: no Baritone to hide a failure
         ox, _ = self.origin
         for i, lane in enumerate(LANES):
             self.put(i, 2)
@@ -283,21 +279,6 @@ class FieldTest:
         self.b.task("stop", {}, 5)
         self.add("ноги", "follow", "ok" if end <= 5 else ("warn" if end <= 10 else "fail"), time.time() - t0,
                  "в конце в %.1f бл. от командира, самое большое отставание %.1f бл." % (end, worst))
-        # the same lanes with the default legs (own + Baritone as a backup), where the own ones failed
-        failed = [r for r in self.results if r[0] == "ноги" and r[2] != "✅" and r[1] in LANES]
-        if failed and self.legs_before != "own_only":
-            self.b.set("legs", "own")
-            for r in failed:
-                i = LANES.index(r[1])
-                self.put(i, 2)
-                goal = [ox + 29, Y, self.lane_z(i)]
-                t0 = time.time()
-                res = self.b.task("goto", {"x": goal[0], "y": goal[1], "z": goal[2]}, 150)
-                bot, _, _ = self.where()
-                d = dist(bot, [goal[0] + 0.5, goal[1], goal[2] + 0.5]) if bot else 99
-                self.add("ноги+Baritone", r[1], "ok" if d <= 2.5 else "fail", time.time() - t0,
-                         "до цели %.1f бл.; %s" % (d, str(res)[:160]))
-        self.b.set("legs", self.legs_before)
 
     def check_talk(self, name, phrase, want_tools=(), want_speech=True, part="разговор", english=False, timeout=150):
         r = self.talk(phrase, timeout)
@@ -526,8 +507,6 @@ def main(argv=None):
         print(crash)
     finally:
         try:
-            if t.legs_before:
-                b.set("legs", t.legs_before)
             t.say_out("Разбираю полосу и возвращаю всех на место...")
             t.take_down()
         except Exception as e:

@@ -1,6 +1,5 @@
 package com.altron.bot.tasks;
 
-import com.altron.bot.Nav;
 import com.altron.bot.Bot;
 import com.altron.bot.Info;
 import com.altron.bot.Inv;
@@ -14,7 +13,6 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.CraftingMenu;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -27,31 +25,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Craft an item via the recipe book (works for modded crafting recipes too).
- * Crafts missing intermediate parts (sticks, planks...) and finds/places a crafting table.
+ * Craft an item with the recipe book, like a player clicking a recipe: in the 2x2 grid of the inventory, or in a
+ * crafting table the AI has opened. Making the missing parts and finding a table is the AI's own business.
  */
 public class CraftTask extends Task {
     private final Item item;
     private final int count;
-    private final int depth;
     private CraftingRecipe recipe;
     private int startCount;
     private int phase;
     private int wait;
     private int loops;
-    private int subCrafts;
-    private Task sub;
-    private BlockPos table;
-    /** The crafting table used last (remembered like a player remembers his base). */
-    private static BlockPos lastTable;
-    /** Crafting tables this far away are worth walking back to, instead of making another one. */
-    private static final int WALK_BACK = 96;
 
-    public CraftTask(Item item, int count, int depth) {
+    public CraftTask(Item item, int count) {
         super("craft");
         this.item = item;
         this.count = Math.max(1, count);
-        this.depth = depth;
     }
 
     public static List<CraftingRecipe> recipesFor(Item item) {
@@ -99,24 +88,6 @@ public class CraftTask extends Task {
         return miss;
     }
 
-    /** Every missing ingredient of r can itself be crafted from the inventory right now. */
-    static boolean craftableInOneStep(LocalPlayer p, CraftingRecipe r) {
-        for (Ingredient ing : missing(p, r).keySet()) {
-            boolean ok = false;
-            for (ItemStack opt : ing.getItems()) {
-                for (CraftingRecipe r2 : recipesFor(opt.getItem())) {
-                    if (canCraft(p, r2)) {
-                        ok = true;
-                        break;
-                    }
-                }
-                if (ok) break;
-            }
-            if (!ok) return false;
-        }
-        return true;
-    }
-
     private static int total(Map<Ingredient, Integer> m) {
         return m.values().stream().mapToInt(Integer::intValue).sum();
     }
@@ -135,17 +106,8 @@ public class CraftTask extends Task {
     @Override
     protected Status run() {
         LocalPlayer p = p();
-        if (sub != null) {
-            Status s = sub.tick();
-            if (s == Status.RUNNING) return s;
-            sub.stop();
-            if (s == Status.FAILED) return fail(sub.result());
-            sub = null;
-            if (phase == 0 || phase == 1) return Status.RUNNING; // re-plan / continue with the table
-        }
         switch (phase) {
             case 0 -> {
-                if (depth > 3) return fail("слишком длинная цепочка крафта для " + Bot.id(item));
                 List<CraftingRecipe> all = recipesFor(item);
                 if (all.isEmpty()) {
                     return fail("нет рецепта верстака для " + Bot.id(item) + ". " + Info.recipes(item, 4));
@@ -153,26 +115,7 @@ public class CraftTask extends Task {
                 recipe = null;
                 for (CraftingRecipe r : all) if (canCraft(p, r)) recipe = r;
                 if (recipe == null) {
-                    // Craft a missing ingredient first: from what is in the inventory now,
-                    // or one step further down (never an intermediate that needs the very thing we lack)
-                    if (++subCrafts <= 6) {
-                        for (int pass = 0; pass < (depth < 2 ? 2 : 1); pass++) {
-                            for (CraftingRecipe r : all) {
-                                for (Map.Entry<Ingredient, Integer> m : missing(p, r).entrySet()) {
-                                    for (ItemStack opt : m.getKey().getItems()) {
-                                        for (CraftingRecipe r2 : recipesFor(opt.getItem())) {
-                                            if (pass == 0 ? canCraft(p, r2) : craftableInOneStep(p, r2)) {
-                                                int times = (int) Math.ceil((double) count / Math.max(1, r.getResultItem(Bot.level().registryAccess()).getCount()));
-                                                sub = new CraftTask(opt.getItem(), m.getValue() * times, depth + 1);
-                                                return Status.RUNNING;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Report what is missing for the recipe that is closest to being possible
+                    // what is missing for the recipe that is closest to being possible (making the parts is the AI's job)
                     Map<Ingredient, Integer> best = null;
                     for (CraftingRecipe r : all) {
                         Map<Ingredient, Integer> m = missing(p, r);
@@ -186,49 +129,14 @@ public class CraftTask extends Task {
                     return fail("не хватает для " + Bot.id(item) + ": " + (miss.length() == 0 ? "ингредиентов" : miss));
                 }
                 startCount = have();
-                phase = recipe.canCraftInDimensions(2, 2) ? 2 : 1;
-                if (phase == 2) Bot.closeContainer();
-            }
-            case 1 -> {
-                // Need a crafting table
-                if (p.containerMenu instanceof CraftingMenu) {
-                    phase = 2;
-                    wait = 2;
-                    loops = 0;
-                    return Status.RUNNING;
+                if (recipe.canCraftInDimensions(2, 2)) {
+                    Bot.closeContainer();   // the 2x2 grid of his own inventory is enough
+                } else if (!(p.containerMenu instanceof CraftingMenu)) {
+                    List<BlockPos> tables = Info.findBlocks(Set.of(Blocks.CRAFTING_TABLE), 96, 1);
+                    return fail(Bot.id(item) + " делается на верстаке (3x3): сначала открой верстак (use_block)"
+                            + (tables.isEmpty() ? " — поставь свой или найди" : " — ближайший, что видел: " + Bot.pos(tables.get(0))));
                 }
-                if (++loops > 12) return fail("не получилось открыть верстак");
-                if (table == null) {
-                    List<BlockPos> tables = Info.findBlocks(Set.of(Blocks.CRAFTING_TABLE), 24, 1);
-                    List<BlockPos> farther = tables.isEmpty() ? Info.findBlocks(Set.of(Blocks.CRAFTING_TABLE), WALK_BACK, 1) : tables;
-                    if (!tables.isEmpty()) {
-                        table = tables.get(0);
-                    } else if (Inv.find(p, s -> s.is(Items.CRAFTING_TABLE)) >= 0) {
-                        BlockPos spot = PlaceTask.freeSpotNear(p.blockPosition());
-                        if (spot == null) return fail("некуда поставить верстак");
-                        sub = new PlaceTask(Items.CRAFTING_TABLE, spot);
-                        table = spot;
-                        return Status.RUNNING;
-                    } else if (lastTable != null && lastTable.closerToCenterThan(p.position(), WALK_BACK)
-                            && (!Bot.level().hasChunkAt(lastTable) || Bot.level().getBlockState(lastTable).is(Blocks.CRAFTING_TABLE))) {
-                        table = lastTable;   // the table it placed earlier: walk back to it (e.g. up from a mine)
-                    } else if (!farther.isEmpty()) {
-                        table = farther.get(0);   // a table it has seen at the base: no need to build another one
-                    } else {
-                        if (item == Items.CRAFTING_TABLE) return fail("не могу сделать верстак");
-                        sub = new CraftTask(Items.CRAFTING_TABLE, 1, depth + 1);
-                        return Status.RUNNING;
-                    }
-                }
-                if (!Bot.level().getBlockState(table).is(Blocks.CRAFTING_TABLE)
-                        && Bot.level().hasChunkAt(table) && Bot.distTo(table) < 6) {
-                    if (table.equals(lastTable)) lastTable = null;   // gone
-                    table = null;
-                    return Status.RUNNING;
-                }
-                lastTable = table;
-                sub = new UseBlockTask(table);
-                return Status.RUNNING;
+                phase = 2;
             }
             case 2 -> {
                 if (wait > 0) {
@@ -270,8 +178,6 @@ public class CraftTask extends Task {
 
     @Override
     public void stop() {
-        if (sub != null) sub.stop();
-        Nav.cancel();
     }
 
     @Override
