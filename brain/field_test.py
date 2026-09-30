@@ -328,7 +328,7 @@ class FieldTest:
         self.add("разговор", "тиммейт: включился?", "ok" if st.get("persona") == "teammate" else "fail", 0,
                  "persona = %s" % st.get("persona"))
         self.check_talk("шутка тиммейта", "Альтрон, расскажи, как прошёл твой день")
-        self.check_talk("свой голос", "Альтрон, верни свой обычный голос", want_tools=("persona",))
+        self.check_talk("манера Альтрона", "Альтрон, говори снова как Альтрон, холодной машиной", want_tools=("persona",))
         self.check_talk("английский", "Altron, how are you doing today?", english=True)
         self.check_talk("снова русский", "Альтрон, а теперь по-русски: где мы сейчас?")
         # stop: the body stops at once, the words are his own

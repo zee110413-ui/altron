@@ -1,6 +1,7 @@
 """Prepares the bot's game folder and launches a second Minecraft client as the bot."""
 import hashlib
 import json
+import re
 import os
 import shutil
 import stat
@@ -126,13 +127,33 @@ def server_address(text, default_port=25565):
     return "%s:%s" % (host, port or default_port)
 
 
-BUILT_MOD = BRAIN_DIR.parent / "mod" / "build" / "libs" / "altron-0.1.0.jar"
-MOD_NAME = "altron-0.1.0.jar"
+def _mod_version():
+    """mod_version from mod/gradle.properties: the jar the build makes is altron-<version>.jar (it used to be taken as
+    0.1.0 for ever, so after 0.2.0 the brain kept handing out the old jar)."""
+    try:
+        for line in (BRAIN_DIR.parent / "mod" / "gradle.properties").read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("mod_version="):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return "0.1.0"
+
+
+MOD_NAME = "altron-%s.jar" % _mod_version()
+BUILT_MOD = BRAIN_DIR.parent / "mod" / "build" / "libs" / MOD_NAME
+OLD_MOD = re.compile(r"^altron-[0-9][0-9.]*\.jar$", re.I)   # any Altron jar; the ones not named MOD_NAME are old
+
+
+def _old_mods(folder):
+    """Altron jars of other versions in a mods folder: two of them together stop Forge (the same mod twice)."""
+    return [j for j in folder.glob("altron-*.jar") if OLD_MOD.match(j.name) and j.name != MOD_NAME]
 
 
 def _in_use(path):
     """Is a running program (Minecraft) holding this file open? Checked by asking Windows for sole access."""
     import ctypes
+    if not hasattr(ctypes, "windll"):
+        return False
     handle = ctypes.windll.kernel32.CreateFileW(str(path), 0x80000000, 0, None, 3, 0, None)   # GENERIC_READ, no sharing
     if handle == ctypes.c_void_p(-1).value:
         return ctypes.windll.kernel32.GetLastError() == 32   # ERROR_SHARING_VIOLATION
@@ -148,14 +169,18 @@ def install_new_mod(cfg, log=print):
     """A freshly built Altron mod (altron\\mod\\build\\libs) goes into the pack by itself — but never under a running
     Minecraft (it reads classes from the jar while playing). Altron's own client gets it right away anyway."""
     target = rel(cfg["minecraft_dir"]) / "versions" / cfg["pack_version"] / "mods" / MOD_NAME
-    if not _newer_build(target):
+    old = _old_mods(target.parent) if target.parent.exists() else []
+    if not _newer_build(target) and not old:
         return
-    if target.exists() and _in_use(target):
+    if any(j.exists() and _in_use(j) for j in [target] + old):
         log("Новая версия мода: Альтрон получит её сразу, твоя игра — после её перезапуска.")
         return
     try:
-        shutil.copy2(BUILT_MOD, target)
-        log("Установил новую версию мода Альтрона в сборку.")
+        if _newer_build(target):
+            shutil.copy2(BUILT_MOD, target)
+        for j in old:
+            j.unlink()   # the old version goes: the pack must not load Altron twice
+        log("Установил новую версию мода Альтрона в сборку (%s)." % MOD_NAME)
     except OSError as e:
         log("Не смог поставить новую версию мода в сборку (%s)." % e)
 
@@ -297,7 +322,8 @@ def prepare_bot_dir(cfg, log=print, game_dir=None, voice=False, options=None, li
     skip = tuple(s.lower() for s in cfg.get("bot_skip_mods", BOT_SKIP_MODS)) if lite else ()
     if voice:
         skip = tuple(s for s in skip if not s.startswith("voicechat"))   # he talks through his own voice chat client
-    wanted = {jar.name: jar for jar in (pack / "mods").glob("*.jar") if not (skip and jar.name.lower().startswith(skip))}
+    wanted = {jar.name: jar for jar in (pack / "mods").glob("*.jar") if not (skip and jar.name.lower().startswith(skip))
+              and not (OLD_MOD.match(jar.name) and jar.name != MOD_NAME)}   # his body gets only the current version
     for extra in cfg.get("extra_bot_mods", []):
         if "baritone" in str(extra).lower():
             continue   # an old config: his body has no Baritone any more

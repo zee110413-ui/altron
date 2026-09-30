@@ -311,6 +311,35 @@ class BotClient(unittest.TestCase):
         self.assertTrue(copy.stat().st_mode & stat.S_IWUSR)        # the client's copy stays writable
 
 
+class ModVersion(unittest.TestCase):
+    def test_the_current_jar_replaces_the_old_one(self):
+        # 0.2.0 was built as altron-0.2.0.jar while the brain still looked for altron-0.1.0.jar: his body kept the
+        # old mod (the field test: "неизвестная команда: control")
+        self.assertEqual(launcher.MOD_NAME, "altron-%s.jar" % launcher._mod_version())
+        self.assertNotEqual(launcher.MOD_NAME, "altron-0.1.0.jar")
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        built = tmp / "libs" / launcher.MOD_NAME
+        built.parent.mkdir()
+        built.write_bytes(b"new")
+        mods = tmp / ".minecraft" / "versions" / "P" / "mods"
+        mods.mkdir(parents=True)
+        (mods / "altron-0.1.0.jar").write_bytes(b"old")
+        (mods / "other-mod-1.0.jar").write_bytes(b"x")
+        cfg = {"minecraft_dir": str(tmp / ".minecraft"), "pack_version": "P", "bot_dir": str(tmp / "bot")}
+        old = launcher.BUILT_MOD
+        launcher.BUILT_MOD = built
+        try:
+            launcher.install_new_mod(cfg, log=lambda *a: None)
+            self.assertEqual(sorted(p.name for p in mods.glob("*.jar")), [launcher.MOD_NAME, "other-mod-1.0.jar"])
+            self.assertEqual((mods / launcher.MOD_NAME).read_bytes(), b"new")
+            (mods / "altron-0.1.0.jar").write_bytes(b"old")        # an old one left behind: the body still skips it
+            launcher.prepare_bot_dir(cfg, log=lambda *a: None)
+            self.assertEqual(sorted(p.name for p in (tmp / "bot" / "mods").glob("*.jar")),
+                             [launcher.MOD_NAME, "other-mod-1.0.jar"])
+        finally:
+            launcher.BUILT_MOD = old
+
+
 class VoicePreview(unittest.TestCase):
     def test_writes_the_phrases_and_keeps_the_pace(self):
         import voice_preview
@@ -803,7 +832,7 @@ class FieldTestDryRun(unittest.TestCase):
                     if "тиммейт" in text:
                         self.persona = "teammate"
                         self.write("  -> persona {}: ok")
-                    elif "обычный голос" in text:
+                    elif "как Альтрон" in text:
                         self.persona = "altron"
                     elif "охраняй" in text:
                         self.goals = ["охранять командира"]

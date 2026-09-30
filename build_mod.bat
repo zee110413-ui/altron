@@ -35,7 +35,7 @@ echo.
 echo ОШИБКА СБОРКИ / BUILD FAILED
 echo Если выше "could not resolve" или "was not found" - нет связи с maven.minecraftforge.net, а раньше мод здесь не
 echo собирался. Проверь: curl.exe -I https://maven.minecraftforge.net/  - или скачай готовый мод со страницы
-echo GitHub Actions ^(Mod build and release, файл altron-0.1.0^) и положи jar в mod\build\libs.
+echo GitHub Actions ^(Mod build and release, файл altron-^<версия^>^) и положи jar в mod\build\libs.
 echo "could not resolve" / "was not found" above: maven.minecraftforge.net is not reachable. Or take the built jar
 echo from GitHub Actions ^(Mod build and release^) and put it into mod\build\libs.
 pause
