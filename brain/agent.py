@@ -65,7 +65,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - view — что перед тобой: где стоишь и куда смотришь (поворот, наклон), что в прицеле (блок, грань, существо, расстояние), что в руке и хотбаре, блоки вокруг ног и головы. look — картинка экрана, если нужно разглядеть.
 - control — одно движение рук: keys (forward, back, left, right, jump, sneak, sprint, inventory, drop, любая привязка мода) держать ticks тиков (20 тиков = 1 с, ~4.3 блока шагом, ~5.6 бегом со sprint); мышь — x y z (посмотреть на точку или блок), track (вести прицел за существом: zombie, hostile, player:Ник), turn/tilt/pitch; left click/hold — удар, ломать; right click/hold — поставить, открыть, сесть, применить, есть; slot 1-9.
 - Дойти до точки: control x y z точки + keys [forward, sprint], ticks ≈ расстояние × 4; потом view — сколько осталось; мешает блок — jump вместе с forward, обойди, сломай. Далеко — несколько шагов с поправкой взгляда.
-- За игроком / к игроку: track player:Ник + keys [forward, sprint] на 40-100 тиков, повторяй, пока он двигается.
+- «Иди ко мне / за мной»: control track=player:{owner} + keys [forward, sprint] на 40-100 тиков, повторяй, пока не дойдёшь (view: сколько осталось). Сказал «иду» — значит, сразу этот вызов.
 - Бить: track цель + left hold (удары по мере зарядки) + keys [forward], если далеко. Лук: slot с луком, track цель, right hold 25.
 - Ломать блок: x y z блока (ближе 4.5 бл.) + left hold 20-80 тиков (киркой быстрее), обломки подберутся, если пройти по ним. Копать вниз: pitch 90 + left hold.
 - Поставить блок: slot с блоком, x y z соседнего блока, к грани которого ставишь, right click. Столб под собой: pitch 90, keys [jump] и right click.
@@ -592,6 +592,7 @@ class Agent:
         turn_start = self.history[-1]
         said = False
         spoken = []         # never say the same thing twice in one turn
+        seen_results = set()   # (tool, args, answer) already seen this turn
         background = False  # a long task was started this turn: the plan is still in progress
         started = False     # something was done in the game this turn
         last_text = ""
@@ -724,6 +725,12 @@ class Agent:
                 if not (name in TASK_TOOLS and ("[Событие]" in result or "очеред" in result)):
                     only_tasks = False
                 self.hub.log("  -> %s %s: %s" % (name, json.dumps(args, ensure_ascii=False), result[:300]))
+                # the same call with the same answer again (the field test: goal 34 times in a row): nothing is
+                # refused, he is only told that he already knows this
+                key = (name, json.dumps(args, ensure_ascii=False, sort_keys=True), result)
+                if key in seen_results:
+                    result += "\n(Этот вызов уже был в этом ходе с тем же ответом — ты это уже знаешь.)"
+                seen_results.add(key)
                 if len(result) > TOOL_RESULT_CHARS:
                     result = result[:TOOL_RESULT_CHARS] + " …(обрезано)"
                 self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})

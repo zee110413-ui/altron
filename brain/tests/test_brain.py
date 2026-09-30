@@ -790,6 +790,43 @@ class Learning(unittest.TestCase):
         self.assertEqual([m["role"] for m in list(turns.values())[0]["turn"]], ["user", "assistant", "tool", "tool", "assistant"])
 
 
+class RepeatedCalls(unittest.TestCase):
+    def test_the_same_call_again_is_done_and_he_is_told(self):
+        call = {"id": "g", "type": "function", "function": {"name": "goal", "arguments": '{"action": "list"}'}}
+        replies = [{"role": "assistant", "content": "", "tool_calls": [call]} for _ in range(3)] + \
+                  [{"role": "assistant", "content": "Целей нет."}]
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                return dict(replies.pop(0))
+
+        ran = []
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "teammate"
+            cut_speech = False
+            dataset = None
+
+            async def say(self, text, mood=None):
+                pass
+
+            async def run_tool(self, name, args, wait):
+                ran.append(name)
+                return "целей нет"
+
+            def log(self, text):
+                pass
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run("[Egor (командир) говорит]: хватит охранять", "user"))
+        self.assertEqual(ran, ["goal"] * 3)                      # nothing is refused...
+        notes = [m["content"] for m in a.history if m.get("role") == "tool"]
+        self.assertNotIn("уже был", notes[0])
+        self.assertIn("уже был в этом ходе", notes[1])           # ...but he hears he already knows the answer
+
+
 class FieldTestDryRun(unittest.TestCase):
     """The field test itself, run against a pretend brain: every part and the report, without the game."""
 
