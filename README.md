@@ -30,16 +30,19 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
 - **Several players**: obeys the commander and his friends ("Vasya is my friend, obey him"), talks to strangers but
   does not take their orders, remembers what each player tells about themselves.
 - **Goals of his own**: long orders ("guard the base", "help me", "live on your own") become his goals; while he has
-  them he keeps looking around and decides what to do. When he dies, getting his things back becomes a goal too.
+  them he keeps looking around and decides what to do. When he dies he hears where his things lie and decides himself.
+- **His own hands, no scripts**: the AI holds keys, turns the head and clicks the mouse itself (`control`) and sees what
+  is under the crosshair and around (`view`). Chains like "make an iron pickaxe" are planned by the AI step by step
+  (recipe, mine, furnace, crafting table) — no hard-coded routines deciding for it.
 - **Learn**: every turn of the AI is logged; say "well done" or "not like that" and it is rated. The good turns
   fine-tune the same model — see [TRAINING.md](TRAINING.md).
 - **Work with any mod** (Forge 1.20.1 packs): reads every mod's items, recipes and manuals from the pack's files,
-  opens and clicks any mod window, uses machines he has seen to make things (`obtain`), loads materials into a machine
-  in one trip (`load_machine`), looks things up on the web when the pack's data is not enough.
+  opens and clicks any mod window and loads machines himself, looks things up on the web when the pack's data is not
+  enough.
 - **Play**: walk with his own pathfinding (steps, jumps, drops, ladders, swimming, doors), follow, guard, fight (bows,
-  swords and mod guns), mine like a player (no x-ray), smelt, craft, build multiblocks, drive vehicles and man their
-  guns, get downed players up, fetch and stash items, study your base, sleep in a bed at night, gesture (nod, wave,
-  bow, dance), set reminders, build a house, shelter, wall, tower, platform or bridge from a description.
+  swords and mod guns), mine like a player (no x-ray), smelt in a furnace, craft, build multiblocks, drive vehicles
+  and man their guns, get downed players up, gesture (nod, wave, bow, dance), set reminders, plan a house, shelter,
+  wall, tower, platform or bridge from a description and place it block by block.
 - **Remember**: places, chests and their contents, what you said — across restarts.
 
 ## Requirements
@@ -52,15 +55,13 @@ It runs **fully offline on your PC**: a local LLM (llama.cpp), Whisper for speec
   - `tools/llama/llama-server.exe` — [llama.cpp](https://github.com/ggml-org/llama.cpp) server;
   - `models/*.gguf` — a chat model with tool calling (e.g. a Qwen 7-9B GGUF) and, for vision, its `mmproj` file;
   - `models/whisper-large-v3-turbo` (and `whisper-small` for CPU) — faster-whisper models;
-  - `models/piper/*.onnx` — [Piper voices](https://huggingface.co/rhasspy/piper-voices), one per language;
-  - `mod/libs/baritone-api-forge-1.10.1.jar` — Baritone for Forge 1.20.1: mining and building by blueprint (walking
-    works without it; with it installed it is also a backup when his own legs find no way).
+  - `models/piper/*.onnx` — [Piper voices](https://huggingface.co/rhasspy/piper-voices), one per language.
 
 ## Quick install (Windows)
 
 Download **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)** and double-click it.
 It installs Altron into `%USERPROFILE%\Altron` and downloads everything by itself: Python and packages, the llama.cpp
-server (CUDA, Vulkan or CPU build for your PC), the AI model, Whisper models, Piper voices, Baritone, Java 17 and
+server (CUDA, Vulkan or CPU build for your PC), the AI model, Whisper models, Piper voices, Java 17 and
 Simple Voice Chat for your modpack; then it builds the mod and puts an "Altron" shortcut on the desktop.
 It is safe to run again: what is there is skipped, broken downloads continue. Run it from an existing Altron folder
 to update it — your `config.json` is kept.
@@ -99,15 +100,14 @@ on your gaming PC just play and type `/altron`.
 | `languages` | languages to recognize with `"auto"`, e.g. `["en", "de"]` |
 | `tts_voices` | a Piper voice per language: `{"en": "../models/piper/en_US-ryan-high.onnx"}`; `tts_voice` is the fallback |
 | `tts_style` | Altron's own voice: `"ultron"` (low, doubled, metallic), `"robot"` (light helmet effect) or `"plain"`; `tts_pitch` overrides the pitch |
-| `persona` | `"altron"` or `"teammate"` (also switched by voice); `tts_personas` — the teammate's own voice files |
+| `persona` | `"teammate"` (default: a deadpan teammate with a flat speech-synthesizer voice and very dry humour) or `"altron"` (also switched by voice); `tts_personas` — the teammate's own voice files |
 | `idle_think_minutes` | in a quiet moment this often he thinks whether to say something; `0` — only when spoken to |
-| `legs` | `"own"` — his own pathfinding, Baritone as a backup (default); `"own_only"`; `"baritone"` — the old walking |
 | `instant_ack` | a canned "Yes, commander" before the AI has thought (off: he answers in his own words) |
 | `dataset` | log every AI turn for fine-tuning (see TRAINING.md) |
 | `tts_moods` | the voice follows the moment (faster in a fight, quieter when sympathising) |
 | `barge_in` | you can talk over him and he stops (default on) |
 | `react_events` | reactions to what happens around (danger, deaths, players joining...) |
-| `assist`, `autonomy` | help without orders / find work by himself (also switched by voice) |
+| `max_steps` | how many actions the AI may take in one turn (default 40: with bare hands a job is many small moves) |
 | `friends` | players whose orders he also carries out (also added by voice) |
 | `llm_url`, `llm_model_name`, `llm_api_key` | use an OpenAI-compatible online AI instead of a local model — for PCs without a strong video card |
 | `wake_words` | what he answers to |
@@ -138,37 +138,39 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 - **Чувствовать и помнить**: у него своё настроение (его слышно в голосе), своё отношение к каждому игроку — копится
   от поступков (спас, подарил алмазы, ударил), свои вкусы и мнения, общие воспоминания, которые он вспоминает к месту
   («помнишь, как крипер снёс наш первый дом?»). В тишине сам решает — заговорить, спросить, пошутить или промолчать.
-- **Два голоса**: `altron` — холодная театральная машина; `teammate` — невозмутимый тиммейт с ровным голосом
-  синтезатора речи и сухим юмором. Скажи «говори как тиммейт», чтобы сменить.
+- **Два голоса**: `teammate` (по умолчанию) — невозмутимый тиммейт с ровным голосом синтезатора речи и очень сухим
+  юмором; `altron` — холодная театральная машина. Скажи «верни голос Альтрона» или «говори как тиммейт», чтобы сменить.
 - **Замечать, что происходит**: опасность, раненые и упавшие игроки, смерти, достижения, зашедшие игроки, ночь и
   гроза приходят нейросети как факты, а что с ними делать — решает она.
 - **Играть с несколькими игроками**: слушается командира и его друзей, с чужими говорит, но их приказы не выполняет,
   помнит, что каждый о себе рассказывал.
 - **Свои цели**: долгие приказы («охраняй базу», «помогай мне», «живи сам») становятся его целями; пока они есть, он
-  оглядывается и сам решает, что делать. Погиб — вернуть свои вещи тоже становится целью.
+  оглядывается и сам решает, что делать. Погиб — слышит, где лежат вещи, и сам решает, идти ли за ними.
+- **Свои руки, без скриптов**: нейросеть сама нажимает клавиши, поворачивает голову и кликает мышью (`control`) и
+  видит, что в прицеле и вокруг (`view`). Цепочки вроде «сделай железную кирку» она планирует сама по шагам (рецепт,
+  добыча, печь, верстак) — никаких зашитых сценариев, которые решали бы за неё.
 - **Учиться**: каждый ход нейросети записывается, «молодец» и «не так» — оценки; на хороших ходах та же модель
   дообучается — см. [TRAINING.md](TRAINING.md).
 - **Работать с любыми модами** (сборки Forge 1.20.1): читает предметы, рецепты и руководства всех модов из файлов
-  сборки, открывает и нажимает окна любых модов, делает предметы в увиденных машинах (`obtain`), загружает материал
-  в машину за один поход (`load_machine`), ищет в интернете, если в сборке нет ответа.
+  сборки, открывает и нажимает окна любых модов и сам загружает машины, ищет в интернете, если в сборке нет ответа.
 - **Играть**: ходить своими ногами (свой поиск пути: шаги, прыжки, спуски, лестницы, вода, двери), следовать,
-  охранять, воевать (лук, меч, оружие модов), копать как игрок (без рентгена), плавить, крафтить, строить многоблочные
-  машины, водить технику и стрелять из неё, поднимать раненых, приносить и складывать вещи, изучать базу, спать ночью
-  в кровати, делать жесты, напоминать, строить по описанию дом, укрытие, стену, башню, площадку или мост.
+  охранять, воевать (лук, меч, оружие модов), копать как игрок (без рентгена), плавить в печи, крафтить, строить
+  многоблочные машины, водить технику и стрелять из неё, поднимать раненых, делать жесты, напоминать, строить по
+  описанию дом, укрытие, стену, башню, площадку или мост — план даёт мозг, блоки ставит сам.
 - **Помнить** места, сундуки и их содержимое, твои слова — и после перезапуска.
 
 ## Установка в один клик (Windows)
 
 Скачай **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)** и запусти двойным
 кликом. Он поставит Альтрона в `%USERPROFILE%\Altron` и сам скачает всё нужное: Python и пакеты, сервер llama.cpp
-(под твою видеокарту), модель ИИ, Whisper, голоса Piper, Baritone, Java 17 и Simple Voice Chat в твою сборку, соберёт
+(под твою видеокарту), модель ИИ, Whisper, голоса Piper, Java 17 и Simple Voice Chat в твою сборку, соберёт
 мод и сделает ярлык «Altron» на рабочем столе. Можно запускать повторно — готовое пропускается, оборванные загрузки
 докачиваются. Запуск из существующей папки Альтрона обновляет её, твой `config.json` сохраняется.
 
 ## Установка вручную
 
-1. Скачай нужные файлы (llama-server, модель GGUF, модели Whisper, голоса Piper, Baritone) в `tools/`, `models/`,
-   `mod/libs/` — список выше, в разделе *Requirements*. Проверь пути в `brain/config.json`.
+1. Скачай нужные файлы (llama-server, модель GGUF, модели Whisper, голоса Piper) в `tools/`, `models/`
+   — список выше, в разделе *Requirements*. Проверь пути в `brain/config.json`.
 2. `cd brain`, `python -m venv .venv`, `.venv\Scripts\pip install -r requirements.txt`.
 3. Собери мод: `build_mod.bat` (нужна Java 17 — `JAVA_HOME` или папка `tools\jdk-17*`).
 4. Запусти мозг: `start_altron.bat`. В первый раз он спросит, какую сборку взять — подойдёт любая сборка
@@ -183,8 +185,7 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 `brain\.venv\Scripts\python.exe brain\build_pc2_kit.py` — он соберёт папку `ai_server` (портативный Python, мозг,
 модели, llama.cpp, файлы игры для тела Альтрона). Скопируй её на второй ПК и запускай там, а на своём просто играй.
 
-Настройки — в таблице выше (`language`, `languages`, `tts_voices`, `persona`, `legs`, `idle_think_minutes`...).
-Baritone нужен только для копания и стройки по чертежу: ходит Альтрон своими ногами.
+Настройки — в таблице выше (`language`, `languages`, `tts_voices`, `persona`, `max_steps`, `idle_think_minutes`...).
 Подробная инструкция для игры — в `КАК ИГРАТЬ.txt`.
 
 ## Лицензия
