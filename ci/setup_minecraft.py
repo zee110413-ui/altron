@@ -7,6 +7,8 @@ the commander's launcher lays it out — versions/<pack>/<pack>.json with everyt
 import json
 import subprocess
 import sys
+import threading
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,9 +19,15 @@ FORGE = "https://maven.minecraftforge.net/net/minecraftforge/forge/%s/forge-%s-i
 MC = "1.20.1"
 
 
-def get(url):
-    with urllib.request.urlopen(url, timeout=120) as r:
-        return r.read()
+def get(url, tries=4):
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                return r.read()
+        except OSError:
+            if i == tries - 1:
+                raise
+            time.sleep(2 * (i + 1))
 
 
 def fetch(url, path):
@@ -28,7 +36,8 @@ def fetch(url, path):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     data = get(url)
-    tmp = path.with_suffix(path.suffix + ".part")
+    # its own temporary name in each thread: the asset index lists some files twice
+    tmp = path.with_name("%s.%d.part" % (path.name, threading.get_ident()))
     tmp.write_bytes(data)
     tmp.replace(path)
 
@@ -62,6 +71,7 @@ def vanilla(mc):
     for obj in index["objects"].values():
         h = obj["hash"]
         jobs.append((ASSETS % (h[:2], h), mc / "assets" / "objects" / h[:2] / h))
+    jobs = list(dict((str(p), (u, p)) for u, p in jobs).values())   # each file once
     print("vanilla %s: %d files to fetch" % (MC, len(jobs)), flush=True)
     with ThreadPoolExecutor(32) as pool:
         list(pool.map(lambda j: fetch(*j), jobs))
