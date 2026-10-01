@@ -22,7 +22,9 @@ MC = "1.20.1"
 def get(url, tries=4):
     for i in range(tries):
         try:
-            with urllib.request.urlopen(url, timeout=120) as r:
+            # the Forge maven answers 403 to Python's own User-Agent
+            req = urllib.request.Request(url, headers={"User-Agent": "altron-field-test/1.0 (GitHub Actions)"})
+            with urllib.request.urlopen(req, timeout=120) as r:
                 return r.read()
         except OSError:
             if i == tries - 1:
