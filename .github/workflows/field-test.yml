@@ -1,0 +1,82 @@
+name: Field test in the real game
+
+# The same field test the commander runs on his PC (brain/field_test.py), in real Minecraft 1.20.1 + Forge with the
+# built Altron mod, on a Linux machine without a screen: the commander's game opens a new world, Altron's body joins
+# it, and the test drives his hands and checks the world on the server. The AI is a stand-in here (the hands part does
+# not need it); the talk parts need the real model and stay on the commander's PC.
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Parts of the field test (hands, talk, goals, events)'
+        default: 'hands'
+  pull_request:
+    paths:
+      - 'ci/**'
+      - '.github/workflows/field-test.yml'
+      - 'mod/src/**'
+      - 'brain/launcher.py'
+      - 'brain/session.py'
+      - 'brain/field_test.py'
+
+jobs:
+  field-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: A virtual display and software OpenGL
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb libgl1 libgl1-mesa-dri libglx-mesa0 libxrandr2 libxcursor1 libxi6 libxxf86vm1 libxtst6
+
+      - name: Build the mod
+        working-directory: mod
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon build
+
+      - name: Minecraft folder cache
+        uses: actions/cache@v4
+        with:
+          path: ~/mc
+          key: mc-1.20.1-forge-${{ hashFiles('mod/gradle.properties', 'ci/setup_minecraft.py') }}
+
+      - name: Minecraft 1.20.1 and Forge
+        run: |
+          FORGE=$(grep '^forge_version=' mod/gradle.properties | cut -d= -f2 | tr -d '\r')
+          python ci/setup_minecraft.py ~/mc "$FORGE" CIPack
+
+      - name: The brain
+        run: |
+          pip install -q -r brain/requirements.txt huggingface_hub
+          python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-tiny', local_dir='models/whisper-tiny')"
+          python ci/configure_brain.py
+
+      - name: Field test
+        run: ci/run_field_test.sh "${{ inputs.only || 'hands' }}"
+
+      - name: Logs and the report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: field-test
+          path: |
+            test-reports/
+            brain/logs/
+            host/logs/
+            bot/logs/
+          if-no-files-found: warn

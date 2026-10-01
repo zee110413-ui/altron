@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -31,6 +32,11 @@ BOT_OPTIONS = {
     "enableVsync": "false",
     "fullscreen": "false",
     "pauseOnLostFocus": "false",
+    # first-launch screens (accessibility, tutorial, the multiplayer warning) would stand between him and the world
+    "onboardAccessibility": "false",
+    "tutorialStep": "none",
+    "joinedFirstServer": "true",
+    "skipMultiplayerWarnings": "true",
     # the bot's game is completely silent: every sound category off
     "soundCategory_master": "0.0",
     "soundCategory_music": "0.0",
@@ -274,6 +280,10 @@ def offline_uuid(name):
     return uuid.UUID(bytes=bytes(h)).hex
 
 
+# the name a Minecraft version json gives this system in its library and argument rules
+OS_NAME = {"win32": "windows", "darwin": "osx"}.get(sys.platform, "linux")
+
+
 def _rules_ok(rules):
     if not rules:
         return True
@@ -281,7 +291,7 @@ def _rules_ok(rules):
     for r in rules:
         match = True
         os_rule = r.get("os") or {}
-        if os_rule.get("name") and os_rule["name"] != "windows":
+        if os_rule.get("name") and os_rule["name"] != OS_NAME:
             match = False
         if r.get("features"):
             match = False  # demo, custom resolution, quick play: not used
@@ -433,8 +443,8 @@ def build_command(cfg, server, name=None, game_dir=None, props=None, memory_mb=N
         "${natives_directory}": str(vdir / "natives"),
         "${launcher_name}": "altron",
         "${launcher_version}": "1.0",
-        "${classpath}": ";".join(cp),
-        "${classpath_separator}": ";",
+        "${classpath}": os.pathsep.join(cp),
+        "${classpath_separator}": os.pathsep,
         "${library_directory}": str(libdir),
         "${version_name}": vid,
         "${auth_player_name}": name,
@@ -514,7 +524,7 @@ def launch_bot(cfg, server, log=print, lite=True):
         cfg["bot_name"], server_address(server), PROFILES.get(cfg.get("profile", "balanced"), PROFILES["balanced"])["title"],
         ", облегчённый" if lite else ", все моды"))
     # the commander's game comes first: Windows gives Altron's client the processor only when it is free
-    flags = subprocess.BELOW_NORMAL_PRIORITY_CLASS if cfg.get("bot_low_priority", True) else 0
+    flags = subprocess.BELOW_NORMAL_PRIORITY_CLASS if cfg.get("bot_low_priority", True) and os.name == "nt" else 0
     return subprocess.Popen(cmd, cwd=str(bot), stdout=logf, stderr=subprocess.STDOUT, creationflags=flags)
 
 

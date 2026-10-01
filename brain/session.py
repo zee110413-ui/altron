@@ -27,10 +27,13 @@ async def main(argv):
     resolve_install(cfg, world=src_name)   # the pack that has this world, found when config.json leaves it empty
     world = "AltronLive_%s" % src_name.replace(" ", "")
     dst = rel(cfg.get("host_dir", "../host")) / "saves" / world
-    if not dst.exists():
-        src = rel(cfg["minecraft_dir"]) / "versions" / cfg["pack_version"] / "saves" / src_name
+    src = rel(cfg["minecraft_dir"]) / "versions" / cfg["pack_version"] / "saves" / src_name
+    if not dst.exists() and src.exists():
         print("Копирую мир %s -> %s (один раз, дальше он сохраняется) ..." % (src, dst), flush=True)
         shutil.copytree(src, dst, ignore=shutil.ignore_patterns("session.lock"))
+    elif not dst.exists():
+        # no such world in the pack (the test on GitHub): the commander's game makes a new one by that name
+        print("Мира %s в сборке нет: игра командира создаст новый (%s)." % (src_name, world), flush=True)
     # the commander plays in the host window on this same PC: Altron's body and AI in the light mode (memory)
     apply_profile(cfg, cfg.get("session_profile", "eco"))
     hub = altron.Hub(cfg)
