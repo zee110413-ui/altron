@@ -22,7 +22,8 @@ pkill -f java 2>/dev/null
 REPORT=$(ls -t "$ROOT"/test-reports/field_test_*.md 2>/dev/null | head -1)
 if [ -n "$REPORT" ]; then
   [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
-  if grep -q "❌" "$REPORT"; then echo "Field test: some steps failed (see the report)"; exit 1; fi
+  # only the rows of the table count: the summary line above it always names ❌ with its number
+  if grep -q "^| .* | ❌ | " "$REPORT"; then echo "Field test: some steps failed (see the report)"; exit 1; fi
 else
   echo "No report: the session did not come up (see test-reports/session.log)"; tail -80 "$ROOT/test-reports/session.log"; exit 1
 fi
