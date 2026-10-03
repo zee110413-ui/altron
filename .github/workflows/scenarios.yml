@@ -1,0 +1,36 @@
+name: Altron scenarios
+
+# Altron's real brain (prompt, tools, character, the commander's Qwen 9B model) against a simulated world, on GitHub's
+# machines without a video card. Started by a change of ci/scenarios_request.txt (or by hand once on main).
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ci/scenarios_request.txt'
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: llama.cpp (processor build) and the model
+        run: |
+          pip install -q -r brain/requirements.txt huggingface_hub
+          URL=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | python -c "import json,sys; print(next(a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if a['name'].endswith('-bin-ubuntu-x64.zip')))")
+          echo "$URL"
+          curl -sL "$URL" -o llama.zip && unzip -q llama.zip -d llama
+          SRV=$(find llama -name llama-server -type f | head -1); echo "SRV=$SRV" >> $GITHUB_ENV
+          python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf', local_dir='models'))"
+          nproc; free -g
+      - name: Speed of the real AI here
+        run: |
+          chmod +x "$SRV"
+          LD_LIBRARY_PATH=$(dirname "$SRV") "$SRV" -m models/Qwen3.5-9B-Q4_K_M.gguf -c 16384 --host 127.0.0.1 --port 8081 --jinja -np 1 -t 4 > llama.log 2>&1 &
+          for i in $(seq 1 120); do curl -sf http://127.0.0.1:8081/health && break; sleep 2; done
+          python ci/llm_bench.py 8081
+          tail -30 llama.log
