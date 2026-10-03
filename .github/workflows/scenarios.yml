@@ -21,9 +21,10 @@ jobs:
       - name: llama.cpp (processor build) and the model
         run: |
           pip install -q -r brain/requirements.txt huggingface_hub
-          URL=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | python -c "import json,sys; print(next(a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if a['name'].endswith('-bin-ubuntu-x64.zip')))")
+          curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest > rel.json
+          URL=$(python -c "import json,re; a=[x['browser_download_url'] for x in json.load(open('rel.json'))['assets']]; print('\n'.join(a), file=open('assets.txt','w')); print(next(u for u in a if re.search(r'bin-ubuntu-x64\.(zip|tar\.gz)$', u)))") || { cat assets.txt; exit 1; }
           echo "$URL"
-          curl -sL "$URL" -o llama.zip && unzip -q llama.zip -d llama
+          mkdir llama && case "$URL" in *.zip) curl -sL "$URL" -o l.zip && unzip -q l.zip -d llama;; *) curl -sL "$URL" | tar xz -C llama;; esac
           SRV=$(find llama -name llama-server -type f | head -1); echo "SRV=$SRV" >> $GITHUB_ENV
           python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf', local_dir='models'))"
           nproc; free -g
