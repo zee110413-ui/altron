@@ -297,6 +297,8 @@ class Hub:
         pos = s.get("pos", [0, 0, 0])
         text = "Альтрон: x=%d y=%d z=%d, здоровье %s/20, еда %s/20, в руке: %s" % (
             pos[0], pos[1], pos[2], s.get("hp"), s.get("food"), s.get("held"))
+        if "night" in s:
+            text += ", сейчас %s" % ("ночь" if s["night"] else "день")
         if s.get("task"):
             text += ", задача: %s %s" % (s.get("task"), s.get("progress", ""))
         if s.get("owner_pos"):
@@ -508,7 +510,7 @@ class Hub:
         elif aimed_far and not args.get("track"):
             hint = "\n(В прицеле ничего нет: наведи взгляд на цель — x y z блока или track существа.)"
         keys = [str(k).lower() for k in args.get("keys") or []]
-        if "forward" in keys and args.get("x") is None and not args.get("track") and int(args.get("ticks") or 5) >= 30:
+        if "forward" in keys and args.get("x") is None and not args.get("track") and int(args.get("ticks") or 5) >= 20:
             hint += ("\n(Ты шёл туда, куда уже смотрел. Идёшь к чему-то — дай x z цели или track, тогда взгляд и шаги "
                      "идут вместе.)")
         return result + hint

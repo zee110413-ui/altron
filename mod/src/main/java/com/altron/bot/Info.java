@@ -48,7 +48,9 @@ public final class Info {
                 "hp", Math.round(p.getHealth()), "food", p.getFoodData().getFoodLevel(),
                 "held", Bot.describe(p.getMainHandItem()),
                 "task", t == null ? "" : t.name(), "progress", t == null ? "" : t.progress(),
-                "busy", Nav.busy());
+                "busy", Nav.busy(),
+                // "день или ночь?" — the scenario runs saw him unable to tell without calling status
+                "night", p.level().getDayTime() % 24000 >= 12500);
         Player o = BotClient.owner.isBlank() ? null : Bot.findPlayer(BotClient.owner);
         if (o != null) {
             s.add("owner_pos", J.arr(o.getX(), o.getY(), o.getZ()));

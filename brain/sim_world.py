@@ -743,4 +743,4 @@ class World:
         o = self.owner_ent
         return {"pos": list(self.bot["pos"]), "hp": round(self.bot["hp"]), "food": self.bot["food"],
                 "held": self.held_text(), "owner_pos": list(o.pos), "dim": self.bot["dim"],
-                "task": self.task or "", "owner_look": getattr(self, "owner_look", "")}
+                "task": self.task or "", "owner_look": getattr(self, "owner_look", ""), "night": self.night}

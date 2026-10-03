@@ -250,8 +250,10 @@ NOTIFY_DONE = {"build_multiblock"}
 TALK_ONLY = {"reply", "ask_player", "ignore", "feel", "relation", "moment", "feedback"}
 SAME_CALLS = 6   # the same call with the same arguments, more than this many times in one turn, is not run
 # words that promise a move: "иду", "бегу", "сейчас сделаю", "начинаю" (and in English)
-PROMISE = re.compile(r"\b(иду|ид[её]м|бегу|лечу|отхожу|подхожу|начинаю|приступаю|сейчас (сделаю|подойду|приду|принесу|"
-                     r"построю|сломаю|достану)|уже (иду|бегу)|on my way|coming|heading|i'?ll (go|get|do))\b", re.I)
+PROMISE = re.compile(r"\b(иду|ид[её]м|бегу|лечу|отхожу|подхожу|начинаю|приступаю|займусь|разберусь|поднимаю|спасаю|атакую|"
+                     r"догоняю|тушу|ставлю|ломаю|строю|копаю|рублю|добываю|несу|открываю|закрываю|"
+                     r"сейчас (сделаю|подойду|приду|принесу|построю|сломаю|достану)|уже (иду|бегу)|"
+                     r"on my way|coming|heading|i'?ll (go|get|do|handle))\b", re.I)
 NUDGE = ("[Заметка] Ты ответил словами, но руки ничего не сделали. Если это приказ или ты пообещал действие — сделай его "
          "сейчас инструментом (control: x z цели или track + keys forward/sprint). Не можешь — одной фразой скажи почему.")
 REPEATED = ("НЕ ВЫПОЛНЕНО: это уже %d-й точно такой же вызов в этом ходе — он ничего не меняет. Сделай по-другому: "
@@ -412,7 +414,9 @@ class LLM:
             # small models sometimes promise an action without calling a tool: force a choice on the first step
             "tool_choice": "required" if force_tool and not think else "auto",
             "temperature": self.cfg.get("llm_temperature", 0.4),
-            "max_tokens": 2500 if think else 600,
+            # thinking that long left the answer empty (the scenario runs: 42 silent answers); an empty one is asked
+            # again without thinking
+            "max_tokens": 1500 if think else 600,
         }
         self._local_only(body, think)
         if on_sentence is not None and self.cfg.get("llm_stream", True):
