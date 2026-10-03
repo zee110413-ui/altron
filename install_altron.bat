@@ -142,7 +142,11 @@ Step 'llama.cpp' {
     Say 'Сервер нейросети (llama.cpp)' 'AI server (llama.cpp)'
     $dir = Join-Path $Root 'tools\llama'
     if (Test-Path "$dir\llama-server.exe") { Ok 'есть / present'; return }
-    $assets = (Get-GhRelease 'ggml-org/llama.cpp').assets
+    # the newest release that has Windows builds: "latest" may be a tag without any (it was v0.5.0 with one text file)
+    $assets = $null
+    foreach ($r in (Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=40' -Headers $UA)) {
+        if ($r.assets | Where-Object { $_.name -match '^llama-.*-bin-win-.*-x64\.zip$' }) { $assets = $r.assets; break }
+    }
     $main = $null; $rt = $null
     if ($Nvidia) {
         $main = $assets | Where-Object { $_.name -match '^llama-.*-bin-win-cuda-12[\d.]*-x64\.zip$' } | Select-Object -First 1
@@ -154,7 +158,7 @@ Step 'llama.cpp' {
     }
     if (-not $main) { $main = $assets | Where-Object { $_.name -match '^llama-.*-bin-win-vulkan-x64\.zip$' } | Select-Object -First 1 }
     if (-not $main) { $main = $assets | Where-Object { $_.name -match '^llama-.*-bin-win-cpu-x64\.zip$' } | Select-Object -First 1 }
-    if (-not $main) { throw 'no Windows build in the latest llama.cpp release' }
+    if (-not $main) { throw 'no Windows build in the recent llama.cpp releases' }
     $tmp = Join-Path $env:TEMP 'altron-llama'
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     foreach ($a in @($main, $rt) | Where-Object { $_ }) {
