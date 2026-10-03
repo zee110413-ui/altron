@@ -1,33 +1,97 @@
 name: Altron scenarios
 
-# Altron's real brain (prompt, tools, character, the commander's Qwen 9B model) against a simulated world, on GitHub's
-# machines without a video card. Started by a change of ci/scenarios_request.txt (or by hand once on main).
+# Altron's real brain (the hub, the prompt and 37 tools, the character, the commander's Qwen 9B model) against a
+# simulated world: about a thousand phrases, dialogues and situations, spread over 20 GitHub machines without a video
+# card. The results and the report are committed to this branch in test-reports/scenarios/.
+# Started by a change of ci/scenarios_request.txt (its first line may name the groups or scenario ids to run), or by
+# hand once the workflow is on main.
 
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Groups or scenario ids, comma-separated (empty — all)'
+        default: ''
   push:
     paths:
       - 'ci/scenarios_request.txt'
 
+permissions:
+  contents: write
+
 jobs:
-  bench:
+  shard:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: llama.cpp (processor build) and the model
+      - name: Minecraft folder cache (the pack reference is built from it)
+        uses: actions/cache@v4
+        with:
+          path: ~/mc
+          key: mc-1.20.1-forge-${{ hashFiles('mod/gradle.properties', 'ci/setup_minecraft.py') }}
+      - name: Minecraft 1.20.1 and Forge
+        run: |
+          FORGE=$(grep '^forge_version=' mod/gradle.properties | cut -d= -f2 | tr -d '\r')
+          python ci/setup_minecraft.py ~/mc "$FORGE" CIPack > setup.log 2>&1 || tail -40 setup.log
+      - name: The brain, llama.cpp and the model
         run: |
           pip install -q -r brain/requirements.txt huggingface_hub
-          SRV=$(python ci/get_llama.py llama); echo "SRV=$SRV" >> $GITHUB_ENV; echo "$SRV"
-          python -c "from huggingface_hub import hf_hub_download; print(hf_hub_download('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf', local_dir='models'))"
-          nproc; free -g
-      - name: Speed of the real AI here
+          python ci/configure_brain.py
+          SRV=$(python ci/get_llama.py llama); echo "SRV=$SRV" >> $GITHUB_ENV
+          python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf', local_dir='models')"
+      - name: Scenarios
         run: |
-          chmod +x "$SRV"
-          LD_LIBRARY_PATH=$(dirname "$SRV") "$SRV" -m models/Qwen3.5-9B-Q4_K_M.gguf -c 16384 --host 127.0.0.1 --port 8081 --jinja -np 1 -t 4 > llama.log 2>&1 &
-          for i in $(seq 1 120); do curl -sf http://127.0.0.1:8081/health && break; sleep 2; done
-          python ci/llm_bench.py 8081
-          tail -30 llama.log
+          ONLY="${{ inputs.only }}"
+          [ -z "$ONLY" ] && [ -f ci/scenarios_request.txt ] && ONLY=$(head -1 ci/scenarios_request.txt | grep -v '^20[0-9][0-9]-' || true)
+          ci/run_scenarios.sh "${{ matrix.shard }}/20" 320 "$ONLY"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: scenarios-${{ matrix.shard }}
+          path: test-reports/scenarios/
+          if-no-files-found: warn
+
+  report:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: scenarios-*
+          path: parts
+      - name: Report, committed to the branch
+        run: |
+          pip install -q -r brain/requirements.txt
+          DIR="test-reports/scenarios/$(date -u +%Y%m%d-%H%M)"
+          mkdir -p "$DIR"
+          cat parts/*/results_*.jsonl > "$DIR/results.jsonl" 2>/dev/null || true
+          cp parts/*/llama-server-*.log "$DIR/" 2>/dev/null || true
+          (cd brain && python scenarios.py --report "../$DIR")
+          cat "$DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+          gzip -9 "$DIR/results.jsonl"
+          rm -f "$DIR"/llama-server-*.log
+          git config user.name "altron-scenarios"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f "$DIR"
+          git commit -m "Scenario run $(basename "$DIR"): report and results"
+          for i in 1 2 3 4; do git pull --rebase -q origin "${GITHUB_REF_NAME}" && git push -q origin "HEAD:${GITHUB_REF_NAME}" && break; sleep $((i * 5)); done

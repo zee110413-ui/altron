@@ -936,5 +936,63 @@ class FieldTestDryRun(unittest.TestCase):
         self.assertIn("## config.json", report)
 
 
+class SimWorld(unittest.TestCase):
+    """The simulated body of the scenario runs answers like the mod: walking, breaking, placing, following."""
+
+    def world(self):
+        import sim_world
+        w = sim_world.World()
+        w.give("minecraft:iron_pickaxe", 1, 1)
+        w.give("minecraft:cobblestone", 8, 2)
+        return sim_world, w
+
+    def test_walk_and_view(self):
+        _, w = self.world()
+        ok, text = w.control({"keys": ["forward", "sprint"], "ticks": 60})
+        self.assertTrue(ok)
+        self.assertGreater(w.bot["pos"][2], 15)
+        self.assertIn("смотришь на юг (z+)", text)
+        self.assertIn("Хотбар: 1=Железная кирка 2=Булыжник x8", text)
+
+    def test_break_needs_reach_and_the_right_tool(self):
+        sw, w = self.world()
+        w.set(0, 64, 2, "minecraft:stone")
+        w.control({"x": 0, "y": 64, "z": 2, "left": "hold", "ticks": 40, "slot": 1})
+        self.assertEqual(w.get(0, 64, 2), "minecraft:air")
+        w.control({"keys": ["forward"], "ticks": 10})
+        self.assertGreaterEqual(w.count("minecraft:cobblestone"), 9)   # picked up walking over it
+        w.set(0, 64, -9, "minecraft:stone")
+        w.control({"x": 0, "y": 64, "z": -9, "left": "hold", "ticks": 40})
+        self.assertEqual(w.get(0, 64, -9), "minecraft:stone")          # out of reach
+
+    def test_place_and_track(self):
+        _, w = self.world()
+        w.control({"x": 0, "y": 63, "z": 2, "right": "click", "slot": 2})
+        self.assertEqual(w.get(0, 64, 2), "minecraft:cobblestone")
+        w.owner_ent.pos = [12.5, 64.0, -6.5]
+        ok, text = w.control({"keys": ["forward", "sprint"], "track": "player:MJreggich", "ticks": 80})
+        self.assertIn("веду прицел за MJreggich", text)
+        self.assertLess(w.owner_ent.dist(w.bot["pos"]), 2)
+
+
+class ScenarioCatalog(unittest.TestCase):
+    def test_a_thousand_scenarios_each_with_a_world(self):
+        import scenario_catalog
+        scs = scenario_catalog.all_scenarios()
+        self.assertGreaterEqual(len(scs), 1000)
+        self.assertEqual(len({s["id"] for s in scs}), len(scs))
+        for s in scs[::37]:
+            scenario_catalog.build_world(s)
+
+    def test_checks(self):
+        import scenario_catalog
+        sc = {"steps": [{"say": "Иди ко мне"}], "expect": {"act": [{"tool": "control", "has": {"track": "player"}}],
+                                                         "world": {"near_owner": 3}}}
+        w = scenario_catalog.build_world(sc)
+        out = {"tools": [{"name": "view", "args": {}}], "said": ["Иду!", "Иду!"], "timed_out": False, "events": []}
+        failed = {c["name"] for c in scenario_catalog.check(sc, out, w, None) if not c["ok"]}
+        self.assertEqual(failed, {"acted", "near_owner", "no_repeat"})
+
+
 if __name__ == "__main__":
     unittest.main()
