@@ -5,20 +5,34 @@ build from the sources if no release has one. Prints the path of llama-server.
 """
 import io
 import json
+import os
 import re
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
 
 UA = {"User-Agent": "altron-ci/1.0"}
+if os.environ.get("GH_TOKEN"):
+    # 20 machines at once run into the API's limit for anonymous requests
+    API = dict(UA, Authorization="Bearer " + os.environ["GH_TOKEN"])
+else:
+    API = UA
 
 
 def get(url):
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=300) as r:
-        return r.read()
+    headers = API if url.startswith("https://api.github.com/") else UA
+    for i in range(5):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=300) as r:
+                return r.read()
+        except OSError:
+            if i == 4:
+                raise
+            time.sleep(10 * (i + 1))
 
 
 def main():

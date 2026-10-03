@@ -30,35 +30,47 @@ jobs:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     steps:
       - uses: actions/checkout@v5
+      - name: This shard runs?
+        id: pick
+        run: |
+          # "shards: 3,8" on the second line of ci/scenarios_request.txt runs only those (a re-run of lost ones)
+          WANT=$(sed -n 2p ci/scenarios_request.txt 2>/dev/null | sed -n 's/^shards: *//p')
+          if [ -z "$WANT" ] || echo ",$WANT," | tr -d ' ' | grep -q ",${{ matrix.shard }},"; then echo "run=true" >> $GITHUB_OUTPUT; else echo "run=false" >> $GITHUB_OUTPUT; fi
       - uses: actions/setup-java@v5
+        if: steps.pick.outputs.run == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - uses: actions/setup-python@v5
+        if: steps.pick.outputs.run == 'true'
         with:
           python-version: '3.11'
       - name: Minecraft folder cache (the pack reference is built from it)
+        if: steps.pick.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: ~/mc
           key: mc-1.20.1-forge-${{ hashFiles('mod/gradle.properties', 'ci/setup_minecraft.py') }}
       - name: Minecraft 1.20.1 and Forge
+        if: steps.pick.outputs.run == 'true'
         run: |
           FORGE=$(grep '^forge_version=' mod/gradle.properties | cut -d= -f2 | tr -d '\r')
           python ci/setup_minecraft.py ~/mc "$FORGE" CIPack > setup.log 2>&1 || tail -40 setup.log
       - name: The brain, llama.cpp and the model
+        if: steps.pick.outputs.run == 'true'
         run: |
           pip install -q -r brain/requirements.txt huggingface_hub
           python ci/configure_brain.py
-          SRV=$(python ci/get_llama.py llama); echo "SRV=$SRV" >> $GITHUB_ENV
+          SRV=$(GH_TOKEN="${{ github.token }}" python ci/get_llama.py llama); echo "SRV=$SRV" >> $GITHUB_ENV
           python -c "from huggingface_hub import hf_hub_download; hf_hub_download('unsloth/Qwen3.5-9B-GGUF', 'Qwen3.5-9B-Q4_K_M.gguf', local_dir='models')"
       - name: Scenarios
+        if: steps.pick.outputs.run == 'true'
         run: |
           ONLY="${{ inputs.only }}"
           [ -z "$ONLY" ] && [ -f ci/scenarios_request.txt ] && ONLY=$(head -1 ci/scenarios_request.txt | grep -v '^20[0-9][0-9]-' || true)
           ci/run_scenarios.sh "${{ matrix.shard }}/20" 320 "$ONLY"
       - uses: actions/upload-artifact@v5
-        if: always()
+        if: always() && steps.pick.outputs.run == 'true'
         with:
           name: scenarios-${{ matrix.shard }}
           path: test-reports/scenarios/
