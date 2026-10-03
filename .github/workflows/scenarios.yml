@@ -13,6 +13,8 @@ on:
         description: 'Groups or scenario ids, comma-separated (empty — all)'
         default: ''
   push:
+    branches-ignore:
+      - main          # merging a branch must not start a five-hour run that commits to main
     paths:
       - 'ci/scenarios_request.txt'
 
