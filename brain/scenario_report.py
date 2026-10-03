@@ -1,5 +1,6 @@
 """The report over scenarios.py results: how many passed in each group, which checks fail most and why, how fast the AI
 answered — and every conversation in short, to be read through (review.txt)."""
+import gzip
 import json
 import statistics
 from collections import Counter, defaultdict
@@ -8,8 +9,9 @@ from pathlib import Path
 
 def load(folder):
     rows = {}
-    for f in sorted(Path(folder).rglob("results_*.jsonl")):
-        for line in f.read_text(encoding="utf-8").splitlines():
+    for f in sorted(Path(folder).rglob("results*.jsonl*")):
+        data = gzip.decompress(f.read_bytes()).decode("utf-8") if f.suffix == ".gz" else f.read_text(encoding="utf-8")
+        for line in data.splitlines():
             if line.strip():
                 r = json.loads(line)
                 rows[r["id"]] = r
