@@ -1,6 +1,6 @@
 """Windows speech voices (SAPI 5): any voice installed in Windows can say Altron's words — for example the IVONA
-"Maxim" voice that robot teammates in videos talk with. Altron does not ship such voices; it uses the ones installed
-on the PC (Control Panel -> Speech, or the voice's own installer).
+"Maxim" voice that robot teammates in videos talk with, or the free "Microsoft Pavel" that Windows has. Altron does
+not ship voices; it uses the ones installed on the PC (Windows Settings -> Time & Language -> Speech).
 
 All COM calls run in one thread of their own: SAPI objects belong to the thread that made them."""
 import os
@@ -44,9 +44,32 @@ def _speaker():
     return _local.voice
 
 
+# Windows keeps its newer voices (Microsoft Pavel, David, Mark...) apart from the classic SAPI 5 ones; SAPI speaks
+# with them too when they are listed from their own place in the registry
+ONECORE = r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Speech_OneCore\Voices"
+
+
 def _tokens():
-    toks = _speaker().GetVoices()
-    return [(toks.Item(i).GetDescription(), toks.Item(i)) for i in range(toks.Count)]
+    import comtypes.client
+    out, seen = [], set()
+    lists = [lambda: _speaker().GetVoices()]
+
+    def onecore():
+        cat = comtypes.client.CreateObject("SAPI.SpObjectTokenCategory")
+        cat.SetId(ONECORE, False)
+        return cat.EnumerateTokens()
+    lists.append(onecore)
+    for get in lists:
+        try:
+            toks = get()
+        except Exception:
+            continue   # an older Windows without the newer voices
+        for i in range(toks.Count):
+            desc = toks.Item(i).GetDescription()
+            if desc not in seen:
+                seen.add(desc)
+                out.append((desc, toks.Item(i)))
+    return out
 
 
 def voices():
@@ -91,7 +114,10 @@ def _speak(name, text, rate):
         v.Speak(text, 0)
         stream.Close()
         with wave.open(path, "rb") as w:
-            return w.readframes(w.getnframes()), w.getframerate()
+            frames, rate = w.readframes(w.getnframes()), w.getframerate()
+        if not frames:
+            raise RuntimeError("голос Windows «%s» не дал звука" % name)
+        return frames, rate
     finally:
         try:
             os.remove(path)

@@ -25,9 +25,6 @@ $LlmRepos = @('unsloth/Qwen3.5-9B-GGUF', 'unsloth/Qwen3-VL-8B-Instruct-GGUF', 'u
 $LlmQuant = 'Q4_K_M'
 $WhisperGpu = @('mobiuslabsgmbh/faster-whisper-large-v3-turbo', 'deepdml/faster-whisper-large-v3-turbo-ct2')
 $WhisperCpu = @('Systran/faster-whisper-small')
-$Voices = [ordered]@{ ru = 'ru_RU-dmitri-medium'; en = 'en_US-ryan-high' }
-# the second manner of speaking ("teammate", a speech-synthesizer voice): its own voices
-$TeammateVoices = [ordered]@{ ru = 'ru_RU-denis-medium'; en = 'en_US-danny-low' }
 $UA = @{ 'User-Agent' = 'altron-installer'; 'Accept' = 'application/json' }
 
 function Say($ru, $en) { Write-Host "`n== $ru" -ForegroundColor Cyan; Write-Host "   $en" -ForegroundColor DarkCyan }
@@ -145,7 +142,11 @@ Step 'llama.cpp' {
     Say 'Сервер нейросети (llama.cpp)' 'AI server (llama.cpp)'
     $dir = Join-Path $Root 'tools\llama'
     if (Test-Path "$dir\llama-server.exe") { Ok 'есть / present'; return }
-    $assets = (Get-GhRelease 'ggml-org/llama.cpp').assets
+    # the newest release that has Windows builds: "latest" may be a tag without any (it was v0.5.0 with one text file)
+    $assets = $null
+    foreach ($r in (Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=40' -Headers $UA)) {
+        if ($r.assets | Where-Object { $_.name -match '^llama-.*-bin-win-.*-x64\.zip$' }) { $assets = $r.assets; break }
+    }
     $main = $null; $rt = $null
     if ($Nvidia) {
         $main = $assets | Where-Object { $_.name -match '^llama-.*-bin-win-cuda-12[\d.]*-x64\.zip$' } | Select-Object -First 1
@@ -157,7 +158,7 @@ Step 'llama.cpp' {
     }
     if (-not $main) { $main = $assets | Where-Object { $_.name -match '^llama-.*-bin-win-vulkan-x64\.zip$' } | Select-Object -First 1 }
     if (-not $main) { $main = $assets | Where-Object { $_.name -match '^llama-.*-bin-win-cpu-x64\.zip$' } | Select-Object -First 1 }
-    if (-not $main) { throw 'no Windows build in the latest llama.cpp release' }
+    if (-not $main) { throw 'no Windows build in the recent llama.cpp releases' }
     $tmp = Join-Path $env:TEMP 'altron-llama'
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
     foreach ($a in @($main, $rt) | Where-Object { $_ }) {
@@ -219,28 +220,18 @@ Step 'whisper' {
     Ok 'Whisper готов / ready'
 }
 
-function Get-PiperVoice($name) {
-    $p = $name -split '-'
-    $loc = $p[0]; $speaker = ($p[1..($p.Count - 2)]) -join '-'; $q = $p[-1]
-    $base = "https://huggingface.co/rhasspy/piper-voices/resolve/main/$($loc.Split('_')[0])/$loc/$speaker/$q/$name"
-    Get-File "$base.onnx" (Join-Path $Root "models\piper\$name.onnx")
-    Get-File "$base.onnx.json" (Join-Path $Root "models\piper\$name.onnx.json")
-    return "../models/piper/$name.onnx"
-}
-
-Step 'voices' {
-    Say 'Голоса (Piper)' 'Voices (Piper)'
-    $map = @{}
-    foreach ($lang in $Voices.Keys) { $map[$lang] = Get-PiperVoice $Voices[$lang] }
-    $global:Updates.tts_voices = $map
-    $global:Updates.tts_voice = $map[@($Voices.Keys)[0]]
-}
-
-Step 'teammate voices' {
-    Say 'Голос тиммейта (вторая манера речи)' 'The teammate voice (the second manner of speaking)'
-    $map = @{}
-    foreach ($lang in $TeammateVoices.Keys) { $map[$lang] = Get-PiperVoice $TeammateVoices[$lang] }
-    $global:Updates.tts_personas = @{ teammate = @{ voices = $map } }
+# Altron's one voice: a speech-synthesizer voice like Kava's - Maxim when installed, else the free Microsoft Pavel
+Step 'voice' {
+    Say 'Голос: Максим или Павел (Windows)' 'The voice: Maxim or Pavel (Windows)'
+    Add-Type -AssemblyName System.Speech
+    $names = @((New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name })
+    $names += @(Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens' -ErrorAction SilentlyContinue |
+        ForEach-Object { (Get-ItemProperty $_.PSPath).'(default)' })
+    $voice = $names | Where-Object { $_ -match 'Maxim|Pavel' } | Select-Object -First 1
+    if ($voice) { Ok "голос / voice: $voice"; return }
+    Warn 'Бесплатного голоса Microsoft Pavel нет. Открою настройки: Речь -> Добавить голоса -> Русский. Потом запусти установщик ещё раз.'
+    Warn 'No Microsoft Pavel voice. Opening the settings: Speech -> Add voices -> Russian. Then run the installer again.'
+    Start-Process 'ms-settings:speech'
 }
 
 # ------------------------------------------------------------------------------------------------ Java

@@ -7,12 +7,13 @@ own decision.
 
 **This jar is only the body.** The brain (speech recognition, the AI, the voice) runs on your PC. Install everything with
 one file: **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)** — it sets up the
-brain, a local AI model, Whisper, Piper voices, Java 17 and Simple Voice Chat, and builds this mod into your pack.
+brain, a local AI model, Whisper, Java 17 and Simple Voice Chat, and builds this mod into your pack.
 
 ## What he does
-- **Talks** in the language you speak, in his own words, with a mood of his own and memories you share. By default he
-  is a deadpan teammate with a speech-synthesizer voice (the IVONA Maxim voice, if it is installed in Windows) and very
-  dry humour; "Altron's voice" is a cold machine.
+- **Talks** in the language you speak, in his own words, with a mood of his own and memories you share. His one voice
+  is a speech-synthesizer voice like Kava's in videos, in every language: the free **Microsoft Pavel** from Windows,
+  or IVONA **Maxim** (Kava's own voice) when it is installed; without a voice he writes in the chat. Two manners: a deadpan teammate with very
+  dry humour (the default) or a cold machine.
 - **Plays with his hands only**: walks, follows, fights, digs, places blocks, uses chests, furnaces, crafting tables
   and mod machines, drives vehicles — all as keys, mouse moves and clicks the AI chooses.
 - **Knows your pack**: reads the items, recipes and manuals of every mod from the pack's files; looks up the web when
@@ -41,8 +42,9 @@ Source, instructions and settings: **https://github.com/zee110413-ui/altron** ·
 **Этот jar — только тело.** Мозг (распознавание речи, нейросеть, голос) работает на твоём ПК. Всё ставится одним файлом:
 **[install_altron.bat](https://github.com/zee110413-ui/altron/raw/main/install_altron.bat)**.
 
-- **Говорит** на твоём языке, своими словами, со своим настроением и общими воспоминаниями. По умолчанию —
-  невозмутимый тиммейт с голосом синтезатора (IVONA Максим, если он установлен в Windows) и очень сухим юмором; «голос Альтрона» — холодная машина.
+- **Говорит** на твоём языке, своими словами, со своим настроением и общими воспоминаниями. Голос один —
+  голос синтезатора, как у Кавы в роликах, на всех языках: бесплатный **Microsoft Pavel** из Windows или IVONA
+  **Максим** (голос самого Кавы), если он установлен; без голоса Альтрон пишет в чат. Манеры две: невозмутимый тиммейт с очень сухим юмором (по умолчанию) и холодная машина.
 - **Играет только руками**: ходит, следует, дерётся, копает, ставит блоки, пользуется сундуками, печами, верстаками и
   машинами модов, водит технику — клавишами, мышью и кликами, которые выбирает нейросеть.
 - **Знает твою сборку**, **играет честно** (видит только то, что в прямой видимости), **помнит** места, сундуки и

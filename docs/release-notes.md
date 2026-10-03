@@ -6,10 +6,10 @@
   driving are all done move by move by the AI.
 - **The body decides nothing**: it does not fight back, eat, turn its head or close windows by itself; threats, hunger
   and death come to the AI as news.
-- **The teammate voice by default**, with a much funnier, dry sense of humour. If the IVONA **Maxim** voice (SAPI 5)
-  is installed in Windows, the teammate talks with it in every language; otherwise a Piper voice made to sound like a
-  speech synthesizer. "Altron's voice" is still there.
-- `voice_preview.py` — tune the voice by ear; the field test checks the hands on a course in the air.
+- **One voice**, a speech-synthesizer voice like Kava's in videos, in every language, free and ready after install:
+  **Microsoft Pavel** from Windows, or IVONA **Maxim** (Kava's own voice) when it is installed. Without a voice he
+  writes in the game chat. Piper is gone. The teammate manner (a much funnier, dry humour) is the default.
+- `voice_preview.py` — hear the voice; the field test checks the hands on a course in the air.
 
 **Альтрон 0.2.0 — только клавиатура и мышь.** Обнови и мозг: запусти `install_altron.bat` ещё раз (или `git pull`).
 
@@ -17,6 +17,8 @@
   клики в окнах. Ходит, дерётся, копает, строит, плавит, крафтит и водит технику сама, движение за движением.
 - **Тело само ничего не решает**: не отбивается, не ест, не вертит головой; угроза, голод и смерть приходят нейросети
   как новости.
-- **Голос тиммейта по умолчанию** и очень сухой юмор. Если в Windows установлен голос IVONA **Максим** (SAPI 5),
-  тиммейт говорит им и по-русски, и по-английски; иначе — голос Piper, похожий на синтезатор. Голос Альтрона остался.
-- `voice_preview.py` — подогнать голос на слух; полевой тест проверяет руки на полосе в воздухе.
+- **Голос один** — голос синтезатора, как у Кавы в роликах, по-русски и по-английски, бесплатно и сразу:
+  **Microsoft Pavel** из Windows или IVONA **Максим** (голос самого Кавы), если он установлен. Без голоса Альтрон
+  пишет в чат игры. Piper убран.
+  Манера тиммейта с очень сухим юмором — по умолчанию.
+- `voice_preview.py` — послушать голос; полевой тест проверяет руки на полосе в воздухе.

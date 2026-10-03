@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Альтрон — голосовой ИИ-напарник для Minecraft</title>
-<meta name="description" content="Второй игрок в твоём мире, с которым говоришь голосом. Работает офлайн, понимает моды твоей сборки, отвечает на твоём языке. A voice AI companion for modded Minecraft.">
+<meta name="description" content="Второй игрок в твоём мире, с которым говоришь голосом. Работает на твоём ПК, понимает моды твоей сборки, отвечает на твоём языке. A voice AI companion for modded Minecraft.">
 <meta property="og:title" content="Альтрон / Altron — голосовой ИИ-напарник для Minecraft">
-<meta property="og:description" content="Второй игрок, с которым говоришь голосом. Офлайн, любые моды Forge 1.20.1, отвечает на твоём языке. A second player you talk to: offline, any Forge 1.20.1 mods, speaks your language.">
+<meta property="og:description" content="Второй игрок, с которым говоришь голосом. На твоём ПК, любые моды Forge 1.20.1, отвечает на твоём языке. A second player you talk to: offline, any Forge 1.20.1 mods, speaks your language.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://zee110413-ui.github.io/altron/">
 <meta property="og:image" content="https://zee110413-ui.github.io/altron/og.png">
@@ -256,7 +256,7 @@
         <h1 style="margin-top:16px" data-i18n="hero.h1">Альт<span>рон</span></h1>
         <p class="lede" data-i18n="hero.lede">Второй игрок в твоём мире. Ты говоришь в голосовой чат — он идёт, копает, крафтит, воюет, возится с машинами любых модов и болтает с тобой.</p>
         <div class="facts" data-i18n="hero.facts">
-          <span class="fact">офлайн на твоём ПК</span>
+          <span class="fact">работает на твоём ПК</span>
           <span class="fact">любые моды</span>
           <span class="fact">отвечает на твоём языке</span>
           <span class="fact">без рентгена</span>
@@ -330,7 +330,7 @@
         </div>
         <div class="ability">
           <h3 data-i18n="ab.h7">Живой</h3>
-          <p data-i18n="ab.p7">Своё настроение — его слышно в голосе. Своё отношение к каждому игроку, которое копится от поступков. Свои вкусы и общие с тобой воспоминания. Два голоса: по умолчанию — невозмутимый тиммейт с ровным голосом синтезатора речи и очень сухим юмором, и холодная машина.</p>
+          <p data-i18n="ab.p7">Своё настроение — его слышно в голосе. Своё отношение к каждому игроку, которое копится от поступков. Свои вкусы и общие с тобой воспоминания. Голос один — синтезатор, как у Кавы в роликах (Павел или Максим); манер две: невозмутимый тиммейт с очень сухим юмором (по умолчанию) и холодная машина.</p>
           <div class="say" data-i18n="ab.say7"><span>что ты любишь?</span><span>помнишь наш первый дом?</span><span>говори как тиммейт</span></div>
         </div>
         <div class="ability">
@@ -352,9 +352,9 @@
         <div class="stage" data-i18n="how.stage2"><span class="k">речь → текст</span><b>Whisper</b><span>сам определяет язык фразы</span></div>
         <div class="stage" data-i18n="how.stage3"><span class="k">мысль</span><b>llama.cpp</b><span>локальная модель ИИ с инструментами</span></div>
         <div class="stage" data-i18n="how.stage4"><span class="k">тело</span><b>Мод Альтрона</b><span>второй игрок: клавиатура и мышь нейросети</span></div>
-        <div class="stage voice" data-i18n="how.stage5"><span class="k">голос</span><b>Piper · тиммейт</b><span>голос синтезатора речи (IVONA Максим, если он установлен в Windows) или «ultron» — низкий двойной металл</span></div>
+        <div class="stage voice" data-i18n="how.stage5"><span class="k">голос</span><b>Павел / Максим</b><span>голос синтезатора речи, как у Кавы: бесплатный Microsoft Pavel из Windows или IVONA Максим</span></div>
       </div>
-      <p class="pipe-note" data-i18n="how.1">Стиль голоса «ultron» — звуковой эффект поверх любого голоса Piper: понижение тона, второй «плывущий» голос, металлический резонанс и короткий зал. Это не копия голоса какого-либо актёра.</p>
+      <p class="pipe-note" data-i18n="how.1">Голос у Альтрона один, на всех языках: бесплатный Microsoft Pavel, который есть в Windows, или IVONA Максим (голос самого Кавы), если он установлен. Альтрон голоса не распространяет — берёт установленные. Без голоса он пишет в чат игры.</p>
     </section>
 
     <section id="install">
@@ -380,7 +380,7 @@
           <p data-i18n="inst.p3">Через минуту-две зайдёт игрок altron. Скажи в голосовой чат: «Альтрон, иди за мной». Сработает и «Altron, follow me».</p>
         </li>
       </ol>
-      <p class="gets" data-i18n="inst.1">Установщик ставит Python и пакеты, сервер llama.cpp под твою видеокарту (CUDA, Vulkan или процессор), модель ИИ, Whisper, голоса Piper, Java 17 и Simple Voice Chat в сборку. Потом собирает мод и делает ярлык. Запускать можно повторно: готовое пропускается, оборванные загрузки докачиваются.</p>
+      <p class="gets" data-i18n="inst.1">Установщик ставит Python и пакеты, сервер llama.cpp под твою видеокарту (CUDA, Vulkan или процессор), модель ИИ, Whisper, Java 17 и Simple Voice Chat в сборку. Потом собирает мод и делает ярлык. Запускать можно повторно: готовое пропускается, оборванные загрузки докачиваются.</p>
     </section>
 
     <section id="settings">
@@ -411,9 +411,8 @@
               <tbody>
                 <tr><td><code>language</code></td><td><code>auto</code> — на языке командира, или код: <code>en</code>, <code>de</code>…</td></tr>
                 <tr><td><code>languages</code></td><td>какие языки слушать при <code>auto</code></td></tr>
-                <tr><td><code>tts_voices</code></td><td>голос Piper на каждый язык</td></tr>
-                <tr><td><code>tts_style</code></td><td><code>ultron</code>, <code>robot</code> или <code>plain</code></td></tr>
-                <tr><td><code>persona</code></td><td><code>teammate</code> (по умолчанию) или <code>altron</code> — манера речи и голос</td></tr>
+                <tr><td><code>voice</code></td><td><code>["Maxim", "Pavel"]</code> — голос, первый найденный в Windows</td></tr>
+                <tr><td><code>persona</code></td><td><code>teammate</code> (по умолчанию) или <code>altron</code> — манера речи (голос тот же)</td></tr>
                 <tr><td><code>idle_think_minutes</code></td><td>как часто в тишине он думает, не сказать ли что-то; <code>0</code> — только когда к нему обращаются</td></tr>
                 <tr><td><code>max_steps</code></td><td>сколько действий нейросеть может сделать за один ход (40)</td></tr>
                 <tr><td><code>wake_words</code></td><td>на какое имя откликается</td></tr>
@@ -450,7 +449,7 @@
     'hero.eyebrow': 'Voice AI companion · Forge 1.20.1',
     'hero.h1': 'Alt<span>ron</span>',
     'hero.lede': 'A second player in your world. You talk in voice chat, and he walks, mines, crafts, fights, works the machines of any mod and chats with you.',
-    'hero.facts': '<span class="fact">offline on your PC</span> <span class="fact">any mods</span> <span class="fact">speaks your language</span> <span class="fact">no x-ray</span>',
+    'hero.facts': '<span class="fact">runs on your PC</span> <span class="fact">any mods</span> <span class="fact">speaks your language</span> <span class="fact">no x-ray</span>',
     'hero.dl': 'Download the installer', 'hero.src': 'Source on GitHub',
     'log.title': "Altron's brain · voice chat",
     'abilities.eyebrow': 'Abilities',
@@ -474,7 +473,7 @@
     'ab.p6': 'Obeys you and your friends, is polite to strangers but does not take their orders. While you are away he finds work himself and tells you what he did. Builds houses, walls, towers and bridges from a description.',
     'ab.say6': '<span>Vasya is my friend</span><span>live on your own while I am away</span><span>build a 7 by 7 house</span>',
     'ab.h7': 'Alive',
-    'ab.p7': 'A mood of his own that you hear in his voice. An attitude to every player, built up by what they do. Tastes of his own and memories you share. Two voices: by default a deadpan teammate with a flat speech-synthesizer voice and very dry humour, and a cold machine.',
+    'ab.p7': 'A mood of his own that you hear in his voice. An attitude to every player, built up by what they do. Tastes of his own and memories you share. One voice — a synthesizer like Kava’s (Pavel or Maxim); two manners: a deadpan teammate with very dry humour (the default) and a cold machine.',
     'ab.say7': '<span>what do you like?</span><span>remember our first house?</span><span>talk like the teammate</span>',
     'ab.h8': 'Learns',
     'ab.p8': 'Every turn he takes is logged, and your praise or complaint is its rating. The good turns fine-tune the same AI, so he decides better in your own game.',
@@ -487,8 +486,8 @@
     'how.stage2': '<span class="k">speech → text</span><b>Whisper</b><span>detects the language of each phrase</span>',
     'how.stage3': '<span class="k">thinking</span><b>llama.cpp</b><span>a local AI model with tools</span>',
     'how.stage4': '<span class="k">body</span><b>The Altron mod</b><span>a second player: the AI’s keyboard and mouse</span>',
-    'how.stage5': '<span class="k">voice</span><b>Piper · teammate</b><span>a speech-synthesizer voice (IVONA Maxim, if installed in Windows) or “ultron”: low, doubled, metallic</span>',
-    'how.1': 'The “ultron” voice style is an audio effect on top of any Piper voice: a lower pitch, a second drifting voice, a metallic resonance and a short hall. It is not a copy of any actor’s voice.',
+    'how.stage5': '<span class="k">voice</span><b>Pavel / Maxim</b><span>a speech-synthesizer voice like Kava’s: the free Microsoft Pavel from Windows or IVONA Maxim</span>',
+    'how.1': 'Altron has one voice, in every language: the free Microsoft Pavel that Windows has, or IVONA Maxim (Kava’s own voice) when it is installed. Altron ships no voice — it uses the installed ones. Without a voice he writes in the game chat.',
     'install.eyebrow': 'Install',
     'install.h2': 'One file, and he is in the game',
     'inst.h1': 'Download and run the installer',
@@ -497,7 +496,7 @@
     'inst.p2': 'Use the “Altron” desktop shortcut. Wait for the line “ИИ готов” (AI ready), open your world and type <code>/altron</code> in chat.',
     'inst.h3': 'Talk',
     'inst.p3': 'In a minute or two the player altron joins. Say in voice chat: “Altron, follow me”.',
-    'inst.1': 'The installer sets up Python and packages, the llama.cpp server for your graphics card (CUDA, Vulkan or CPU), the AI model, Whisper, Piper voices, Java 17 and Simple Voice Chat in your pack. Then it builds the mod and makes a shortcut. It is safe to run again: what is there is skipped, broken downloads continue.',
+    'inst.1': 'The installer sets up Python and packages, the llama.cpp server for your graphics card (CUDA, Vulkan or CPU), the AI model, Whisper, Java 17 and Simple Voice Chat in your pack. Then it builds the mod and makes a shortcut. It is safe to run again: what is there is skipped, broken downloads continue.',
     'settings.eyebrow': 'Settings',
     'settings.h2': 'For your PC and your language',
     'settings.intro': 'You pick a mode at launch. It changes only Altron’s client and the AI; your own game is not touched.',
@@ -510,9 +509,8 @@
     'set.t2': '<thead><tr><th>Key</th><th>What it does</th></tr></thead><tbody>' +
       '<tr><td><code>language</code></td><td><code>auto</code> answers in the commander’s language, or a code: <code>en</code>, <code>de</code>…</td></tr>' +
       '<tr><td><code>languages</code></td><td>languages to listen for with <code>auto</code></td></tr>' +
-      '<tr><td><code>tts_voices</code></td><td>a Piper voice for each language</td></tr>' +
-      '<tr><td><code>tts_style</code></td><td><code>ultron</code>, <code>robot</code> or <code>plain</code></td></tr>' +
-      '<tr><td><code>persona</code></td><td><code>teammate</code> (default) or <code>altron</code>: the manner of speaking and the voice</td></tr>' +
+      '<tr><td><code>voice</code></td><td><code>["Maxim", "Pavel"]</code>: the voice, the first one found in Windows</td></tr>' +
+      '<tr><td><code>persona</code></td><td><code>teammate</code> (default) or <code>altron</code>: the manner of speaking (the same voice)</td></tr>' +
       '<tr><td><code>idle_think_minutes</code></td><td>how often in a quiet moment he thinks whether to say something; <code>0</code> — only when spoken to</td></tr>' +
       '<tr><td><code>max_steps</code></td><td>how many actions the AI may take in one turn (40)</td></tr>' +
       '<tr><td><code>wake_words</code></td><td>the names he answers to</td></tr></tbody>',
