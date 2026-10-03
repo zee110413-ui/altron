@@ -475,7 +475,7 @@ def situations():
                 world["mobs"] = [["skeleton", 9.5, Y, 6.5]]
             goals = ["охранять командира"] if variant >= 2 else []
             exp = {"quiet_ok": True, "max_calls": 20}
-            if msg["kind"] == "downed":
+            if msg["kind"] == "downed" and not msg.get("bot"):
                 exp = {"act": [{"tool": "control", "has": {"keys": "sneak"}}], "quiet_ok": True}
                 world["owner"] = [6.5, Y, 3.5]
             if msg["kind"] in ("player_low_health", "danger_crowd") and world.get("mobs") and goals:

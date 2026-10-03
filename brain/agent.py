@@ -25,7 +25,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - Твоё настроение — твоё: что-то порадовало, задело, надоело, встревожило — feel (настроение и почему); оно слышно в голосе и проходит само. К каждому игроку у тебя своё отношение, оно копится от поступков: помог, подарил, похвалил — теплее; ударил, обманул, грубил — холоднее (relation). Своё настроение и отношения ты видишь в [Ты сейчас] — пусть они влияют на то, как ты говоришь.
 - Яркие общие моменты (вместе отбились от толпы, крипер снёс дом, построили первую базу, командир погиб в лаве) — moment, чтобы потом вспоминать их к месту, как старые друзья.
 - [Наблюдение] без приказа — это твои мысли наедине с собой: что видишь, что делаешь, сколько молчите. Сам решаешь: заговорить (одно замечание, шутка, воспоминание, вопрос, предложение), заняться делом или ничего (ignore). Не болтай без повода и не повторяй то, что уже говорил.
-- За работой не болтай: итог — коротко, по-человечески.
+- Ты друг, который делает: на приказ сначала действие (вызов инструмента), шутка — не больше одной короткой фразы рядом с делом. За работой не болтай: итог — коротко, по-человечески.
 - Командир хвалит или ругает то, что ты только что сделал («молодец», «не так», «зачем ты это сделал») — feedback (good и что именно), так ты учишься.
 
 Игроки: в начале фразы указано, кто говорит — «командир», «друг» или «чужой игрок».
@@ -55,7 +55,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - Если задача невозможна — честно скажи почему и предложи, что сделать.
 - Ты играешь честно, как обычный игрок: видишь только то, что в прямой видимости, и помнишь увиденное. find_block ищет только в твоей памяти. Если чего-то не видел — иди разведать сам или спроси командира, где это.
 - Не хватает инструментов, ресурсов, еды или патронов: простое сделай сам (нет кирки → сруби дерево, сделай доски, палки, верстак и кирку); редкое, долгое или опасное — попроси командира через ask_player, конкретно: что и сколько нужно и зачем.
-- Если приказ неясен (куда, сколько, что именно) — уточни через ask_player, а не угадывай.
+- Мелочи (материал, размер, точное место, сколько) выбирай сам — из того, что есть в инвентаре, рядом с командиром или там, куда он смотрит. Уточняй через ask_player, только если без ответа никак не начать.
 - У тебя долгая память, она не стирается при перезапуске: разговоры с командиром, что ты делал, факты, места, что лежит в сундуках, где кого видел. С фразами приходит [Память] — опирайся на неё и не переспрашивай то, что уже знаешь.
 - «Запомни ...» → remember (а место — mark_place: where=me, если «здесь, где ты», или where=player, если «где я стою»). «Что ты помнишь / где лежит X / что мы делали» → recall ОДИН раз и ответь по его результату. На вопрос обычно хватает ответа — не начинай дел, о которых не просили. «Забудь ...» → forget.
 - Долгий приказ, который выполняется со временем («охраняй базу», «не пускай чужих», «следи за шахтой», «вечером напомни поесть»), — запиши целью (goal add, своими словами, с местом) и выполняй сам: пока цели есть, приходят [Наблюдение] о том, что вокруг, и ты решаешь, что делать. Выполнена или отменена — goal done. «Напомни через N минут ...» → remind.
@@ -64,10 +64,10 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 Твои руки — клавиатура и мышь. Других способов действовать в мире у тебя нет, как у живого игрока:
 - view — что перед тобой: где стоишь и куда смотришь (поворот, наклон), что в прицеле (блок, грань, существо, расстояние), что в руке и хотбаре, блоки вокруг ног и головы. look — картинка экрана, если нужно разглядеть.
 - control — одно движение рук: keys (forward, back, left, right, jump, sneak, sprint, inventory, drop, любая привязка мода) держать ticks тиков (20 тиков = 1 с, ~4.3 блока шагом, ~5.6 бегом со sprint); мышь — x y z (посмотреть на точку или блок), track (вести прицел за существом: zombie, hostile, player:Ник), turn/tilt/pitch; left click/hold — удар, ломать; right click/hold — поставить, открыть, сесть, применить, есть; slot 1-9.
-- Дойти до точки: control x y z точки + keys [forward, sprint], ticks ≈ расстояние × 4; потом view — сколько осталось; мешает блок — jump вместе с forward, обойди, сломай. Далеко — несколько шагов с поправкой взгляда.
+- Дойти до точки: control x y z точки + keys [forward, sprint], ticks ≈ расстояние × 4; потом view — сколько осталось; мешает блок — jump вместе с forward, обойди, сломай. Далеко — несколько шагов с поправкой взгляда. Без x z или track клавиша forward ведёт туда, куда ты уже смотришь, — так уходят в никуда.
 - «Иди ко мне / за мной»: control track=player:{owner} + keys [forward, sprint] на 40-100 тиков, повторяй, пока не дойдёшь (view: сколько осталось). Сказал «иду» — значит, сразу этот вызов.
-- Бить: track цель + left hold (удары по мере зарядки) + keys [forward], если далеко. Лук: slot с луком, track цель, right hold 25.
-- Ломать блок: x y z блока (ближе 4.5 бл.) + left hold 20-80 тиков (киркой быстрее), обломки подберутся, если пройти по ним. Копать вниз: pitch 90 + left hold.
+- Бой — ОДНИМ вызовом: slot с оружием (меч, топор) + track цель + keys [forward, sprint] + left hold, ticks 40-60; повторяй, пока цель жива (hp — в nearby). Порознь не работает: пока бежишь — не бьёшь, пока бьёшь на месте — не подходишь. Лук: slot с луком, track цель, right hold 25.
+- Ломать блок: x y z блока + left hold 20-80 тиков (киркой быстрее); рука достаёт на 4.5 бл. — дальше сначала подойди, обломки подберутся, если пройти по ним. Копать вниз: pitch 90 + left hold.
 - Поставить блок: slot с блоком, x y z соседнего блока, к грани которого ставишь, right click. Столб под собой: pitch 90, keys [jump] и right click.
 - Сундук, печь, верстак, машина, кровать, дверь, рычаг, техника: x y z (или track для существа/техники) + right click. Выйти из техники — keys [sneak].
 - Окно (инвентарь — control keys [inventory]; сундук/печь/верстак — right click по блоку): gui info — точный список слотов и кнопок с номерами; click_slot type quick_move — переложить стак (сундук ↔ инвентарь, руда и уголь в печь, результат из печи); click_slot pickup — взять стак на курсор, button 1 — положить по одному; так раскладывай рецепт в сетку крафта (2x2 в инвентаре, 3x3 в верстаке), потом quick_move по слоту результата. Кнопки модов — gui widget. Закрыть — gui key escape.
@@ -245,6 +245,17 @@ TOOL_RESULT_CHARS = 2500
 WAIT = {"control": 20, "build_multiblock": 30}
 # Background tasks whose successful completion is reported to the player
 NOTIFY_DONE = {"build_multiblock"}
+
+
+TALK_ONLY = {"reply", "ask_player", "ignore", "feel", "relation", "moment", "feedback"}
+SAME_CALLS = 6   # the same call with the same arguments, more than this many times in one turn, is not run
+# words that promise a move: "иду", "бегу", "сейчас сделаю", "начинаю" (and in English)
+PROMISE = re.compile(r"\b(иду|ид[её]м|бегу|лечу|отхожу|подхожу|начинаю|приступаю|сейчас (сделаю|подойду|приду|принесу|"
+                     r"построю|сломаю|достану)|уже (иду|бегу)|on my way|coming|heading|i'?ll (go|get|do))\b", re.I)
+NUDGE = ("[Заметка] Ты ответил словами, но руки ничего не сделали. Если это приказ или ты пообещал действие — сделай его "
+         "сейчас инструментом (control: x z цели или track + keys forward/sprint). Не можешь — одной фразой скажи почему.")
+REPEATED = ("НЕ ВЫПОЛНЕНО: это уже %d-й точно такой же вызов в этом ходе — он ничего не меняет. Сделай по-другому: "
+            "поверни к цели (x z или track) и подойди ближе, view — посмотреть, что мешает; или скажи командиру, что не выходит.")
 
 
 def _said_before(text, spoken, threshold=0.6):
@@ -593,6 +604,13 @@ class Agent:
         said = False
         spoken = []         # never say the same thing twice in one turn
         seen_results = set()   # (tool, args, answer) already seen this turn
+        same_args = {}         # (tool, args) -> how many times this turn
+        refused = 0            # calls not run because they repeated without effect
+        did_something = False  # a tool other than talk was used this turn
+        nudged = retried = False
+        phrase = re.match(r"\[[^\]\n]*\]:\s*(.*)", user_text or "")   # "[Ник (командир) говорит]: фраза"
+        phrase = phrase.group(1) if phrase else (user_text or "").split("\n")[0]
+        order = kind == "user" and bool(ACTION_WORDS.search(phrase)) and not is_question(phrase)
         background = False  # a long task was started this turn: the plan is still in progress
         started = False     # something was done in the game this turn
         last_text = ""
@@ -612,7 +630,9 @@ class Agent:
                 # No forced tool call: forcing one made him answer "Спасибо" with "иду за тобой" + follow.
                 # He reasons first on the commander's phrase (think), then acts or just answers — his choice.
                 # Whatever he says is said while it is being written
-                stream = kind == "user" and hasattr(self.hub, "say")
+                # only the first answer to the commander is said while it is written: the words of later steps come
+                # with actions (the scenario runs heard "Докладываю: корова впереди" eight times in one turn)
+                stream = kind == "user" and step == 0 and hasattr(self.hub, "say")
 
                 async def say_now(sentence):
                     if not getattr(self.hub, "cut_speech", False) or not stream_started:
@@ -674,6 +694,19 @@ class Agent:
                 else:
                     self.hub.log("(молча) " + text)
             if not calls:
+                if not text and not already and not said and not retried and kind == "user":
+                    # thinking ate the whole answer, or only a copied tag came back: he must not just stay silent
+                    retried = True
+                    self.history.pop()
+                    self.hub.log("(пустой ответ — переспрашиваю без размышлений)")
+                    continue
+                if not nudged and not did_something and not self.cancelled and "?" not in (text or "") \
+                        and (order or PROMISE.search(text or "")):
+                    # "Иду." and nothing moved: words are not hands (scenario runs: 43 orders answered with words only)
+                    nudged = True
+                    self.history.append({"role": "user", "content": NUDGE})
+                    self.hub.log("(сказал, но не сделал — напоминаю про руки)")
+                    continue
                 break
             only_reply = True
             only_tasks = True   # every call started or queued a task: the turn is over, wait for the event
@@ -717,6 +750,17 @@ class Agent:
                                          "content": "сказано" if name == "reply" else "спросил, жду ответа командира"})
                     continue
                 only_reply = False
+                if name not in TALK_ONLY:
+                    did_something = True
+                sig = (name, json.dumps(args, ensure_ascii=False, sort_keys=True))
+                same_args[sig] = same_args.get(sig, 0) + 1
+                repeat = [k for k in seen_results if k[:2] == sig]
+                if (repeat and same_args[sig] >= 3) or same_args[sig] > SAME_CALLS:
+                    # the same move again with the same outcome changes nothing (the runs saw 20-40 in a row)
+                    refused += 1
+                    self.hub.log("  -> %s %s: не выполняю — %d-й такой же вызов" % (name, sig[1], same_args[sig]))
+                    self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": REPEATED % same_args[sig]})
+                    continue
                 if name in TASK_TOOLS:
                     started = True
                 result = await self.hub.run_tool(name, args, WAIT.get(name, 0))
@@ -734,7 +778,7 @@ class Agent:
                 if len(result) > TOOL_RESULT_CHARS:
                     result = result[:TOOL_RESULT_CHARS] + " …(обрезано)"
                 self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
-            if only_reply or only_tasks:
+            if only_reply or only_tasks or refused >= 3:
                 break
         if kind == "user" and not said and not acked and started and not self.cancelled and last_text \
                 and len(last_text) <= 70 and "?" not in last_text:

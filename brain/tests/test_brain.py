@@ -821,10 +821,81 @@ class RepeatedCalls(unittest.TestCase):
         a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
         a.llm = Llm()
         run(a.run("[Egor (командир) говорит]: хватит охранять", "user"))
-        self.assertEqual(ran, ["goal"] * 3)                      # nothing is refused...
+        self.assertEqual(ran, ["goal"] * 2)                      # the second one runs, with a note...
         notes = [m["content"] for m in a.history if m.get("role") == "tool"]
         self.assertNotIn("уже был", notes[0])
-        self.assertIn("уже был в этом ходе", notes[1])           # ...but he hears he already knows the answer
+        self.assertIn("уже был в этом ходе", notes[1])
+        self.assertIn("НЕ ВЫПОЛНЕНО", notes[2])                  # ...the third, changing nothing, is not run
+
+    def test_words_without_hands_get_one_reminder(self):
+        replies = [{"role": "assistant", "content": "Иду."},
+                   {"role": "assistant", "content": "", "tool_calls": [
+                       {"id": "c", "type": "function", "function": {"name": "control",
+                                                                    "arguments": '{"track": "player:Egor", "keys": ["forward"]}'}}]},
+                   {"role": "assistant", "content": "На месте."}]
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                return dict(replies.pop(0))
+        ran, said = [], []
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "teammate"
+            cut_speech = False
+            dataset = None
+
+            async def say(self, text, mood=None):
+                said.append(text)
+
+            async def run_tool(self, name, args, wait):
+                ran.append(name)
+                return "ГОТОВО: веду прицел за Egor"
+
+            def log(self, text):
+                pass
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run("[Egor (командир) говорит]: Иди ко мне\n[Состояние] ...", "user"))
+        self.assertEqual(ran, ["control"])
+        self.assertEqual(said, ["Иду.", "На месте."])
+        self.assertTrue(any(m["role"] == "user" and "руки ничего не сделали" in m["content"] for m in a.history))
+
+    def test_an_empty_answer_is_asked_again_without_thinking(self):
+        thinks = []
+        replies = [{"role": "assistant", "content": ""}, {"role": "assistant", "content": "Нормально. А ты?"}]
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                thinks.append(kw.get("think"))
+                return dict(replies.pop(0))
+        said = []
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "teammate"
+            cut_speech = False
+            dataset = None
+
+            async def say(self, text, mood=None):
+                said.append(text)
+
+            def log(self, text):
+                pass
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run("[Egor (командир) говорит]: как дела?", "user", think=True))
+        self.assertEqual(thinks, [True, False])
+        self.assertEqual(said, ["Нормально. А ты?"])
+
+    def test_control_hint_when_out_of_reach(self):
+        hub = altron.Hub.__new__(altron.Hub)
+        hub.state = {"pos": [0.5, 64, 0.5]}
+        out = hub.control_hint({"x": -4, "y": 64, "z": -3, "left": "hold"}, "ГОТОВО: ...\nПрицел: ничего в досягаемости")
+        self.assertIn("рука достаёт на 4.5", out)
+        self.assertIn("Ты шёл туда, куда уже смотрел", hub.control_hint({"keys": ["forward"], "ticks": 60}, "ГОТОВО"))
 
 
 class FieldTestDryRun(unittest.TestCase):
