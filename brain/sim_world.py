@@ -352,6 +352,8 @@ class World:
         want = set()
         for w in words:
             w = str(w).lower().strip()
+            w = {"дерево": "бревно", "дерева": "бревно", "деревья": "бревно", "древесина": "бревно", "руда": "руда",
+                 "руду": "руда", "булыжник": "булыжник", "земля": "земля", "землю": "земля"}.get(w, w)
             for i, n in NAMES.items():
                 if i in SOLID and (w == i or w == i.split(":")[1] or w in n.lower() or (len(w) >= 4 and w[:-1] in n.lower())
                                    or w.replace("_", " ") in i.replace("_", " ")):

@@ -479,6 +479,10 @@ class Hub:
             self.queue_log.clear()
             self.running = None
         elif name == "control":
+            who = str(args.get("track") or "")
+            if args.get("left") and who.lower().startswith("player:") and self.is_friend(who[7:]):
+                return ("ОТКАЗ: %s — командир или друг, бить его нельзя. Хочешь передать вещь — выбери слот и выбрось её "
+                        "(control keys [drop]) рядом с ним." % who[7:])
             # his own hands act now, whatever the body was doing: like a player who just presses the keys
             return self.control_hint(args, await self.start_task(name, args, wait_sec))
         elif name in TASK_TOOLS and self.running is not None:
@@ -509,6 +513,13 @@ class Hub:
                                                                                    max(5, int((d - 3) * 4))))
         elif aimed_far and not args.get("track"):
             hint = "\n(В прицеле ничего нет: наведи взгляд на цель — x y z блока или track существа.)"
+        try:
+            short = args.get("left") == "hold" and int(args.get("ticks") or 5) < 20 and "Прицел: блок" in result
+        except (TypeError, ValueError):
+            short = False
+        if short:
+            hint += ("\n(Блок ещё цел: ломается долго — left hold держи ticks 20-80 (камень киркой ~30), ты держал %s.)"
+                     % args.get("ticks"))
         keys = [str(k).lower() for k in args.get("keys") or []]
         if "forward" in keys and args.get("x") is None and not args.get("track") and int(args.get("ticks") or 5) >= 20:
             hint += ("\n(Ты шёл туда, куда уже смотрел. Идёшь к чему-то — дай x z цели или track, тогда взгляд и шаги "

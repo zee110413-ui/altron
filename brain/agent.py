@@ -67,6 +67,7 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - Дойти до точки: control x y z точки + keys [forward, sprint], ticks ≈ расстояние × 4; потом view — сколько осталось; мешает блок — jump вместе с forward, обойди, сломай. Далеко — несколько шагов с поправкой взгляда. Без x z или track клавиша forward ведёт туда, куда ты уже смотришь, — так уходят в никуда.
 - «Иди ко мне / за мной»: control track=player:{owner} + keys [forward, sprint] на 40-100 тиков, повторяй, пока не дойдёшь (view: сколько осталось). Сказал «иду» — значит, сразу этот вызов.
 - Бой — ОДНИМ вызовом: slot с оружием (меч, топор) + track цель + keys [forward, sprint] + left hold, ticks 40-60; повторяй, пока цель жива (hp — в nearby). Порознь не работает: пока бежишь — не бьёшь, пока бьёшь на месте — не подходишь. Лук: slot с луком, track цель, right hold 25.
+- «Добудь / принеси / сруби X»: сначала find_block (id блока: stone, oak_log, coal_ore, iron_ore...) — он ищет среди виденного; нашёл — иди к нему (control x y z + keys [forward, sprint]) и ломай; не нашёл — осмотрись (turn 90 и view), и только потом спроси командира. Вслепую вперёд не бегай.
 - Ломать блок: x y z блока + left hold 20-80 тиков (киркой быстрее); рука достаёт на 4.5 бл. — дальше сначала подойди, обломки подберутся, если пройти по ним. Копать вниз: pitch 90 + left hold.
 - Поставить блок: slot с блоком, x y z соседнего блока, к грани которого ставишь, right click. Столб под собой: pitch 90, keys [jump] и right click.
 - Сундук, печь, верстак, машина, кровать, дверь, рычаг, техника: x y z (или track для существа/техники) + right click. Выйти из техники — keys [sneak].
@@ -256,6 +257,8 @@ PROMISE = re.compile(r"\b(иду|ид[её]м|бегу|лечу|отхожу|п�
                      r"on my way|coming|heading|i'?ll (go|get|do|handle))\b", re.I)
 NUDGE = ("[Заметка] Ты ответил словами, но руки ничего не сделали. Если это приказ или ты пообещал действие — сделай его "
          "сейчас инструментом (control: x z цели или track + keys forward/sprint). Не можешь — одной фразой скажи почему.")
+CLOSE = ("[Заметка] Ты поработал руками. Скажи командиру одной короткой фразой, что получилось или что мешает, "
+         "своими словами — без вызова инструментов.")
 REPEATED = ("НЕ ВЫПОЛНЕНО: это уже %d-й точно такой же вызов в этом ходе — он ничего не меняет. Сделай по-другому: "
             "поверни к цели (x z или track) и подойди ближе, view — посмотреть, что мешает; или скажи командиру, что не выходит.")
 
@@ -609,6 +612,8 @@ class Agent:
         spoken = []         # never say the same thing twice in one turn
         seen_results = set()   # (tool, args, answer) already seen this turn
         same_args = {}         # (tool, args) -> how many times this turn
+        last_answers = {}      # (tool, args) -> its last answers, to see whether repeating changes anything
+        closing = False
         refused = 0            # calls not run because they repeated without effect
         did_something = False  # a tool other than talk was used this turn
         nudged = retried = False
@@ -702,6 +707,8 @@ class Agent:
                     # thinking ate the whole answer, or only a copied tag came back: he must not just stay silent
                     retried = True
                     self.history.pop()
+                    if did_something:
+                        self.history.append({"role": "user", "content": CLOSE})
                     self.hub.log("(пустой ответ — переспрашиваю без размышлений)")
                     continue
                 if not nudged and not did_something and not self.cancelled and "?" not in (text or "") \
@@ -758,10 +765,12 @@ class Agent:
                     did_something = True
                 sig = (name, json.dumps(args, ensure_ascii=False, sort_keys=True))
                 same_args[sig] = same_args.get(sig, 0) + 1
-                repeat = [k for k in seen_results if k[:2] == sig]
-                if (repeat and same_args[sig] >= 3) or same_args[sig] > SAME_CALLS:
-                    # the same move again with the same outcome changes nothing (the runs saw 20-40 in a row)
+                answers = last_answers.get(sig, [])
+                # the same move again with the same outcome changes nothing (the runs saw 20-40 in a row); digging
+                # down 3 times is fine — he is lower each time and the answer says so
+                if (len(answers) >= 2 and answers[-1] == answers[-2]) or same_args[sig] > SAME_CALLS:
                     refused += 1
+                    only_reply = False
                     self.hub.log("  -> %s %s: не выполняю — %d-й такой же вызов" % (name, sig[1], same_args[sig]))
                     self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": REPEATED % same_args[sig]})
                     continue
@@ -773,6 +782,7 @@ class Agent:
                 if not (name in TASK_TOOLS and ("[Событие]" in result or "очеред" in result)):
                     only_tasks = False
                 self.hub.log("  -> %s %s: %s" % (name, json.dumps(args, ensure_ascii=False), result[:300]))
+                last_answers.setdefault(sig, []).append(result)
                 # the same call with the same answer again (the field test: goal 34 times in a row): nothing is
                 # refused, he is only told that he already knows this
                 key = (name, json.dumps(args, ensure_ascii=False, sort_keys=True), result)
@@ -782,6 +792,10 @@ class Agent:
                 if len(result) > TOOL_RESULT_CHARS:
                     result = result[:TOOL_RESULT_CHARS] + " …(обрезано)"
                 self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
+            if refused and not closing and not said:
+                closing = True
+                self.history.append({"role": "user", "content": CLOSE})
+                continue
             if only_reply or only_tasks or refused >= 3:
                 break
         if kind == "user" and not said and not acked and started and not self.cancelled and last_text \
