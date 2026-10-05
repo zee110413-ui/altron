@@ -878,6 +878,19 @@ class RepeatedCalls(unittest.TestCase):
         notes = [m["content"] for m in a.history if m.get("role") == "tool"]
         self.assertIn("НЕ ВЫПОЛНЕНО", notes[-1])
 
+    def test_blind_walking_is_stopped_the_third_time_though_the_position_changes(self):
+        pos = [0]
+
+        async def run_tool(name, args, wait):
+            pos[0] += 11
+            return "ГОТОВО: Ты: 0 64 %d" % pos[0]
+        walk = '{"keys": ["forward", "sprint"], "ticks": 40}'
+        replies = [self._call(args=walk) for _ in range(3)] + [{"role": "assistant", "content": "Не знаю, где это."}]
+        a, said = self._turn(replies, run_tool, "[Egor (командир) говорит]: Принеси брёвен")
+        self.assertEqual(pos[0], 22)          # two steps were taken, the third was not
+        self.assertEqual(said, ["Не знаю, где это."])
+        self.assertIn("никуда не целясь", [m["content"] for m in a.history if m.get("role") == "tool"][-1])
+
     def test_he_never_hits_the_commander(self):
         hub = altron.Hub.__new__(altron.Hub)
         hub.owner, hub.friends, hub.speaker, hub.bot = "Egor", set(), "", object()

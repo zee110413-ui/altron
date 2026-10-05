@@ -259,6 +259,10 @@ NUDGE = ("[Заметка] Ты ответил словами, но руки н�
          "сейчас инструментом (control: x z цели или track + keys forward/sprint). Не можешь — одной фразой скажи почему.")
 CLOSE = ("[Заметка] Ты поработал руками. Скажи командиру одной короткой фразой, что получилось или что мешает, "
          "своими словами — без вызова инструментов.")
+AIM_ARGS = ("x", "y", "z", "track", "turn", "tilt", "pitch", "left", "right", "slot")
+BLIND = ("НЕ ВЫПОЛНЕНО: в третий раз подряд ты идёшь вперёд, никуда не целясь, — так не доходят. Узнай, куда идти: "
+         "find_block (нужный блок), nearby (кто и что рядом), view — потом control с x z цели или track. Не нашёл — "
+         "скажи командиру, что не знаешь, где это.")
 REPEATED = ("НЕ ВЫПОЛНЕНО: это уже %d-й точно такой же вызов в этом ходе — он ничего не меняет. Сделай по-другому: "
             "поверни к цели (x z или track) и подойди ближе, view — посмотреть, что мешает; или скажи командиру, что не выходит.")
 
@@ -768,11 +772,16 @@ class Agent:
                 answers = last_answers.get(sig, [])
                 # the same move again with the same outcome changes nothing (the runs saw 20-40 in a row); digging
                 # down 3 times is fine — he is lower each time and the answer says so
-                if (len(answers) >= 2 and answers[-1] == answers[-2]) or same_args[sig] > SAME_CALLS:
+                # walking with keys only and no aim, again and again: the position changes, so the answers differ, but
+                # he is only running off (the second run: 32 such turns); the third time he must find out where to go
+                blind = (name == "control" and same_args[sig] >= 3 and not any(k in args for k in AIM_ARGS)
+                         and bool({"forward", "back", "left", "right"} & {str(k).lower() for k in args.get("keys") or []}))
+                if blind or (len(answers) >= 2 and answers[-1] == answers[-2]) or same_args[sig] > SAME_CALLS:
                     refused += 1
                     only_reply = False
                     self.hub.log("  -> %s %s: не выполняю — %d-й такой же вызов" % (name, sig[1], same_args[sig]))
-                    self.history.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": REPEATED % same_args[sig]})
+                    self.history.append({"role": "tool", "tool_call_id": call.get("id", ""),
+                                         "content": BLIND if blind else REPEATED % same_args[sig]})
                     continue
                 if name in TASK_TOOLS:
                     started = True
