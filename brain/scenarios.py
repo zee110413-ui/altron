@@ -103,7 +103,8 @@ class SimHub(altron.Hub):
         return result
 
     def note_llm_failure(self, hard=False, why=""):
-        self.rec.event("llm_failure", why)
+        # a slow answer is the processor of the machine, not his fault: only errors count as failures
+        self.rec.event("llm_slow" if why.startswith("ответ шёл") else "llm_failure", why)
 
     def request_restart(self, reason, llm=False):
         self.rec.event("restart", reason)

@@ -297,6 +297,8 @@ class Hub:
         pos = s.get("pos", [0, 0, 0])
         text = "Альтрон: x=%d y=%d z=%d, здоровье %s/20, еда %s/20, в руке: %s" % (
             pos[0], pos[1], pos[2], s.get("hp"), s.get("food"), s.get("held"))
+        if "night" in s:
+            text += ", сейчас %s" % ("ночь" if s["night"] else "день")
         if s.get("task"):
             text += ", задача: %s %s" % (s.get("task"), s.get("progress", ""))
         if s.get("owner_pos"):
@@ -477,14 +479,52 @@ class Hub:
             self.queue_log.clear()
             self.running = None
         elif name == "control":
+            who = str(args.get("track") or "")
+            if args.get("left") and who.lower().startswith("player:") and self.is_friend(who[7:]):
+                return ("ОТКАЗ: %s — командир или друг, бить его нельзя. Хочешь передать вещь — выбери слот и выбрось её "
+                        "(control keys [drop]) рядом с ним." % who[7:])
             # his own hands act now, whatever the body was doing: like a player who just presses the keys
-            return await self.start_task(name, args, wait_sec)
+            return self.control_hint(args, await self.start_task(name, args, wait_sec))
         elif name in TASK_TOOLS and self.running is not None:
             # a blueprint check while his hands are busy: it waits its turn
             self.queue.append((name, args))
             return ("Поставил в очередь (№%d): сейчас выполняется %s (stop — прервать). О результатах придёт [Событие]."
                     % (len(self.queue), self.running[1]))
         return await self.start_task(name, args, wait_sec)
+
+    def control_hint(self, args, result):
+        """What a person would notice at once: the block he clicked at is out of reach, or he walked off without
+        looking anywhere. The scenario runs saw him hold "left" at a stone 5 blocks away 28 times, and run 300
+        blocks south with keys forward only."""
+        pos = self.state.get("pos")
+        hint = ""
+        aimed_far = (args.get("left") or args.get("right")) and "Прицел: ничего в досягаемости" in result
+        if aimed_far and pos and args.get("x") is not None and args.get("z") is not None:
+            try:
+                tx, tz = float(args["x"]) + 0.5, float(args["z"]) + 0.5
+                ty = float(args["y"]) + 0.5 if args.get("y") is not None else pos[1] + 1.6
+            except (TypeError, ValueError):
+                tx = None
+            if tx is not None:
+                d = ((tx - pos[0]) ** 2 + (ty - pos[1] - 1.6) ** 2 + (tz - pos[2]) ** 2) ** 0.5
+                if d > 4.5:
+                    hint = ("\n(До %s %s %s — %.1f бл.: рука достаёт на 4.5. Сначала подойди: control x z этой точки + keys "
+                            "[forward, sprint], ticks ≈ %d — потом жми снова.)" % (args["x"], args.get("y", ""), args["z"], d,
+                                                                                   max(5, int((d - 3) * 4))))
+        elif aimed_far and not args.get("track"):
+            hint = "\n(В прицеле ничего нет: наведи взгляд на цель — x y z блока или track существа.)"
+        try:
+            short = args.get("left") == "hold" and int(args.get("ticks") or 5) < 20 and "Прицел: блок" in result
+        except (TypeError, ValueError):
+            short = False
+        if short:
+            hint += ("\n(Блок ещё цел: ломается долго — left hold держи ticks 20-80 (камень киркой ~30), ты держал %s.)"
+                     % args.get("ticks"))
+        keys = [str(k).lower() for k in args.get("keys") or []]
+        if "forward" in keys and args.get("x") is None and not args.get("track") and int(args.get("ticks") or 5) >= 20:
+            hint += ("\n(Ты шёл туда, куда уже смотрел. Идёшь к чему-то — дай x z цели или track, тогда взгляд и шаги "
+                     "идут вместе.)")
+        return result + hint
 
     async def building_plan(self, args):
         """«Построй дом 7 на 7»: the plan of blocks is drawn up here and the body finds a free level place for it; the

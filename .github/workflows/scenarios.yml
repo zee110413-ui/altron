@@ -98,12 +98,10 @@ jobs:
           pip install -q -r brain/requirements.txt
           DIR="test-reports/scenarios/$(date -u +%Y%m%d-%H%M)"
           mkdir -p "$DIR"
-          cat parts/*/results_*.jsonl > "$DIR/results.jsonl" 2>/dev/null || true
-          cp parts/*/llama-server-*.log "$DIR/" 2>/dev/null || true
-          (cd brain && python scenarios.py --report "../$DIR")
+          find parts -name "results_*.jsonl" -exec cat {} + > "$DIR/results.jsonl"   # one artifact lands without its own folder
+                    (cd brain && python scenarios.py --report "../$DIR")
           cat "$DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
           gzip -9 "$DIR/results.jsonl"
-          rm -f "$DIR"/llama-server-*.log
           git config user.name "altron-scenarios"
           git config user.email "actions@users.noreply.github.com"
           git add -f "$DIR"

@@ -821,10 +821,152 @@ class RepeatedCalls(unittest.TestCase):
         a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
         a.llm = Llm()
         run(a.run("[Egor (командир) говорит]: хватит охранять", "user"))
-        self.assertEqual(ran, ["goal"] * 3)                      # nothing is refused...
+        self.assertEqual(ran, ["goal"] * 2)                      # the second one runs, with a note...
         notes = [m["content"] for m in a.history if m.get("role") == "tool"]
         self.assertNotIn("уже был", notes[0])
-        self.assertIn("уже был в этом ходе", notes[1])           # ...but he hears he already knows the answer
+        self.assertIn("уже был в этом ходе", notes[1])
+        self.assertIn("НЕ ВЫПОЛНЕНО", notes[2])                  # ...the third, changing nothing, is not run
+
+    def _turn(self, replies, run_tool, phrase="[Egor (командир) говорит]: Копай вниз"):
+        said = []
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                return dict(replies.pop(0))
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "teammate"
+            cut_speech = False
+            dataset = None
+
+            async def say(self, text, mood=None):
+                said.append(text)
+
+            def log(self, text):
+                pass
+        Hub.run_tool = staticmethod(run_tool)
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run(phrase, "user"))
+        return a, said
+
+    def _call(self, name="control", args='{"pitch": 90, "left": "hold"}'):
+        return {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c", "type": "function", "function": {"name": name, "arguments": args}}]}
+
+    def test_digging_down_repeats_while_the_answer_changes(self):
+        depth = [64]
+        ran = []
+
+        async def run_tool(name, args, wait):
+            ran.append(name)
+            depth[0] -= 2
+            return "ГОТОВО: ты на высоте %d" % depth[0]
+        replies = [self._call() for _ in range(4)] + [{"role": "assistant", "content": "Выкопал на 8 вниз."}]
+        a, said = self._turn(replies, run_tool)
+        self.assertEqual(len(ran), 4)
+        self.assertEqual(said, ["Выкопал на 8 вниз."])
+
+    def test_a_stuck_repeat_is_refused_and_the_turn_still_ends_with_words(self):
+        async def run_tool(name, args, wait):
+            return "ГОТОВО: Прицел: ничего в досягаемости"
+        replies = [self._call() for _ in range(3)] + [{"role": "assistant", "content": "Не достаю — упёрся в пустоту."}]
+        a, said = self._turn(replies, run_tool)
+        self.assertEqual(said, ["Не достаю — упёрся в пустоту."])
+        notes = [m["content"] for m in a.history if m.get("role") == "tool"]
+        self.assertIn("НЕ ВЫПОЛНЕНО", notes[-1])
+
+    def test_blind_walking_is_stopped_the_third_time_though_the_position_changes(self):
+        pos = [0]
+
+        async def run_tool(name, args, wait):
+            pos[0] += 11
+            return "ГОТОВО: Ты: 0 64 %d" % pos[0]
+        walk = '{"keys": ["forward", "sprint"], "ticks": 40}'
+        replies = [self._call(args=walk) for _ in range(3)] + [{"role": "assistant", "content": "Не знаю, где это."}]
+        a, said = self._turn(replies, run_tool, "[Egor (командир) говорит]: Принеси брёвен")
+        self.assertEqual(pos[0], 22)          # two steps were taken, the third was not
+        self.assertEqual(said, ["Не знаю, где это."])
+        self.assertIn("никуда не целясь", [m["content"] for m in a.history if m.get("role") == "tool"][-1])
+
+    def test_he_never_hits_the_commander(self):
+        hub = altron.Hub.__new__(altron.Hub)
+        hub.owner, hub.friends, hub.speaker, hub.bot = "Egor", set(), "", object()
+        out = run(hub.run_tool("control", {"track": "player:Egor", "left": "click"}, 0))
+        self.assertIn("ОТКАЗ", out)
+        self.assertIn("бить его нельзя", out)
+
+    def test_words_without_hands_get_one_reminder(self):
+        replies = [{"role": "assistant", "content": "Иду."},
+                   {"role": "assistant", "content": "", "tool_calls": [
+                       {"id": "c", "type": "function", "function": {"name": "control",
+                                                                    "arguments": '{"track": "player:Egor", "keys": ["forward"]}'}}]},
+                   {"role": "assistant", "content": "На месте."}]
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                return dict(replies.pop(0))
+        ran, said = [], []
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "teammate"
+            cut_speech = False
+            dataset = None
+
+            async def say(self, text, mood=None):
+                said.append(text)
+
+            async def run_tool(self, name, args, wait):
+                ran.append(name)
+                return "ГОТОВО: веду прицел за Egor"
+
+            def log(self, text):
+                pass
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run("[Egor (командир) говорит]: Иди ко мне\n[Состояние] ...", "user"))
+        self.assertEqual(ran, ["control"])
+        self.assertEqual(said, ["Иду.", "На месте."])
+        self.assertTrue(any(m["role"] == "user" and "руки ничего не сделали" in m["content"] for m in a.history))
+
+    def test_an_empty_answer_is_asked_again_without_thinking(self):
+        thinks = []
+        replies = [{"role": "assistant", "content": ""}, {"role": "assistant", "content": "Нормально. А ты?"}]
+
+        class Llm:
+            last_prompt_tokens = "10"
+
+            async def chat(self, messages, **kw):
+                thinks.append(kw.get("think"))
+                return dict(replies.pop(0))
+        said = []
+
+        class Hub:
+            owner, lang, knowledge, persona = "Egor", "ru", None, "teammate"
+            cut_speech = False
+            dataset = None
+
+            async def say(self, text, mood=None):
+                said.append(text)
+
+            def log(self, text):
+                pass
+        a = agent.Agent({"bot_name": "altron", "languages": ["ru"], "llm_port": 1}, Hub())
+        a.llm = Llm()
+        run(a.run("[Egor (командир) говорит]: как дела?", "user", think=True))
+        self.assertEqual(thinks, [True, False])
+        self.assertEqual(said, ["Нормально. А ты?"])
+
+    def test_control_hint_when_out_of_reach(self):
+        hub = altron.Hub.__new__(altron.Hub)
+        hub.state = {"pos": [0.5, 64, 0.5]}
+        out = hub.control_hint({"x": -4, "y": 64, "z": -3, "left": "hold"}, "ГОТОВО: ...\nПрицел: ничего в досягаемости")
+        self.assertIn("рука достаёт на 4.5", out)
+        self.assertIn("Ты шёл туда, куда уже смотрел", hub.control_hint({"keys": ["forward"], "ticks": 60}, "ГОТОВО"))
 
 
 class FieldTestDryRun(unittest.TestCase):

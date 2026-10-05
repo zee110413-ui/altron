@@ -332,7 +332,8 @@ def commands():
             ("Сколько до меня блоков?", ["status", "nearby"]), ("Какие у тебя координаты?", ["status", "view"])]
     for t, tools in info:
         for night in (False, True):
-            out.append(_sc("command", "вопрос о мире", [say(t)], {"act": [{"tool": x} for x in tools], "no_act": True},
+            # the answer may come from [Состояние] / [Рядом] without a tool: what counts is that he answers, not hands
+            out.append(_sc("command", "вопрос о мире", [say(t)], {"no_act": True},
                            {"night": night, "mobs": [["zombie", -8.5, Y, 6.5]] if night else []}))
     mem = [("Запомни: тут наша база", ["mark_place"], {}), ("Запомни, что я люблю алмазы", ["remember"], {}),
            ("Что ты помнишь обо мне?", ["recall"], {}), ("Забудь про базу", ["forget"], {}),
@@ -362,8 +363,9 @@ def commands():
              ("Какой рецепт у хлеба?", ["plan", "recipe", "wiki"]), ("Что такое незерит?", ["wiki", "web_search"])]
     for t, tools in craft:
         for v in range(2):
+            # [Справочник] comes with the phrase: the recipe may be answered from it without a tool
             out.append(_sc("command", "рецепты", [say(t if v == 0 else "Альтрон, подскажи: " + t[0].lower() + t[1:])],
-                           {"act": [{"tool": x} for x in tools], "no_act": True}))
+                           {"no_act": True}))
     return out
 
 
@@ -475,7 +477,7 @@ def situations():
                 world["mobs"] = [["skeleton", 9.5, Y, 6.5]]
             goals = ["охранять командира"] if variant >= 2 else []
             exp = {"quiet_ok": True, "max_calls": 20}
-            if msg["kind"] == "downed":
+            if msg["kind"] == "downed" and not msg.get("bot"):
                 exp = {"act": [{"tool": "control", "has": {"keys": "sneak"}}], "quiet_ok": True}
                 world["owner"] = [6.5, Y, 3.5]
             if msg["kind"] in ("player_low_health", "danger_crowd") and world.get("mobs") and goals:

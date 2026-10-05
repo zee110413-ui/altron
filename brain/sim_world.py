@@ -61,7 +61,8 @@ TIER = {"wooden": (1, 2.0), "stone": (2, 4.0), "iron": (3, 6.0), "diamond": (4, 
 DROPS = {"minecraft:grass_block": "minecraft:dirt", "minecraft:stone": "minecraft:cobblestone",
          "minecraft:coal_ore": "minecraft:coal", "minecraft:iron_ore": "minecraft:raw_iron",
          "minecraft:diamond_ore": "minecraft:diamond", "minecraft:oak_leaves": None, "minecraft:glass": None}
-DAMAGE = {"sword": {"wooden": 4, "stone": 5, "iron": 6, "diamond": 7}, "axe": {"wooden": 7, "stone": 9, "iron": 9, "diamond": 9}}
+DAMAGE = {"sword": {"wooden": 4, "stone": 5, "iron": 6, "diamond": 7}, "axe": {"wooden": 7, "stone": 9, "iron": 9, "diamond": 9},
+          "pickaxe": {"wooden": 2, "stone": 3, "iron": 4, "diamond": 5}, "shovel": {"wooden": 2.5, "stone": 3.5, "iron": 4.5, "diamond": 5.5}}
 
 MOBS = {   # type: (name, hp, hostile, height, drops)
     "zombie": ("Зомби", 20, True, 1.95, ["minecraft:rotten_flesh"]),
@@ -351,6 +352,8 @@ class World:
         want = set()
         for w in words:
             w = str(w).lower().strip()
+            w = {"дерево": "бревно", "дерева": "бревно", "деревья": "бревно", "древесина": "бревно", "руда": "руда",
+                 "руду": "руда", "булыжник": "булыжник", "земля": "земля", "землю": "земля"}.get(w, w)
             for i, n in NAMES.items():
                 if i in SOLID and (w == i or w == i.split(":")[1] or w in n.lower() or (len(w) >= 4 and w[:-1] in n.lower())
                                    or w.replace("_", " ") in i.replace("_", " ")):
@@ -626,7 +629,7 @@ class World:
             if e.hp <= 0 or not e.hostile:
                 continue
             d = e.dist(me)
-            if d <= 16 and d > 1.2 and e.kind != "creeper" or (e.kind == "creeper" and 1.5 < d <= 16):
+            if d <= 32 and d > 1.2 and e.kind != "creeper" or (e.kind == "creeper" and 1.5 < d <= 16):   # a zombie follows from 35
                 k = 0.1 / d
                 e.pos[0] += (me[0] - e.pos[0]) * k
                 e.pos[2] += (me[2] - e.pos[2]) * k
@@ -742,4 +745,4 @@ class World:
         o = self.owner_ent
         return {"pos": list(self.bot["pos"]), "hp": round(self.bot["hp"]), "food": self.bot["food"],
                 "held": self.held_text(), "owner_pos": list(o.pos), "dim": self.bot["dim"],
-                "task": self.task or "", "owner_look": getattr(self, "owner_look", "")}
+                "task": self.task or "", "owner_look": getattr(self, "owner_look", ""), "night": self.night}
