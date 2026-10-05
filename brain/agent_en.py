@@ -58,9 +58,11 @@ Your hands are the keyboard and the mouse. You have no other way to act in the w
 - "Come to me / follow me": control track=player:{owner} + keys [forward, sprint] for 40-100 ticks, repeat until you are there (view: how far is left). You said "coming" — then this call at once.
 - A fight is ONE call: the weapon's slot (sword, axe) + track the target + keys [forward, sprint] + left hold, ticks 40-60; repeat while it lives (hp is in nearby). Apart it does not work: running you do not hit, hitting in place you do not get closer. A bow: the bow's slot, track the target, right hold 25.
 - "Get / bring / chop X": find_block first (the block id: stone, oak_log, coal_ore, iron_ore...) — it searches what you have seen; found — walk to it (control x y z + keys [forward, sprint]) and break it; not found — look around (turn 90 and view), and only then ask the commander. Do not run blindly forward.
+- Dirt, grass, sand, gravel — whatever is under your feet: dig right there, no searching: pitch 90 + left hold, standing still (no forward).
+- Do not walk and break in one call: first get there (keys + x z of the target), then stand and break. Walking to a point: ticks ≈ distance × 4 (a chest 5 blocks away — ticks 20, not 40, or you run past it); read "До цели" in the answer.
 - Break a block: x y z of the block + left hold 20-80 ticks (faster with a pickaxe); your hand reaches 4.5 blocks — farther, walk up first; the drops are picked up when you walk over them. Dig down: pitch 90 + left hold.
 - Place a block: the block's slot, x y z of the neighbouring block whose face you place against, right click. A pillar under yourself: pitch 90, keys [jump] and right click.
-- A chest, furnace, crafting table, machine, bed, door, lever, vehicle: x y z (or track for a creature or vehicle) + right click. Get out of a vehicle — keys [sneak].
+- A chest, furnace, crafting table, machine, bed, door, lever, vehicle: get within 2-3 blocks (x y z + forward), then x y z + right click — the RIGHT button (the left one breaks it!), standing still. Then gui info — what is inside. Get out of a vehicle — keys [sneak].
 - A window (the inventory — control keys [inventory]; a chest/furnace/crafting table — right click on the block): gui info — the exact list of slots and buttons with numbers; click_slot type quick_move — move a stack (chest <-> inventory, ore and coal into the furnace, the result out of it); click_slot pickup — take a stack on the cursor, button 1 — put one at a time; lay a recipe into the crafting grid like that (2x2 in the inventory, 3x3 at a table), then quick_move on the result slot. Mod buttons — gui widget. Close — gui key escape.
 - Eat: the food's slot, right hold 40. An item on a creature (a lead, shears, a remote on a turret): its slot, track the creature, right click.
 - It did not work (stuck, wrong block, nothing opened) — view and think, fix the look or come closer. A mistake — just make another move.
@@ -166,8 +168,9 @@ TOOLS_EN = {
                 "obey him\"), remove (\"do not obey Vasya any more\"), list (\"who are your friends?\"). Only the "
                 "commander changes the list.", {}),
     "build_structure": ("The plan of a building from a description: kind house, shelter, wall, tower, platform, bridge; "
-                        "sizes and material. Finds a level free spot and returns which block goes where — you place "
-                        "them yourself with your hands (control).", {}),
+                        "sizes and material. A \"small house\" — width and length 3-4, height 3 (about 30 blocks; each one is "
+                        "placed by one move, big builds take long). Finds a level free spot and returns which block "
+                        "goes where — you place them yourself with your hands (control).", {}),
     "remind": ("Remind the commander in minutes minutes (said aloud). text — what to remind about.", {}),
     "goal": ("Your goals — long jobs you carry on by yourself between orders: add — write one down (text in your own "
              "words, minutes — if it has a deadline), done — achieved or cancelled (text or number), list — show them. "

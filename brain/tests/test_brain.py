@@ -891,6 +891,41 @@ class RepeatedCalls(unittest.TestCase):
         self.assertEqual(said, ["Не знаю, где это."])
         self.assertIn("никуда не целясь", [m["content"] for m in a.history if m.get("role") == "tool"][-1])
 
+    def _hub(self, pos):
+        hub = altron.Hub.__new__(altron.Hub)
+        hub.state = {"pos": pos}
+        return hub
+
+    def test_hints_say_how_far_the_point_is_and_that_he_passed_it(self):
+        hub = self._hub([0.5, 64, 0.5])
+        passed = hub.control_hint({"x": 4, "y": 64, "z": -4, "keys": ["forward", "sprint"], "ticks": 40},
+                                  "ГОТОВО: Ты: 8.5 64.0 -8.0, смотришь на юг", [0.5, 64, 0.5])
+        self.assertIn("ты прошёл мимо", passed)
+        near = hub.control_hint({"x": 4, "y": 64, "z": -4, "keys": ["forward"], "ticks": 15},
+                                "ГОТОВО: Ты: 4.4 64.0 -3.0, смотришь на север", [0.5, 64, 0.5])
+        self.assertIn("ты у цели", near)
+
+    def test_hints_walking_and_breaking_and_the_chest_with_the_left_button(self):
+        hub = self._hub([0.5, 64, 0.5])
+        self.assertIn("Ты шёл вперёд и ломал одним вызовом",
+                      hub.control_hint({"keys": ["forward"], "left": "hold", "pitch": 90, "ticks": 20},
+                                       "ГОТОВО: Ты: 0.5 64.0 4.8\nПрицел: блок Блок травы в 0 63 4"))
+        self.assertIn("right click", hub.control_hint({"x": 4, "y": 64, "z": -4, "left": "click"},
+                                                      "ГОТОВО: Ты: 4.4 64.0 -3.0\nПрицел: блок Сундук в 4 64 -4"))
+
+    def test_a_call_written_as_text_is_not_said_and_a_detail_question_is_nudged(self):
+        said = []
+        replies = [{"role": "assistant", "content": "[control track=player:Egor keys=[forward]]"},
+                   {"role": "assistant", "content": "Построю башню. Из какого материала?"},
+                   self._call("view", "{}"),
+                   {"role": "assistant", "content": "Строю."}]
+
+        async def run_tool(name, args, wait):
+            return "ГОТОВО"
+        a, said = self._turn(replies, run_tool, "[Egor (командир) говорит]: Построй башню")
+        self.assertEqual(said, ["Строю."])
+        self.assertTrue(any(m["role"] == "user" and "Это мелочь, выбери сам" in m["content"] for m in a.history))
+
     def test_he_never_hits_the_commander(self):
         hub = altron.Hub.__new__(altron.Hub)
         hub.owner, hub.friends, hub.speaker, hub.bot = "Egor", set(), "", object()

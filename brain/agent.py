@@ -68,9 +68,11 @@ SYSTEM_PROMPT = """Ты — Альтрон, ИИ-напарник игрока �
 - «Иди ко мне / за мной»: control track=player:{owner} + keys [forward, sprint] на 40-100 тиков, повторяй, пока не дойдёшь (view: сколько осталось). Сказал «иду» — значит, сразу этот вызов.
 - Бой — ОДНИМ вызовом: slot с оружием (меч, топор) + track цель + keys [forward, sprint] + left hold, ticks 40-60; повторяй, пока цель жива (hp — в nearby). Порознь не работает: пока бежишь — не бьёшь, пока бьёшь на месте — не подходишь. Лук: slot с луком, track цель, right hold 25.
 - «Добудь / принеси / сруби X»: сначала find_block (id блока: stone, oak_log, coal_ore, iron_ore...) — он ищет среди виденного; нашёл — иди к нему (control x y z + keys [forward, sprint]) и ломай; не нашёл — осмотрись (turn 90 и view), и только потом спроси командира. Вслепую вперёд не бегай.
+- Земля, трава, песок, гравий — всё, что под ногами: копай прямо тут, без поисков: pitch 90 + left hold, стоя на месте (без forward).
+- Не ходи и не ломай одним вызовом: сначала дойди (keys + x z цели), потом стой и ломай. Идёшь к точке: ticks ≈ расстояние × 4 (до сундука в 5 блоках — ticks 20, не 40: иначе пробежишь мимо); в ответе смотри «До цели».
 - Ломать блок: x y z блока + left hold 20-80 тиков (киркой быстрее); рука достаёт на 4.5 бл. — дальше сначала подойди, обломки подберутся, если пройти по ним. Копать вниз: pitch 90 + left hold.
 - Поставить блок: slot с блоком, x y z соседнего блока, к грани которого ставишь, right click. Столб под собой: pitch 90, keys [jump] и right click.
-- Сундук, печь, верстак, машина, кровать, дверь, рычаг, техника: x y z (или track для существа/техники) + right click. Выйти из техники — keys [sneak].
+- Сундук, печь, верстак, машина, кровать, дверь, рычаг, техника: подойди на 2-3 блока (x y z + forward), затем x y z + right click — ПРАВОЙ кнопкой (левая ломает!), стоя на месте. Потом gui info — что внутри. Выйти из техники — keys [sneak].
 - Окно (инвентарь — control keys [inventory]; сундук/печь/верстак — right click по блоку): gui info — точный список слотов и кнопок с номерами; click_slot type quick_move — переложить стак (сундук ↔ инвентарь, руда и уголь в печь, результат из печи); click_slot pickup — взять стак на курсор, button 1 — положить по одному; так раскладывай рецепт в сетку крафта (2x2 в инвентаре, 3x3 в верстаке), потом quick_move по слоту результата. Кнопки модов — gui widget. Закрыть — gui key escape.
 - Съесть: slot с едой, right hold 40. Предмет на существо (поводок, ножницы, пульт на турель): slot с ним, track существо, right click.
 - Не вышло (упёрся, не тот блок, ничего не открылось) — view и подумай, поправь взгляд или подойди ближе. Ошибся — просто сделай другое движение.
@@ -179,7 +181,7 @@ TOOLS = [
           {"name": _S, "x": _N, "y": _N, "z": _N}, ["name"]),
     _tool("friends", "Друзья командира, чьи приказы ты тоже выполняешь: add, remove, list. Менять список может только командир.",
           {"action": {"type": "string", "enum": ["add", "remove", "list"]}, "player": _S}, ["action"]),
-    _tool("build_structure", "План постройки по описанию: kind house, shelter, wall, tower, platform, bridge; размеры и material. Найдёт ровное свободное место и вернёт, какой блок куда ставить — ставишь сам руками (control).",
+    _tool("build_structure", "План постройки по описанию: kind house, shelter, wall, tower, platform, bridge; размеры и material. «Маленький домик» — width и length 3-4, height 3 (около 30 блоков; каждый ставится одним движением, большие стройки идут долго). Найдёт ровное свободное место и вернёт, какой блок куда ставить — ставишь сам руками (control).",
           {"kind": {"type": "string", "enum": ["house", "shelter", "wall", "tower", "platform", "bridge"]},
            "width": _I, "length": _I, "height": _I, "material": _S, "roof_material": _S, "x": _N, "y": _N, "z": _N},
           ["kind"]),
@@ -253,8 +255,18 @@ SAME_CALLS = 6   # the same call with the same arguments, more than this many ti
 # words that promise a move: "иду", "бегу", "сейчас сделаю", "начинаю" (and in English)
 PROMISE = re.compile(r"\b(иду|ид[её]м|бегу|лечу|отхожу|подхожу|начинаю|приступаю|займусь|разберусь|поднимаю|спасаю|атакую|"
                      r"догоняю|тушу|ставлю|ломаю|строю|копаю|рублю|добываю|несу|открываю|закрываю|"
+                     r"проверю|посмотрю|открою|возьму|положу|принесу|сделаю|поставлю|сломаю|построю|достану|найду|добуду|"
+                     r"подойду|приду|схожу|сбегаю|срублю|накопаю|выкопаю|помогу|защищу|прикрою|подожду|"
                      r"сейчас (сделаю|подойду|приду|принесу|построю|сломаю|достану)|уже (иду|бегу)|"
                      r"on my way|coming|heading|i'?ll (go|get|do|handle))\b", re.I)
+# a question about a detail he should choose himself ("какой материал?", "где ставить основание?")
+SMALL_Q = re.compile(r"(какой|какие|какого|из чего|из какого|сколько|где ставить|куда ставить|куда именно|где именно|"
+                     r"какой высоты|какого размера|материал|размер)", re.I)
+NUDGE_SMALL = ("[Заметка] Это мелочь, выбери сам: материал — из того, что есть в инвентаре (inventory), место — рядом с "
+               "командиром или туда, куда он смотрит, размер — небольшой. Начинай делать прямо сейчас инструментом.")
+# the call written out as text instead of being made: "[control track=player:Ник keys=[forward]]"
+CALL_AS_TEXT = re.compile(r"^\W{0,3}(control|view|inventory|nearby|find_block|find_item|goal|status|stop|gui|click_slot|"
+                          r"build_structure|reply|ignore)\b[\s(\[{=:]", re.I)
 NUDGE = ("[Заметка] Ты ответил словами, но руки ничего не сделали. Если это приказ или ты пообещал действие — сделай его "
          "сейчас инструментом (control: x z цели или track + keys forward/sprint). Не можешь — одной фразой скажи почему.")
 CLOSE = ("[Заметка] Ты поработал руками. Скажи командиру одной короткой фразой, что получилось или что мешает, "
@@ -691,6 +703,9 @@ class Agent:
             starts_task = any(c.get("function", {}).get("name") in TASK_TOOLS for c in (calls or []))
             # the model copies the tags of what it reads ("[Наблюдение] ...") and sometimes stops mid-phrase before a
             # call ("Хорошо,"): neither is for the commander's ears
+            if CALL_AS_TEXT.match(text or "") and len(text) < 300:
+                self.hub.log("(вызов написан текстом, не произношу) " + text)
+                text = ""
             text = re.sub(r"^(\s*\[[^\]\n]{1,40}\]\s*)+", "", text or "").strip()
             if text and text.rstrip()[-1:] in (",", ":", "—", "-", "("):
                 self.hub.log("(недоговорил, не произношу) " + text)
@@ -700,6 +715,9 @@ class Agent:
                 # The model narrates every step ("сейчас посмотрю", "продолжаю"): words that come with actions are
                 # never spoken — only the final answer, a question to the commander, or what an event is about
                 speak = not calls and (kind == "user" or not background)
+                # a question about a detail he should choose himself is not asked aloud: he is sent to work instead
+                if speak and order and not did_something and not nudged and "?" in text and SMALL_Q.search(text):
+                    speak = False
                 if speak and not _said_before(text, spoken):
                     spoken.append(text)
                     await self.hub.say(text)
@@ -715,11 +733,12 @@ class Agent:
                         self.history.append({"role": "user", "content": CLOSE})
                     self.hub.log("(пустой ответ — переспрашиваю без размышлений)")
                     continue
-                if not nudged and not did_something and not self.cancelled and "?" not in (text or "") \
-                        and (order or PROMISE.search(text or "")):
+                small_q = "?" in (text or "") and bool(SMALL_Q.search(text or "")) and order
+                if not nudged and not did_something and not self.cancelled \
+                        and (("?" not in (text or "") and (order or PROMISE.search(text or ""))) or small_q):
                     # "Иду." and nothing moved: words are not hands (scenario runs: 43 orders answered with words only)
                     nudged = True
-                    self.history.append({"role": "user", "content": NUDGE})
+                    self.history.append({"role": "user", "content": NUDGE_SMALL if small_q else NUDGE})
                     self.hub.log("(сказал, но не сделал — напоминаю про руки)")
                     continue
                 break

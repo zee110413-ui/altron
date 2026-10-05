@@ -3,3 +3,5 @@ cmd0071,fun0071,dlg0015,talk0190,sit0016,cmd0009,dlg0005,cmd0213,cmd0153,sit0032
 # second pass after the fixes of 2026-10-04T07:21:05Z
 
 # third pass after the blind-walk fix of 2026-10-05T06:17:34Z
+
+# fourth pass after the hands lessons of 2026-10-05T08:59:50Z
